@@ -36,10 +36,13 @@ cp "${REPO_ROOT}/uv.lock" "${APP_DIR}/" 2>/dev/null || true
 if [ -f "${REPO_ROOT}/README.md" ]; then
     cp "${REPO_ROOT}/README.md" "${APP_DIR}/"
 fi
+if [ -f "${REPO_ROOT}/scripts/palworld.service" ]; then
+    cp "${REPO_ROOT}/scripts/palworld.service" /etc/systemd/system/palworld.service
+fi
 if [ -f "${REPO_ROOT}/scripts/palworld-manager.service" ]; then
     cp "${REPO_ROOT}/scripts/palworld-manager.service" /etc/systemd/system/palworld-manager.service
-    systemctl daemon-reload
 fi
+systemctl daemon-reload
 if [ -f "${REPO_ROOT}/scripts/duck.sh" ] && [ -d "/home/steam/duckdns" ]; then
     cp "${REPO_ROOT}/scripts/duck.sh" /home/steam/duckdns/duck.sh
     chmod 0755 /home/steam/duckdns/duck.sh
