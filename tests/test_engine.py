@@ -77,7 +77,7 @@ async def test_pal_engine_execute_countdown_and_reboot_fast(monkeypatch, tmp_pat
     async def mock_sleep(*a, **kw):
         return None
 
-    monkeypatch.setattr("asyncio.sleep", mock_sleep)
+    monkeypatch.setattr("app.engine.asyncio.sleep", mock_sleep)
 
     # Mock engine operations
     async def mock_broadcast(*a, **kw):

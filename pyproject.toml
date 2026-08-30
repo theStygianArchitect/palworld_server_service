@@ -52,7 +52,7 @@ packages = ["app"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-rA -n auto"
+addopts = "-rA -n auto --dist=loadfile"
 log_cli = false
 
 [tool.ruff]
