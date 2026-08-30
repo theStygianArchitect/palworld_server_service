@@ -59,3 +59,47 @@ async def test_pal_engine_mock_rest_api_calls(monkeypatch):
 
     save_ok = await engine.trigger_save()
     assert save_ok is True
+
+
+@pytest.mark.asyncio
+async def test_pal_engine_execute_countdown_and_reboot_fast(monkeypatch, tmp_path):
+    lock_file = tmp_path / "palworld_reboot.lock"
+    update_flag = tmp_path / ".update_requested"
+
+    engine = PalEngine(
+        admin_password="test_password",  # nosec B105,B106
+        rest_port=8212,
+        lock_file=lock_file,
+        update_flag=update_flag,
+    )
+
+    # Mock instant async sleep so test completes in milliseconds
+    async def mock_sleep(*a, **kw):
+        return None
+
+    monkeypatch.setattr("asyncio.sleep", mock_sleep)
+
+    # Mock engine operations
+    async def mock_broadcast(*a, **kw):
+        return True
+
+    async def mock_save(*a, **kw):
+        return True
+
+    async def mock_check_readiness(*a, **kw):
+        return {"ready": True, "version": "v0.3.5", "server_name": "Test Server"}
+
+    monkeypatch.setattr(engine, "send_broadcast", mock_broadcast)
+    monkeypatch.setattr(engine, "trigger_save", mock_save)
+    monkeypatch.setattr(engine, "check_readiness", mock_check_readiness)
+
+    # Execute 2-second fast countdown
+    await engine.execute_countdown_and_reboot(
+        countdown_seconds=2,
+        trigger_update=True,
+        update_version_tag="v0.3.5",
+        custom_message="Fast test reboot",
+    )
+
+    assert engine.lifecycle_state["phase"] == "IDLE"
+    assert not lock_file.exists()

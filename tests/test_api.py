@@ -74,7 +74,7 @@ def test_api_community_tracker_route():
 
 def test_api_reboot_with_custom_message_route():
     payload = {
-        "countdown_seconds": 60,
+        "countdown_seconds": 2,
         "trigger_steam_update": False,
         "custom_message": "Scheduled memory purge and restart.",
     }
@@ -82,7 +82,7 @@ def test_api_reboot_with_custom_message_route():
         response = client.post("/api/service/reboot", json=payload)
         assert response.status_code == 200
         assert response.json()["status"] == "success"
-        mock_reboot.assert_called_once_with(60, False, "", "Scheduled memory purge and restart.")
+        mock_reboot.assert_called_once_with(2, False, "", "Scheduled memory purge and restart.")
 
 
 def test_api_moderation_routes():
