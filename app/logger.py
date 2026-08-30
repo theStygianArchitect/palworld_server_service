@@ -55,6 +55,13 @@ class SensitiveDataFilter(logging.Filter):
         return True
 
 
+def sanitize_log_text(text: str) -> str:
+    """Sanitizes sensitive tokens, passwords, and authorization headers from log text strings."""
+    for pattern, replacement in SensitiveDataFilter.PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 class DiscordLogHandler(logging.Handler):
     """Asynchronous worker-queued logging handler that mirrors logs to Discord via webhooks.
 

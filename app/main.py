@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings, reload_settings
@@ -515,3 +515,39 @@ async def restore_commit(commit_hash: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"Failed to restore commit {commit_hash}.")
     reload_settings()
     return {"status": "success", "message": f"Restored configuration from {commit_hash}."}
+
+
+@app.get("/api/logs")
+async def get_logs(
+    tail: int = 200,
+    filter: str | None = None,
+    level: str = "ALL",
+) -> dict[str, Any]:
+    """Retrieves sanitized recent Palworld engine log lines.
+
+    Args:
+        tail (int): Number of recent lines to retrieve.
+        filter (str | None): Keyword or regex filter.
+        level (str): Category filter (ALL, ENGINE, EOS, WARN_ERROR).
+
+    Returns:
+        dict[str, Any]: Log lines array and retrieval metadata.
+    """
+    return engine.tracker.read_server_logs(tail=tail, filter_query=filter, level=level)
+
+
+@app.get("/api/logs/download")
+async def download_logs() -> PlainTextResponse:
+    """Streams full sanitized Palworld engine log file as an attachment.
+
+    Returns:
+        PlainTextResponse: Raw text stream with attachment headers.
+    """
+    result = engine.tracker.read_server_logs(tail=2000, level="ALL")
+    content = "\n".join(result.get("lines", []))
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = f"palworld_engine_{timestamp}.log"
+    return PlainTextResponse(
+        content=content,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

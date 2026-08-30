@@ -136,3 +136,40 @@ def test_api_backups_routes(client: TestClient):
             restore_res = client.post("/api/backups/restore/abcd1234ef01")
             assert restore_res.status_code == 200
             assert restore_res.json()["status"] == "success"
+
+
+def test_api_logs_routes(client: TestClient):
+    with patch(
+        "app.main.engine.tracker.read_server_logs",
+        return_value={
+            "status": "success",
+            "source": "/PalServer/Pal/Saved/Logs/Pal.log",
+            "total_lines_scanned": 50,
+            "returned_lines": 2,
+            "lines": [
+                "[2026.08.30-10.15.00:123] LogPalServer: Engine ready",
+                "[2026.08.30-10.15.01:456] Created public lobby session",
+            ],
+        },
+    ):
+        res = client.get("/api/logs?tail=50&level=ALL")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "success"
+        assert len(data["lines"]) == 2
+        assert "Engine ready" in data["lines"][0]
+
+    with patch(
+        "app.main.engine.tracker.read_server_logs",
+        return_value={
+            "status": "success",
+            "source": "/PalServer/Pal/Saved/Logs/Pal.log",
+            "total_lines_scanned": 10,
+            "returned_lines": 1,
+            "lines": ["[2026.08.30-10.15.00:123] LogPalServer: Engine ready"],
+        },
+    ):
+        download_res = client.get("/api/logs/download")
+        assert download_res.status_code == 200
+        assert "attachment" in download_res.headers.get("content-disposition", "")
+        assert "Engine ready" in download_res.text

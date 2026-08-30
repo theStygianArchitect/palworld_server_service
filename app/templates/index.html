@@ -76,6 +76,7 @@
       <button onclick="switchTab('players')" id="tab_players" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">👥 Player Roster</button>
       <button onclick="switchTab('metrics')" id="tab_metrics" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📊 Telemetry, Discovery & Security</button>
       <button onclick="switchTab('backups')" id="tab_backups" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">🕒 Snapshots & Backups</button>
+      <button onclick="switchTab('logs')" id="tab_logs" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📜 Live Console</button>
     </div>
   </header>
 
@@ -476,6 +477,105 @@
         <div id="diffView" class="hidden bg-dark-950 p-3.5 rounded-xl border border-slate-800 font-mono text-[11px] overflow-x-auto max-h-60 text-emerald-400 whitespace-pre"></div>
       </div>
     </div>
+
+    <!-- Tab 5: Live Engine Console -->
+    <div id="page_logs" class="hidden space-y-4">
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+        
+        <!-- Header & Control Bar -->
+        <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-sm sm:text-base font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
+                <span>📜</span> Live Engine Console & Log Stream
+              </h2>
+              <span id="logStreamBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-700 flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Streaming
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 mt-0.5">Real-time Unreal Engine 5 log output, EOS handshake packets, save events, and security audits.</p>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto text-xs font-mono">
+            <button onclick="fetchConsoleLogs(true)" class="px-2.5 py-1.5 rounded-lg bg-dark-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition flex items-center gap-1.5">
+              <span>🔄</span> Refresh
+            </button>
+            <button onclick="toggleLogScrollLock()" id="scrollLockBtn" class="px-2.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold transition flex items-center gap-1.5">
+              <span>🔒</span> Scroll Lock: ON
+            </button>
+            <button onclick="copyConsoleLogs(this)" class="px-2.5 py-1.5 rounded-lg bg-dark-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition flex items-center gap-1.5">
+              <span>📋</span> Copy Output
+            </button>
+            <a href="/api/logs/download" target="_blank" class="px-2.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold transition flex items-center gap-1.5">
+              <span>📥</span> Download .log
+            </a>
+            <button onclick="clearConsoleView()" class="px-2.5 py-1.5 rounded-lg bg-dark-800 hover:bg-red-950 border border-slate-700 hover:border-red-800 text-slate-400 hover:text-red-300 transition flex items-center gap-1.5">
+              <span>🧹</span> Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter & Search Toolbar -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono">
+          <!-- Log Level Dropdown -->
+          <div>
+            <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Log Filter Mode</label>
+            <select id="logFilterLevel" onchange="fetchConsoleLogs(true)" class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+              <option value="ALL">All Log Categories</option>
+              <option value="ENGINE">Engine (LogPalServer / World)</option>
+              <option value="EOS">EOS, Network & Steam Matchmaking</option>
+              <option value="WARN_ERROR">Warnings, Errors & Crashes Only</option>
+            </select>
+          </div>
+
+          <!-- Keyword Search -->
+          <div class="sm:col-span-2">
+            <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Search / Regex Filter</label>
+            <div class="relative">
+              <input type="text" id="logSearchQuery" oninput="debounceLogFilter()" placeholder="Filter by keyword (e.g. SessionId, Save, Player)..."
+                     class="w-full pl-8 pr-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-500 text-xs">
+              <span class="absolute left-2.5 top-2.5 text-slate-500 text-xs">🔍</span>
+            </div>
+          </div>
+
+          <!-- Tail Line Count -->
+          <div>
+            <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Lines to Buffer</label>
+            <select id="logTailCount" onchange="fetchConsoleLogs(true)" class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+              <option value="100">Last 100 lines</option>
+              <option value="200" selected>Last 200 lines</option>
+              <option value="500">Last 500 lines</option>
+              <option value="1000">Last 1,000 lines</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Terminal Output Window -->
+        <div class="relative rounded-2xl bg-[#080B11] border border-slate-800/90 shadow-2xl overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-2 bg-[#0E131F] border-b border-slate-800 text-[11px] font-mono text-slate-400">
+            <div class="flex items-center gap-2">
+              <div class="flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-red-500/80"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-500/80"></span>
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
+              </div>
+              <span class="text-slate-500">|</span>
+              <span id="logSourceLabel" class="text-slate-300">/PalServer/Pal/Saved/Logs/Pal.log</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="logLineStats" class="text-slate-400">0 lines</span>
+              <span id="logAutoStatus" class="text-emerald-400 font-semibold">Live: 3s</span>
+            </div>
+          </div>
+
+          <div id="terminalBody" onscroll="handleTerminalScroll()" class="p-4 font-mono text-[11px] sm:text-xs leading-relaxed overflow-y-auto max-h-[580px] min-h-[420px] select-text space-y-0.5 text-slate-300">
+            <div class="text-slate-500 italic">Initializing Live Engine Console stream...</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
   </main>
 
   <!-- Reboot Modal with Customizable Message -->
@@ -559,18 +659,164 @@
     let currentSettings = {};
     let liveServerPassword = "";
     let socket;
+    let logPollInterval = null;
+    let logScrollLocked = true;
+    let logDebounceTimer = null;
+    let rawLogLinesCache = [];
 
     function switchTab(tab) {
-      ['settings', 'players', 'metrics', 'backups'].forEach(t => {
-        document.getElementById(`page_${t}`).classList.add('hidden');
-        document.getElementById(`tab_${t}`).classList.remove('bg-brand-600', 'text-white', 'font-bold');
-        document.getElementById(`tab_${t}`).classList.add('bg-dark-800', 'text-slate-300');
+      ['settings', 'players', 'metrics', 'backups', 'logs'].forEach(t => {
+        const p = document.getElementById(`page_${t}`);
+        const b = document.getElementById(`tab_${t}`);
+        if (p) p.classList.add('hidden');
+        if (b) {
+          b.classList.remove('bg-brand-600', 'text-white', 'font-bold');
+          b.classList.add('bg-dark-800', 'text-slate-300');
+        }
       });
-      document.getElementById(`page_${tab}`).classList.remove('hidden');
-      document.getElementById(`tab_${tab}`).classList.add('bg-brand-600', 'text-white', 'font-bold');
-      document.getElementById(`tab_${tab}`).classList.remove('bg-dark-800', 'text-slate-300');
+      const activeP = document.getElementById(`page_${tab}`);
+      const activeB = document.getElementById(`tab_${tab}`);
+      if (activeP) activeP.classList.remove('hidden');
+      if (activeB) {
+        activeB.classList.add('bg-brand-600', 'text-white', 'font-bold');
+        activeB.classList.remove('bg-dark-800', 'text-slate-300');
+      }
 
-      if (tab === 'backups') loadCommits();
+      if (tab === 'backups') {
+        loadCommits();
+      }
+
+      if (tab === 'logs') {
+        fetchConsoleLogs(true);
+        if (!logPollInterval) {
+          logPollInterval = setInterval(() => fetchConsoleLogs(false), 3000);
+        }
+      } else {
+        if (logPollInterval) {
+          clearInterval(logPollInterval);
+          logPollInterval = null;
+        }
+      }
+    }
+
+    async function fetchConsoleLogs(forceScroll = false) {
+      const levelEl = document.getElementById('logFilterLevel');
+      const tailEl = document.getElementById('logTailCount');
+      const queryEl = document.getElementById('logSearchQuery');
+      const level = levelEl ? levelEl.value : 'ALL';
+      const tail = tailEl ? tailEl.value : '200';
+      const filter = queryEl ? queryEl.value.trim() : '';
+
+      const params = new URLSearchParams({ tail: tail, level: level });
+      if (filter) params.append('filter', filter);
+
+      try {
+        const res = await fetch(`/api/logs?${params.toString()}`);
+        const data = await res.json();
+        if (data.status === 'success') {
+          rawLogLinesCache = data.lines || [];
+          renderConsoleLines(rawLogLinesCache, forceScroll);
+          if (document.getElementById('logSourceLabel')) {
+            document.getElementById('logSourceLabel').innerText = data.source || 'PalServer Log Stream';
+          }
+          if (document.getElementById('logLineStats')) {
+            document.getElementById('logLineStats').innerText = `${rawLogLinesCache.length} lines rendered`;
+          }
+        }
+      } catch (err) {
+        console.debug("Log polling error:", err);
+      }
+    }
+
+    function renderConsoleLines(lines, forceScroll = false) {
+      const term = document.getElementById('terminalBody');
+      if (!term) return;
+
+      if (!lines || lines.length === 0) {
+        term.innerHTML = `<div class="text-slate-500 italic p-2">No matching log entries found. Awaiting server output...</div>`;
+        return;
+      }
+
+      const formattedHtml = lines.map(l => formatLogLine(l)).join('');
+      term.innerHTML = formattedHtml;
+
+      if (forceScroll || logScrollLocked) {
+        term.scrollTop = term.scrollHeight;
+      }
+    }
+
+    function formatLogLine(raw) {
+      if (!raw) return '';
+      const escaped = raw
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      const formatted = escaped.replace(
+        /^(\[\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}:\d+\](?:\[\s*\d+\])?)/,
+        '<span class="text-slate-500 font-semibold">$1</span>'
+      );
+
+      if (/error|fatal|crash|fail/i.test(raw)) {
+        return `<div class="py-0.5 text-red-400 bg-red-950/25 px-1.5 rounded font-mono text-[11px] hover:bg-red-950/45 leading-relaxed">${formatted}</div>`;
+      } else if (/warning|warn/i.test(raw)) {
+        return `<div class="py-0.5 text-amber-300 bg-amber-950/25 px-1.5 rounded font-mono text-[11px] hover:bg-amber-950/45 leading-relaxed">${formatted}</div>`;
+      } else if (/created public lobby session|eossdk|sessionid|lobby|steam server initialized/i.test(raw)) {
+        return `<div class="py-0.5 text-cyan-300 font-semibold bg-cyan-950/25 px-1.5 rounded font-mono text-[11px] hover:bg-cyan-950/45 leading-relaxed">${formatted}</div>`;
+      } else if (/logpalserver|save|bringing world|worldsavedata/i.test(raw)) {
+        return `<div class="py-0.5 text-emerald-300 hover:bg-emerald-950/25 px-1.5 rounded font-mono text-[11px] leading-relaxed">${formatted}</div>`;
+      } else if (/admin|rcon|broadcast|kick|ban/i.test(raw)) {
+        return `<div class="py-0.5 text-purple-300 bg-purple-950/25 px-1.5 rounded font-mono text-[11px] hover:bg-purple-950/45 leading-relaxed">${formatted}</div>`;
+      }
+      return `<div class="py-0.5 text-slate-300 hover:bg-slate-800/40 px-1.5 rounded font-mono text-[11px] leading-relaxed">${formatted}</div>`;
+    }
+
+    function toggleLogScrollLock() {
+      logScrollLocked = !logScrollLocked;
+      const btn = document.getElementById('scrollLockBtn');
+      if (btn) {
+        btn.innerHTML = logScrollLocked ? `<span>🔒</span> Scroll Lock: ON` : `<span>🔓</span> Scroll Lock: OFF`;
+        btn.className = logScrollLocked
+          ? "px-2.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold transition flex items-center gap-1.5"
+          : "px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 font-semibold transition flex items-center gap-1.5";
+      }
+      if (logScrollLocked) {
+        const term = document.getElementById('terminalBody');
+        if (term) term.scrollTop = term.scrollHeight;
+      }
+    }
+
+    function handleTerminalScroll() {
+      const term = document.getElementById('terminalBody');
+      if (!term) return;
+      const isAtBottom = term.scrollHeight - term.scrollTop <= term.clientHeight + 40;
+      if (!isAtBottom && logScrollLocked) {
+        logScrollLocked = false;
+        const btn = document.getElementById('scrollLockBtn');
+        if (btn) {
+          btn.innerHTML = `<span>🔓</span> Scroll Lock: OFF`;
+          btn.className = "px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 font-semibold transition flex items-center gap-1.5";
+        }
+      }
+    }
+
+    function debounceLogFilter() {
+      clearTimeout(logDebounceTimer);
+      logDebounceTimer = setTimeout(() => fetchConsoleLogs(true), 350);
+    }
+
+    function copyConsoleLogs(btn) {
+      if (!rawLogLinesCache || rawLogLinesCache.length === 0) {
+        showAlert("No logs available to copy.");
+        return;
+      }
+      writeTextToClipboard(rawLogLinesCache.join('\n'), btn, "Console Log Lines");
+    }
+
+    function clearConsoleView() {
+      const term = document.getElementById('terminalBody');
+      if (term) term.innerHTML = `<div class="text-slate-500 italic p-2">Terminal buffer cleared. Next engine output will appear below...</div>`;
+      rawLogLinesCache = [];
     }
 
     function showAlert(msg, isError = false) {

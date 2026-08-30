@@ -570,6 +570,93 @@ class CommunityTracker:
             "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
         }
 
+    def read_server_logs(
+        self,
+        tail: int = 200,
+        filter_query: str | None = None,
+        level: str = "ALL",
+    ) -> dict[str, Any]:
+        """Reads, filters, and sanitizes recent engine log lines for the live console.
+
+        Args:
+            tail (int): Number of lines to return (bounded between 10 and 2000).
+            filter_query (str | None): Optional text or regex filter.
+            level (str): Log level category filter ('ALL', 'ENGINE', 'EOS', 'WARN_ERROR').
+
+        Returns:
+            dict[str, Any]: Log metadata and sanitized lines list.
+        """
+        tail = max(10, min(tail, 2000))
+        candidate_log_files = [
+            Path("/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Logs/Pal.log"),
+            Path("/home/steam/Steam/steamapps/common/PalServer/Pal/Saved/Logs/Pal.log"),
+            Path("/home/steam/PalServer/Pal/Saved/Logs/Pal.log"),
+        ]
+
+        source_path = "journalctl"
+        raw_lines: list[str] = []
+
+        for log_file in candidate_log_files:
+            if log_file.exists():
+                try:
+                    with log_file.open("r", encoding="utf-8", errors="ignore") as f:
+                        raw_lines = f.readlines()[-tail * 3 :]
+                    source_path = str(log_file)
+                    break
+                except OSError as err:
+                    log.debug("Error reading log file %s: %s", log_file, err)
+
+        if not raw_lines and os.name != "nt":
+            try:
+                sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
+                journalctl_bin = shutil.which("journalctl") or "/bin/journalctl"
+                cmd = [sudo_bin, journalctl_bin, "-u", "palworld.service", "-n", str(tail * 3), "--no-pager"]
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=4, check=False)
+                if proc.returncode == 0:
+                    raw_lines = proc.stdout.splitlines()
+            except subprocess.SubprocessError as err:
+                log.debug("Journalctl log query subprocess error: %s", err)
+            except OSError as err:
+                log.debug("Journalctl log query OS error: %s", err)
+
+        from .logger import sanitize_log_text
+
+        filtered: list[str] = []
+        level_lower = level.lower()
+
+        for line in raw_lines:
+            clean = line.strip("\r\n")
+            if not clean:
+                continue
+
+            # Category filter
+            if level_lower == "engine" and "logpalserver" not in clean.lower():
+                continue
+            elif level_lower == "eos" and not re.search(r"eos|session|lobby|steam", clean, re.IGNORECASE):
+                continue
+            elif level_lower == "warn_error" and not re.search(r"warning|error|fatal|crash|fail", clean, re.IGNORECASE):
+                continue
+
+            # Substring / regex query filter
+            if filter_query:
+                try:
+                    if not re.search(filter_query, clean, re.IGNORECASE):
+                        continue
+                except re.error:
+                    if filter_query.lower() not in clean.lower():
+                        continue
+
+            sanitized_line = sanitize_log_text(clean)
+            filtered.append(sanitized_line)
+
+        return {
+            "status": "success",
+            "source": source_path,
+            "total_lines_scanned": len(raw_lines),
+            "returned_lines": len(filtered[-tail:]),
+            "lines": filtered[-tail:],
+        }
+
     def probe_network_alignment(self) -> NetworkMatrixInfo:
         """Probes WAN public IP and DuckDNS resolution to verify network alignment.
 
