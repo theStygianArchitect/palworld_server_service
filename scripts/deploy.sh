@@ -91,6 +91,11 @@ echo -n "[5/5] Restarting palworld-manager.service... "
 systemctl restart palworld-manager.service
 echo "[ OK ]"
 
+# Restore repository ownership to non-root calling user
+if [ -n "${SUDO_USER:-}" ]; then
+    chown -R "${SUDO_USER}:${SUDO_USER}" "${REPO_ROOT}" 2>/dev/null || true
+fi
+
 echo "========================================================================="
 echo " Deployment Complete! Service status: $(systemctl is-active palworld-manager.service)"
 echo "========================================================================="
