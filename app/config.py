@@ -96,8 +96,11 @@ def _resolve_default_backup_repo_dir() -> str:
     try:
         var_lib.mkdir(parents=True, exist_ok=True)
         return str(var_lib)
-    except (PermissionError, OSError) as err:
-        log.debug("System backup dir /var/lib/palmanager/backups uncreatable (%s), using home dir fallback.", err)
+    except PermissionError as err:
+        log.debug("Permission denied creating /var/lib/palmanager/backups (%s), using home dir fallback.", err)
+        return str(Path.home() / ".palmanager" / "backups")
+    except OSError as err:
+        log.debug("OS error creating /var/lib/palmanager/backups (%s), using home dir fallback.", err)
         return str(Path.home() / ".palmanager" / "backups")
 
 
@@ -109,8 +112,11 @@ def _resolve_default_log_dir() -> str:
     try:
         var_log.mkdir(parents=True, exist_ok=True)
         return str(var_log)
-    except (PermissionError, OSError) as err:
-        log.debug("System log dir /var/log/palmanager uncreatable (%s), using home dir fallback.", err)
+    except PermissionError as err:
+        log.debug("Permission denied creating /var/log/palmanager (%s), using home dir fallback.", err)
+        return str(Path.home() / ".palmanager" / "logs")
+    except OSError as err:
+        log.debug("OS error creating /var/log/palmanager (%s), using home dir fallback.", err)
         return str(Path.home() / ".palmanager" / "logs")
 
 

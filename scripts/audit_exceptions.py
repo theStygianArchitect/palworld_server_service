@@ -25,22 +25,38 @@ def audit_exceptions_in_file(py_file: Path) -> list[str]:
     try:
         content = py_file.read_text(encoding="utf-8")
         tree = ast.parse(content, filename=str(py_file))
-    except (OSError, SyntaxError, UnicodeDecodeError) as err:
-        sys.stderr.write(f"Failed to parse AST for {py_file}: {err}\n")
-        return [f"{py_file}: Failed to parse AST: {err}"]
+    except PermissionError as err:
+        sys.stderr.write(f"Permission denied reading {py_file}: {err}\n")
+        return [f"{py_file}: Permission denied: {err}"]
+    except OSError as err:
+        sys.stderr.write(f"OS error reading {py_file}: {err}\n")
+        return [f"{py_file}: OS error reading file: {err}"]
+    except SyntaxError as err:
+        sys.stderr.write(f"Syntax error parsing AST for {py_file}: {err}\n")
+        return [f"{py_file}: Syntax error parsing AST: {err}"]
+    except UnicodeDecodeError as err:
+        sys.stderr.write(f"Unicode decode error reading {py_file}: {err}\n")
+        return [f"{py_file}: Unicode decode error reading file: {err}"]
 
     for node in ast.walk(tree):
         if isinstance(node, ast.ExceptHandler):
             exc_name = ast.unparse(node.type) if node.type else "bare except"
 
-            # 1. Check for `pass` in exception handler
+            # 1. 3 AM Debugger Rule: Check for bundled exception tuples
+            if isinstance(node.type, ast.Tuple):
+                bundled_types = [ast.unparse(elt) for elt in node.type.elts]
+                violations.append(
+                    f"{py_file}:{node.lineno} -> [BUNDLED EXCEPTION] Handler 'except ({', '.join(bundled_types)})' bundles multiple exception types. Unbundle into distinct handlers."
+                )
+
+            # 2. Check for `pass` in exception handler
             has_pass = any(isinstance(stmt, ast.Pass) for stmt in node.body)
             if has_pass:
                 violations.append(
                     f"{py_file}:{node.lineno} -> [EMPTY EXCEPTION] Handler 'except {exc_name}' contains silent 'pass'."
                 )
 
-            # 2. Check for explicit logging invocation (log.*, logger.*, self.handleError, sys.stderr.write)
+            # 3. Check for explicit logging invocation (log.*, logger.*, self.handleError, sys.stderr.write)
             has_log = False
             for stmt in node.body:
                 if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):

@@ -100,8 +100,11 @@ class DiscordLogHandler(logging.Handler):
                         try:
                             retry_data = res.json()
                             retry_after = float(retry_data.get("retry_after", 1.5))
-                        except (ValueError, KeyError) as err:
-                            sys.stderr.write(f"Discord retry_after parse error: {err}\n")
+                        except ValueError as err:
+                            sys.stderr.write(f"Discord retry_after integer parsing error: {err}\n")
+                            retry_after = 2.0
+                        except KeyError as err:
+                            sys.stderr.write(f"Discord response missing retry_after key: {err}\n")
                             retry_after = 2.0
                         sys.stderr.write(f"Discord rate limit (HTTP 429) hit. Backing off for {retry_after:.1f}s...\n")
                         time.sleep(retry_after)
@@ -178,16 +181,20 @@ class DiscordLogHandler(logging.Handler):
         """Flushes all queued log events, waiting for pending dispatches to complete."""
         try:
             self._queue.join()
-        except (RuntimeError, ValueError) as err:
-            sys.stderr.write(f"DiscordLogHandler flush error: {err}\n")
+        except RuntimeError as err:
+            sys.stderr.write(f"DiscordLogHandler runtime error during queue join: {err}\n")
+        except ValueError as err:
+            sys.stderr.write(f"DiscordLogHandler value error during queue join: {err}\n")
 
     def close(self) -> None:
         """Closes the handler, stops the background worker, and cleans up resources."""
         try:
             self._queue.put_nowait(None)
             self._worker_thread.join(timeout=2.0)
-        except (queue.Full, RuntimeError) as err:
-            sys.stderr.write(f"DiscordLogHandler close error: {err}\n")
+        except queue.Full as err:
+            sys.stderr.write(f"DiscordLogHandler queue full during shutdown: {err}\n")
+        except RuntimeError as err:
+            sys.stderr.write(f"DiscordLogHandler runtime error during thread join: {err}\n")
         super().close()
 
 

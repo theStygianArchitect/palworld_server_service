@@ -417,10 +417,12 @@ class PalEngine:
                         stale_age,
                     )
                     self.lock_file.unlink(missing_ok=True)
-                else:
-                    raise RuntimeError("Reboot countdown sequence is already active.")
-            except (OSError, PermissionError) as err:
-                log.warning("Error inspecting reboot lock file %s: %s", self.lock_file, err)
+            except PermissionError as err:
+                log.warning("Permission denied inspecting reboot lock file %s: %s", self.lock_file, err)
+                if self.lock_file.exists():
+                    raise RuntimeError("Reboot countdown sequence is already active.") from err
+            except OSError as err:
+                log.warning("OS error inspecting reboot lock file %s: %s", self.lock_file, err)
                 if self.lock_file.exists():
                     raise RuntimeError("Reboot countdown sequence is already active.") from err
 

@@ -46,8 +46,11 @@ def _resolve_default_ledger_path() -> Path:
     try:
         var_lib.parent.mkdir(parents=True, exist_ok=True)
         return var_lib
-    except (PermissionError, OSError) as err:
-        log.debug("System ledger dir /var/lib/palmanager uncreatable (%s), using home dir fallback.", err)
+    except PermissionError as err:
+        log.debug("Permission denied creating /var/lib/palmanager (%s), using home dir fallback.", err)
+        return Path.home() / ".palmanager" / "players.json"
+    except OSError as err:
+        log.debug("OS error creating /var/lib/palmanager (%s), using home dir fallback.", err)
         return Path.home() / ".palmanager" / "players.json"
 
 

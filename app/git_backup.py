@@ -54,8 +54,11 @@ class IsolatedGitBackupManager:
             try:
                 default_dir.mkdir(parents=True, exist_ok=True)
                 self.backup_repo_dir = default_dir
-            except (PermissionError, OSError) as err:
-                log.debug("System backup repo dir %s unwritable (%s), using home dir fallback.", default_dir, err)
+            except PermissionError as err:
+                log.debug("Permission denied creating backup dir %s (%s), using home dir fallback.", default_dir, err)
+                self.backup_repo_dir = (Path.home() / ".palmanager" / "backups").resolve()
+            except OSError as err:
+                log.debug("OS error creating backup dir %s (%s), using home dir fallback.", default_dir, err)
                 self.backup_repo_dir = (Path.home() / ".palmanager" / "backups").resolve()
 
         self.backup_branch: str = backup_branch
@@ -85,9 +88,18 @@ class IsolatedGitBackupManager:
         """Initializes repository directory and Git configuration if not present."""
         try:
             self.backup_repo_dir.mkdir(parents=True, exist_ok=True)
-        except (PermissionError, OSError) as err:
+        except PermissionError as err:
             log.warning(
                 "Permission denied initializing backup repo at %s: %s. Falling back to home directory.",
+                self.backup_repo_dir,
+                err,
+            )
+            self.backup_repo_dir = (Path.home() / ".palmanager" / "backups").resolve()
+            self.staged_file = self.backup_repo_dir / "PalWorldSettings.ini"
+            self.backup_repo_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as err:
+            log.warning(
+                "OS error initializing backup repo at %s: %s. Falling back to home directory.",
                 self.backup_repo_dir,
                 err,
             )

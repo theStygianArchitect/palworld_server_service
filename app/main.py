@@ -141,8 +141,10 @@ async def lifespan(_: FastAPI):
                     stale_age,
                 )
                 engine.lock_file.unlink(missing_ok=True)
-        except (OSError, PermissionError) as err:
-            log.debug("Error checking lock file on startup: %s", err)
+        except PermissionError as err:
+            log.debug("Permission denied checking lock file on startup: %s", err)
+        except OSError as err:
+            log.debug("OS error checking lock file on startup: %s", err)
 
     stream_task = asyncio.create_task(telemetry_streamer())
 
@@ -172,8 +174,10 @@ async def lifespan(_: FastAPI):
         if hasattr(handler, "flush"):
             try:
                 handler.flush()
-            except (OSError, RuntimeError) as err:
-                log.debug("Handler flush error during shutdown: %s", err)
+            except OSError as err:
+                log.debug("OS error flushing log handler during shutdown: %s", err)
+            except RuntimeError as err:
+                log.debug("Runtime error flushing log handler during shutdown: %s", err)
 
 
 app = FastAPI(

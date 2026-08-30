@@ -81,8 +81,11 @@ class DiscordNotifier:
                     try:
                         retry_data = res.json()
                         retry_after = float(retry_data.get("retry_after", 1.5))
-                    except (ValueError, KeyError) as err:
-                        log.debug("Could not parse Discord rate limit body: %s", err)
+                    except ValueError as err:
+                        log.debug("Discord rate limit JSON/float parsing error: %s", err)
+                        retry_after = 2.0
+                    except KeyError as err:
+                        log.debug("Discord rate limit response missing retry_after key: %s", err)
                         retry_after = 2.0
                     log.warning("Discord webhook rate-limited (HTTP 429). Retrying after %.1fs...", retry_after)
                     await asyncio.sleep(retry_after)

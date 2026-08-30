@@ -89,9 +89,12 @@ def scan_file(file_path: Path) -> list[str]:
     violations: list[str] = []
     try:
         content = file_path.read_text(encoding="utf-8", errors="ignore")
-    except (OSError, PermissionError) as err:
-        sys.stderr.write(f"Could not read file {file_path}: {err}\n")
-        return [f"{file_path}: Could not read file: {err}"]
+    except PermissionError as err:
+        sys.stderr.write(f"Permission denied reading file {file_path}: {err}\n")
+        return [f"{file_path}: Permission denied: {err}"]
+    except OSError as err:
+        sys.stderr.write(f"OS error reading file {file_path}: {err}\n")
+        return [f"{file_path}: OS error: {err}"]
 
     for line_no, line in enumerate(content.splitlines(), start=1):
         clean_line = line.strip()
