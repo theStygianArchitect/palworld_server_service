@@ -39,11 +39,7 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             ini_path (str | Path | None): Optional path to PalWorldSettings.ini.
         """
         super().__init__(settings_cls)
-        default_path = (
-            "/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
-            if os.name != "nt"
-            else Path.home() / ".palmanager" / "PalWorldSettings.ini"
-        )
+        default_path = _resolve_default_ini_path()
         if ini_path is not None:
             self.ini_path = Path(ini_path)
         else:
@@ -86,6 +82,22 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
         except OSError as err:
             log.warning("OS error reading PalWorldSettings.ini at %s: %s", self.ini_path, err)
             return {}
+
+
+def _resolve_default_ini_path() -> str:
+    """Returns the production steam INI path if accessible, else falls back to ~/.palmanager."""
+    steam_path = Path("/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini")
+    if os.name != "nt" and Path("/home/steam").exists():
+        return str(steam_path)
+    return str(Path.home() / ".palmanager" / "PalWorldSettings.ini")
+
+
+def _resolve_default_backup_dir() -> str:
+    """Returns the production steam backups path if accessible, else falls back to ~/.palmanager."""
+    steam_backup = Path("/home/steam/Palworld_backups")
+    if os.name != "nt" and Path("/home/steam").exists():
+        return str(steam_backup)
+    return str(Path.home() / ".palmanager" / "Palworld_backups")
 
 
 def _resolve_default_backup_repo_dir() -> str:
@@ -176,9 +188,7 @@ class AppSettings(BaseSettings):
     # Paths & Service Configurations
     web_port: int = Field(default=8080, alias="WEB_PORT")
     ini_path: str = Field(
-        default="/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
-        if os.name != "nt"
-        else str(Path.home() / ".palmanager" / "PalWorldSettings.ini"),
+        default_factory=_resolve_default_ini_path,
         alias="INI_PATH",
     )
     service_name: str = Field(default="palworld.service", alias="SERVICE_NAME")
@@ -187,9 +197,7 @@ class AppSettings(BaseSettings):
         alias="BACKUP_REPO_DIR",
     )
     backup_dir: str = Field(
-        default="/home/steam/Palworld_backups"
-        if os.name != "nt"
-        else str(Path.home() / ".palmanager" / "Palworld_backups"),
+        default_factory=_resolve_default_backup_dir,
         alias="BACKUP_DIR",
     )
     log_dir: str = Field(

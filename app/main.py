@@ -293,8 +293,19 @@ async def save_sanitized_settings(payload: GameplaySettingsSchema) -> dict[str, 
         sanitized_dict = payload.model_dump(exclude_unset=True)
         serialized_ini = pipeline.merge_and_serialize(sanitized_dict)
         ini_file = Path(settings.ini_path)
-        ini_file.parent.mkdir(parents=True, exist_ok=True)
-        ini_file.write_text(serialized_ini, encoding="utf-8")
+        try:
+            ini_file.parent.mkdir(parents=True, exist_ok=True)
+            ini_file.write_text(serialized_ini, encoding="utf-8")
+        except PermissionError as err:
+            log.warning("Permission denied writing INI at %s: %s. Using home directory fallback.", ini_file, err)
+            ini_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
+            ini_file.parent.mkdir(parents=True, exist_ok=True)
+            ini_file.write_text(serialized_ini, encoding="utf-8")
+        except OSError as err:
+            log.warning("OS error writing INI at %s: %s. Using home directory fallback.", ini_file, err)
+            ini_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
+            ini_file.parent.mkdir(parents=True, exist_ok=True)
+            ini_file.write_text(serialized_ini, encoding="utf-8")
         commit = git_mgr.create_commit("SAVE", "Web UI sanitized update")
         reload_settings()
         log.info("Saved settings cleanly to disk. Git snapshot: %s", commit)

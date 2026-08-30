@@ -25,15 +25,26 @@ from .notifications import DiscordNotifier
 from .tracker import CommunityTracker
 from .types import EngineMetrics, LifecycleState, ReadinessInfo
 
-DEFAULT_INI_PATH: Path = (
-    Path("/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini")
-    if os.name != "nt"
-    else Path.home() / ".palmanager" / "PalWorldSettings.ini"
-)
+
+def _resolve_default_ini_path() -> Path:
+    """Returns the production steam INI path if accessible, else falls back to ~/.palmanager."""
+    steam_path = Path("/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini")
+    if os.name != "nt" and Path("/home/steam").exists():
+        return steam_path
+    return Path.home() / ".palmanager" / "PalWorldSettings.ini"
+
+
+def _resolve_default_update_flag() -> Path:
+    """Returns the production steam update flag path if accessible, else falls back to ~/.palmanager."""
+    steam_flag = Path("/home/steam/.update_requested")
+    if os.name != "nt" and Path("/home/steam").exists():
+        return steam_flag
+    return Path.home() / ".palmanager" / ".update_requested"
+
+
+DEFAULT_INI_PATH: Path = _resolve_default_ini_path()
 DEFAULT_SERVICE_NAME: str = "palworld.service"
-DEFAULT_UPDATE_FLAG: Path = (
-    Path("/home/steam/.update_requested") if os.name != "nt" else Path.home() / ".palmanager" / ".update_requested"
-)
+DEFAULT_UPDATE_FLAG: Path = _resolve_default_update_flag()
 DEFAULT_LOCK_FILE: Path = Path(tempfile.gettempdir()) / "palworld_reboot.lock"
 
 COUNTDOWN_DISCORD_INTERVALS: set[int] = {600, 300, 60}
