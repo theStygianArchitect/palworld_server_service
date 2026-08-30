@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+import shutil
 import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -54,8 +56,10 @@ async def telemetry_streamer() -> None:
             liveness = False
             if os.name != "nt":
                 try:
+                    sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
+                    systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"
                     proc = subprocess.run(
-                        ["sudo", "/bin/systemctl", "is-active", settings.service_name],
+                        [sudo_bin, systemctl_bin, "is-active", settings.service_name],
                         capture_output=True,
                         text=True,
                         timeout=5,
@@ -373,6 +377,8 @@ async def get_diff(commit_hash: str) -> dict[str, Any]:
     Returns:
         dict[str, Any]: Dictionary containing unified diff text.
     """
+    if not re.match(r"^[a-fA-F0-9]{4,64}$", commit_hash):
+        raise HTTPException(status_code=400, detail="Invalid Git commit hash format.")
     return {"status": "success", "diff": git_mgr.get_diff(commit_hash)}
 
 
@@ -386,7 +392,11 @@ async def restore_commit(commit_hash: str) -> dict[str, Any]:
     Returns:
         dict[str, Any]: Success response.
     """
+    if not re.match(r"^[a-fA-F0-9]{4,64}$", commit_hash):
+        raise HTTPException(status_code=400, detail="Invalid Git commit hash format.")
     log.info("Restoring configuration from snapshot %s", commit_hash)
-    git_mgr.restore_commit(commit_hash)
+    success = git_mgr.restore_commit(commit_hash)
+    if not success:
+        raise HTTPException(status_code=400, detail=f"Failed to restore commit {commit_hash}.")
     reload_settings()
     return {"status": "success", "message": f"Restored configuration from {commit_hash}."}

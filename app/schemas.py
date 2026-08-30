@@ -209,4 +209,10 @@ class SettingsRestoreRequest(BaseModel):
         commit_hash (str): Target Git commit hash identifier to roll back to.
     """
 
-    commit_hash: str = Field(..., min_length=4, max_length=64, description="Target Git commit hash to roll back to")
+    commit_hash: str = Field(
+        ...,
+        min_length=4,
+        max_length=64,
+        pattern=r"^[a-fA-F0-9]{4,64}$",
+        description="Target Git commit hash to roll back to",
+    )

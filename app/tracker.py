@@ -12,6 +12,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import time
@@ -309,7 +310,9 @@ class CommunityTracker:
 
         if os.name != "nt":
             try:
-                cmd = ["sudo", "journalctl", "-u", "palworld.service", "-n", "300", "--no-pager"]
+                sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
+                journalctl_bin = shutil.which("journalctl") or "/bin/journalctl"
+                cmd = [sudo_bin, journalctl_bin, "-u", "palworld.service", "-n", "300", "--no-pager"]
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
                 if proc.returncode == 0:
                     pattern = (

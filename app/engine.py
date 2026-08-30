@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -81,6 +83,9 @@ class PalEngine:
             service_name (str | None): Systemd service unit name.
             update_flag (str | Path | None): SteamCMD update flag path.
             lock_file (str | Path | None): Reboot lock file path.
+
+        Raises:
+            ValueError: If service_name contains illegal shell characters.
         """
         self.admin_password: str = admin_password or os.getenv("PALWORLD_ADMIN_PASSWORD") or "admin_password"
         self.rest_port: int = rest_port or int(os.getenv("PALWORLD_REST_PORT", "8212"))
@@ -88,7 +93,10 @@ class PalEngine:
         self.domain: str = domain or os.getenv("PALWORLD_SERVER_DOMAIN") or "yourdomain.duckdns.org"
 
         self.ini_path: Path = Path(ini_path) if ini_path else DEFAULT_INI_PATH
-        self.service_name: str = service_name or os.getenv("PALWORLD_SERVICE_NAME") or DEFAULT_SERVICE_NAME
+        raw_svc = service_name or os.getenv("PALWORLD_SERVICE_NAME") or DEFAULT_SERVICE_NAME
+        if not re.match(r"^[a-zA-Z0-9_.\-]+$", raw_svc):
+            raise ValueError(f"Invalid service_name format: {raw_svc}")
+        self.service_name: str = raw_svc
         self.update_flag: Path = Path(update_flag) if update_flag else DEFAULT_UPDATE_FLAG
         self.lock_file: Path = Path(lock_file) if lock_file else DEFAULT_LOCK_FILE
 
@@ -464,7 +472,9 @@ class PalEngine:
                 if os.name != "nt":
                     log.info("Triggering systemctl restart for %s", self.service_name)
                     try:
-                        subprocess.run(["sudo", "/bin/systemctl", "restart", self.service_name], check=False)
+                        sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
+                        systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"
+                        subprocess.run([sudo_bin, systemctl_bin, "restart", self.service_name], check=False)
                     except OSError as err:
                         log.error("Failed to execute systemctl restart: %s", err)
 

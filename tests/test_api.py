@@ -84,12 +84,23 @@ def test_api_backups_routes():
     assert commits_res.status_code == 200
     assert commits_res.json()["status"] == "success"
 
-    # Diff route
-    diff_res = client.get("/api/backups/diff/nonexistent")
-    assert diff_res.status_code == 200
-    assert diff_res.json()["status"] == "success"
+    # Invalid non-hex hash returns 400 Bad Request
+    invalid_diff = client.get("/api/backups/diff/invalid_hash_string")
+    assert invalid_diff.status_code == 400
 
-    # Restore route
-    restore_res = client.post("/api/backups/restore/nonexistent")
-    assert restore_res.status_code == 200
-    assert restore_res.json()["status"] == "success"
+    invalid_restore = client.post("/api/backups/restore/invalid_hash_string")
+    assert invalid_restore.status_code == 400
+
+    # Valid hex hash diff route
+    with patch("app.main.git_mgr.get_diff", return_value="--- a\n+++ b"):
+        diff_res = client.get("/api/backups/diff/abcd1234ef01")
+        assert diff_res.status_code == 200
+        assert diff_res.json()["status"] == "success"
+        assert "diff" in diff_res.json()
+
+    # Valid hex hash restore route
+    with patch("app.main.git_mgr.restore_commit", return_value=True):
+        with patch("app.main.reload_settings"):
+            restore_res = client.post("/api/backups/restore/abcd1234ef01")
+            assert restore_res.status_code == 200
+            assert restore_res.json()["status"] == "success"

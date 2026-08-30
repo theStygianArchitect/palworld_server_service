@@ -7,6 +7,8 @@ enabling diff inspections and atomic rollbacks with administrative credential re
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -54,8 +56,9 @@ class IsolatedGitBackupManager:
         Returns:
             subprocess.CompletedProcess[str]: Completed process result containing stdout and stderr.
         """
+        git_bin = shutil.which("git") or "git"
         return subprocess.run(
-            ["git"] + args,
+            [git_bin] + args,
             cwd=str(self.backup_repo_dir),
             capture_output=True,
             text=True,
@@ -164,6 +167,10 @@ class IsolatedGitBackupManager:
         Returns:
             str: Unified diff text string.
         """
+        if not re.match(r"^[a-fA-F0-9]{4,64}$", commit_hash):
+            log.warning("Invalid commit hash rejected for diff: %s", commit_hash)
+            return ""
+
         try:
             res = self._run_git(["show", "--color=never", commit_hash, "--", self.staged_file.name], check=False)
             return res.stdout if res.returncode == 0 else ""
@@ -183,6 +190,10 @@ class IsolatedGitBackupManager:
         Returns:
             bool: True if rollback was successfully merged and persisted to disk.
         """
+        if not re.match(r"^[a-fA-F0-9]{4,64}$", commit_hash):
+            log.warning("Invalid commit hash rejected for restore: %s", commit_hash)
+            return False
+
         try:
             res = self._run_git(["checkout", commit_hash, "--", self.staged_file.name], check=False)
             if res.returncode != 0:

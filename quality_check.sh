@@ -18,6 +18,17 @@ run_ast_exception_audit() {
   echo "[+] Passed AST exception audit."
 }
 
+run_secret_scan() {
+  echo ">>> Starting repository-wide hardcoded secret and credential audit..."
+  uv run python scripts/scan_secrets.py
+  exit_code=$?
+  if [ ${exit_code} -ne 0 ]; then
+    echo "[-] Secret scan failed: potential hardcoded credentials or tokens found."
+    exit ${exit_code}
+  fi
+  echo "[+] Passed secret scan."
+}
+
 run_bandit_check() {
   echo ">>> [1/7] Starting bandit security check..."
   for python_file in "${app_directory_list[@]}"; do
@@ -182,6 +193,7 @@ run_security_check() {
   echo "========================================================================="
   echo " Running Security Checks"
   echo "========================================================================="
+  run_secret_scan
   run_bandit_check
   run_dependency_check
 }
@@ -199,6 +211,7 @@ quality_check() {
   echo "========================================================================="
   echo " Running Master Quality Suite"
   echo "========================================================================="
+  run_secret_scan
   run_ast_exception_audit
   run_dependency_check
   run_bandit_check
