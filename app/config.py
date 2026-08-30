@@ -7,6 +7,7 @@ hot-reloading of server configuration using Pydantic Settings and pathlib.Path.
 from __future__ import annotations
 
 import os
+import socket
 from pathlib import Path
 from typing import Any
 
@@ -182,9 +183,19 @@ def _resolve_default_log_dir() -> str:
     except PermissionError as err:
         log.debug("Permission denied creating /var/log/palmanager (%s), using home dir fallback.", err)
         return str(Path.home() / ".palmanager" / "logs")
+
+
+def _resolve_default_host_ip() -> str:
+    """Discovers the active host primary LAN IP address (e.g. eth0 / 192.168.x.x)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            detected_ip = s.getsockname()[0]
+            if detected_ip and not detected_ip.startswith("127."):
+                return str(detected_ip)
     except OSError as err:
-        log.debug("OS error creating /var/log/palmanager (%s), using home dir fallback.", err)
-        return str(Path.home() / ".palmanager" / "logs")
+        log.debug("Socket probe for default LAN IP failed: %s", err)
+    return "127.0.0.1"
 
 
 class AppSettings(BaseSettings):
@@ -279,7 +290,7 @@ class AppSettings(BaseSettings):
         ),
     )
     host_ip: str = Field(
-        default="127.0.0.1",
+        default_factory=_resolve_default_host_ip,
         validation_alias=AliasChoices("PALWORLD_HOST_IP", "HOST_IP", "host_ip"),
     )
     discord_webhook_url: str | None = Field(

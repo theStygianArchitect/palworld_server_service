@@ -57,6 +57,45 @@ def _resolve_default_ledger_path() -> Path:
 DEFAULT_LEDGER_PATH: Path = _resolve_default_ledger_path()
 
 
+def resolve_host_lan_ip() -> str:
+    """Discovers the active host primary LAN IP address (e.g. eth0 / 192.168.x.x)."""
+    env_ip = os.getenv("PALWORLD_HOST_IP") or os.getenv("HOST_IP")
+    if env_ip and env_ip != "127.0.0.1":
+        return env_ip
+
+    # 1. Socket routing probe (connects to a public DNS IP without transmitting packets)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            detected_ip = s.getsockname()[0]
+            if detected_ip and not detected_ip.startswith("127."):
+                return detected_ip
+    except OSError as err:
+        log.debug("Socket routing LAN IP probe failed: %s", err)
+
+    # 2. Network interfaces probe via psutil (eth0, eno1, enp*, wlan*, Ethernet)
+    try:
+        import psutil
+
+        for iface_name, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.family == socket.AF_INET and not addr.address.startswith("127."):
+                    if iface_name.startswith(("eth", "en", "wl", "bond", "Ethernet", "Wi-Fi")):
+                        return addr.address
+    except Exception as err:
+        log.debug("Psutil network interface probe failed: %s", err)
+
+    # 3. Hostname DNS resolution
+    try:
+        host_ip = socket.gethostbyname(socket.gethostname())
+        if host_ip and not host_ip.startswith("127."):
+            return host_ip
+    except Exception as err:
+        log.debug("Hostname LAN IP resolution failed: %s", err)
+
+    return "127.0.0.1"
+
+
 class CommunityTracker:
     """Probes Palworld community listings, A2S UDP sockets, and bare-metal resource telemetry.
 
@@ -82,7 +121,6 @@ class CommunityTracker:
         cached_public_ip (str): Cached WAN public IP string.
         cached_dns_ip (str): Cached DuckDNS resolved IP string.
         last_ip_check (float): Epoch timestamp of last WAN/DNS probe.
-        players_history (dict[str, PlayerRecord]): Mapping of player IDs to historical records.
     """
 
     def __init__(
@@ -471,7 +509,7 @@ class CommunityTracker:
                     except OSError as err:
                         log.debug("Failed to spawn background DuckDNS sync: %s", err)
 
-        lan_ip = os.getenv("PALWORLD_HOST_IP", "127.0.0.1")
+        lan_ip = resolve_host_lan_ip()
         public_port = 8211
         direct_host = self.domain if (self.domain and "yourdomain" not in self.domain) else self.cached_public_ip
 
@@ -628,7 +666,7 @@ class CommunityTracker:
         await self.probe_steam_a2s_info(host=host_ip or "127.0.0.1", port=public_port)
         log_res = self.probe_local_logs()
 
-        lan_ip: str = host_ip or os.getenv("PALWORLD_HOST_IP") or "127.0.0.1"
+        lan_ip: str = host_ip if (host_ip and host_ip != "127.0.0.1") else resolve_host_lan_ip()
 
         direct_connect_host = (
             self.domain
@@ -650,7 +688,7 @@ class CommunityTracker:
             badge_style = "bg-slate-800 border border-slate-700 text-slate-300"
             badge_dot = "bg-slate-400"
         else:
-            badge_label = f"Direct Connect ({lan_ip}:{public_port})"
+            badge_label = f"Direct Connect ({direct_connect_host}:{public_port})"
             badge_style = "bg-amber-900/60 border border-amber-500/50 text-amber-300"
             badge_dot = "bg-amber-400"
 
