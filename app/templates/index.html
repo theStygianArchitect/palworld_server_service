@@ -736,8 +736,10 @@
 
     function updateTelemetry(data) {
       // 1. Connection Copy Box
-      if (data.server_name) document.getElementById('copyServerName').innerText = data.server_name;
-      liveServerPassword = data.server_password || "";
+      const sName = data.server_name || (data.security_matrix && data.security_matrix.server_name) || (data.a2s_telemetry && data.a2s_telemetry.server_name);
+      if (sName) document.getElementById('copyServerName').innerText = sName;
+      
+      liveServerPassword = data.server_password || (data.security_matrix ? data.security_matrix.server_password : "") || "";
       if (liveServerPassword) {
         document.getElementById('copyPasswordText').innerText = "•••••••• (Set)";
         document.getElementById('copyPasswordBtn').disabled = false;

@@ -96,6 +96,8 @@ async def telemetry_streamer() -> None:
                     "liveness": liveness,
                     "readiness": readiness_data["ready"],
                     "version": readiness_data["version"],
+                    "server_name": settings.ServerName,
+                    "server_password": settings.ServerPassword,
                     "server_fps": metrics.get("server_fps", 0),
                     "server_frame_time_ms": metrics.get("server_frame_time_ms", 0.0),
                     "uptime_seconds": metrics.get("uptime_seconds", 0),
