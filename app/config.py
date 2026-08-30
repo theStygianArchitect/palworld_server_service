@@ -44,7 +44,12 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             self.ini_path = Path(ini_path)
         else:
             env_path = os.getenv("PALWORLD_INI_PATH")
-            self.ini_path = Path(env_path) if env_path else Path(default_path)
+            if env_path and Path(env_path).is_file():
+                self.ini_path = Path(env_path)
+            elif env_path and Path(env_path).parent.exists():
+                self.ini_path = Path(env_path)
+            else:
+                self.ini_path = Path(default_path)
 
     def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
         """Required abstract method implementation for Pydantic custom source.
@@ -65,6 +70,10 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             dict[str, Any]: Dictionary of configuration keys parsed from INI.
         """
         if not self.ini_path.exists():
+            log.warning(
+                "PalWorldSettings.ini not found at %s. Admin password and ports will fallback to environment/defaults.",
+                self.ini_path,
+            )
             return {}
 
         try:
@@ -72,6 +81,28 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             mapped: dict[str, Any] = {}
             for k, v in ini_data.items():
                 mapped[k] = v
+                mapped[k.upper()] = v
+                if k == "AdminPassword":
+                    mapped["ADMIN_PASSWORD"] = v
+                    mapped["admin_password"] = v
+                elif k == "ServerPassword":
+                    mapped["SERVER_PASSWORD"] = v
+                    mapped["server_password"] = v
+                elif k == "ServerName":
+                    mapped["SERVER_NAME"] = v
+                    mapped["server_name"] = v
+                elif k == "PublicPort":
+                    mapped["PUBLIC_PORT"] = v
+                elif k == "RCONPort":
+                    mapped["RCON_PORT"] = v
+                elif k == "RESTAPIPort":
+                    mapped["REST_PORT"] = v
+                    mapped["RESTAPIPORT"] = v
+            log.info(
+                "Loaded configuration from %s (AdminPassword found: %s)",
+                self.ini_path,
+                bool(mapped.get("AdminPassword")),
+            )
             return mapped
         except FileNotFoundError as err:
             log.debug("PalWorldSettings.ini not found during settings load at %s: %s", self.ini_path, err)
@@ -85,10 +116,34 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
 
 
 def _resolve_default_ini_path() -> str:
-    """Returns the production steam INI path if accessible, else falls back to ~/.palmanager."""
-    steam_path = Path("/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini")
-    if os.name != "nt" and Path("/home/steam").exists():
-        return str(steam_path)
+    """Finds the active PalWorldSettings.ini across standard Steam and custom directories."""
+    candidate_paths = [
+        Path("/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
+        Path("/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
+        Path("/home/steam/Steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
+        Path(
+            "/home/steam/.local/share/Steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
+        ),
+        Path("/home/steam/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
+        Path("/opt/palworld/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
+        Path.home() / ".palmanager" / "PalWorldSettings.ini",
+    ]
+    for p in candidate_paths:
+        try:
+            if p.is_file():
+                return str(p)
+        except PermissionError as err:
+            log.debug("Permission error checking candidate path %s: %s", p, err)
+        except OSError as err:
+            log.debug("OS error checking candidate path %s: %s", p, err)
+
+    if os.name != "nt":
+        if Path("/home/steam/.steam/steam/steamapps").exists():
+            return str(candidate_paths[0])
+        if Path("/home/steam/.steam/steamapps").exists():
+            return str(candidate_paths[1])
+        if Path("/home/steam").exists():
+            return str(candidate_paths[0])
     return str(Path.home() / ".palmanager" / "PalWorldSettings.ini")
 
 

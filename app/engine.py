@@ -27,10 +27,34 @@ from .types import EngineMetrics, LifecycleState, ReadinessInfo
 
 
 def _resolve_default_ini_path() -> Path:
-    """Returns the production steam INI path if accessible, else falls back to ~/.palmanager."""
-    steam_path = Path("/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini")
-    if os.name != "nt" and Path("/home/steam").exists():
-        return steam_path
+    """Finds the active PalWorldSettings.ini across standard Steam and custom directories."""
+    candidate_paths = [
+        Path("/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
+        Path("/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
+        Path("/home/steam/Steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
+        Path(
+            "/home/steam/.local/share/Steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
+        ),
+        Path("/home/steam/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
+        Path("/opt/palworld/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
+        Path.home() / ".palmanager" / "PalWorldSettings.ini",
+    ]
+    for p in candidate_paths:
+        try:
+            if p.is_file():
+                return p
+        except PermissionError as err:
+            log.debug("Permission error checking candidate path %s: %s", p, err)
+        except OSError as err:
+            log.debug("OS error checking candidate path %s: %s", p, err)
+
+    if os.name != "nt":
+        if Path("/home/steam/.steam/steam/steamapps").exists():
+            return candidate_paths[0]
+        if Path("/home/steam/.steam/steamapps").exists():
+            return candidate_paths[1]
+        if Path("/home/steam").exists():
+            return candidate_paths[0]
     return Path.home() / ".palmanager" / "PalWorldSettings.ini"
 
 
