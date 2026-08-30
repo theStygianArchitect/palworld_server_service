@@ -61,44 +61,79 @@ class GameplaySettingsSchema(BaseModel):
         SupplyDropSpan (int | None): Interval in minutes between meteorite supply drops.
     """
 
+    # 🌐 Crossplay & Matchmaking
     ServerName: str | None = Field(default="The Cool Kids Palworld Server", max_length=128)
     ServerDescription: str | None = Field(default="", max_length=256)
     Region: str | None = Field(default="", max_length=32)
+    CrossplayPlatforms: str | None = Field(default="(Steam,Xbox,PS5,Mac)")
+    AllowConnectPlatform: str | None = Field(default="(Steam,Xbox,PS5,Mac)")
+    bIsMultiplay: bool | None = False
+    bShowPlayerList: bool | None = False
+    bIsShowJoinLeftMessage: bool | None = True
+    ServerPlayerMaxNum: int | None = Field(default=32, ge=1, le=32)
+    CoopPlayerMaxNum: int | None = Field(default=4, ge=1, le=4)
+    bUseBackupSaveData: bool | None = True
 
-    DayTimeSpeedRate: float | None = Field(default=1.0, ge=0.1, le=10.0)
-    NightTimeSpeedRate: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    # ⚡ Progression & Leveling
+    Difficulty: str | None = Field(default="None")
     ExpRate: float | None = Field(default=1.0, ge=0.1, le=20.0)
     PalCaptureRate: float | None = Field(default=1.0, ge=0.5, le=5.0)
-    PalSpawnNumRate: float | None = Field(default=1.0, ge=0.5, le=3.0)
-    PalDamageRateAttack: float | None = Field(default=1.0, ge=0.1, le=10.0)
-    PalDamageRateDefense: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    PalEggDefaultHatchingTime: float | None = Field(default=0.0, ge=0.0, le=240.0)
+    WorkSpeedRate: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    DayTimeSpeedRate: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    NightTimeSpeedRate: float | None = Field(default=1.0, ge=0.1, le=10.0)
+
+    # 🛡️ Stamina & Survival
+    PlayerStaminaDecreaceRate: float | None = Field(default=1.0, ge=0.1, le=5.0)
+    PalStaminaDecreaceRate: float | None = Field(default=1.0, ge=0.1, le=5.0)
+    PlayerStomachDecreaceRate: float | None = Field(default=1.0, ge=0.1, le=5.0)
+    PalStomachDecreaceRate: float | None = Field(default=1.0, ge=0.1, le=5.0)
+    PlayerAutoHPRegeneRate: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    PlayerAutoHPRegeneRateInSleep: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    PalAutoHPRegeneRate: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    PalAutoHPRegeneRateInSleep: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    bEnableNonLoginPenalty: bool | None = True
+    bEnableFastTravel: bool | None = True
+    bIsStartLocationSelectByMap: bool | None = True
+    bExistPlayerAfterLogout: bool | None = False
+
+    # ⚔️ Combat & Death Rules
+    DeathPenalty: str | None = Field(default="None")
+    bEnableInvaderEnemy: bool | None = True
+    bEnablePlayerToPlayerDamage: bool | None = False
+    bEnableFriendlyFire: bool | None = False
+    bEnableDefenseOtherGuildPlayer: bool | None = False
+    bInvisibleOtherGuildBaseCampAreaFX: bool | None = False
     PlayerDamageRateAttack: float | None = Field(default=1.0, ge=0.1, le=10.0)
     PlayerDamageRateDefense: float | None = Field(default=1.0, ge=0.1, le=10.0)
-    PlayerStomachDecreaceRate: float | None = Field(default=1.0, ge=0.1, le=5.0)
-    PlayerStaminaDecreaceRate: float | None = Field(default=1.0, ge=0.1, le=5.0)
-    PalStomachDecreaceRate: float | None = Field(default=1.0, ge=0.1, le=5.0)
-    PalStaminaDecreaceRate: float | None = Field(default=1.0, ge=0.1, le=5.0)
+    PalDamageRateAttack: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    PalDamageRateDefense: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    PalDamageRateToPlayer: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    PalDamageRateFromPlayer: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    bEnableAimAssistPad: bool | None = True
+    bEnableAimAssistKeyboard: bool | None = False
 
+    # 🏰 Base Camps & Guild Scaling
+    BaseCampMaxNum: int | None = Field(default=128, ge=1, le=256)
+    BaseCampMaxNumInGuild: int | None = Field(default=4, ge=1, le=20)
+    BaseCampWorkerMaxNum: int | None = Field(default=20, ge=1, le=50)
+    GuildPlayerMaxNum: int | None = Field(default=20, ge=1, le=100)
+    MaxBuildingLimitNum: int | None = Field(default=0, ge=0, le=10000)
+    BuildObjectDamageRate: float | None = Field(default=1.0, ge=0.1, le=10.0)
+    BuildObjectDeteriorationDamageRate: float | None = Field(default=1.0, ge=0.0, le=10.0)
+    AutoResetGuildNoOnlinePlayers: bool | None = False
+    AutoResetGuildTimeNoOnlinePlayers: float | None = Field(default=72.0, ge=0.0, le=720.0)
+
+    # 📦 Gathering, Drops & Spawns
     CollectionDropRate: float | None = Field(default=1.0, ge=0.5, le=10.0)
     CollectionObjectHpRate: float | None = Field(default=1.0, ge=0.5, le=10.0)
     CollectionObjectRespawnSpeedRate: float | None = Field(default=1.0, ge=0.5, le=10.0)
     EnemyDropItemRate: float | None = Field(default=1.0, ge=0.5, le=10.0)
-    DeathPenalty: str | None = Field(default="None")
-    bEnablePlayerToPlayerDamage: bool | None = False
-    bEnableFriendlyFire: bool | None = False
-    bEnableInvaderEnemy: bool | None = True
+    PalSpawnNumRate: float | None = Field(default=1.0, ge=0.5, le=3.0)
+    DropItemMaxNum: int | None = Field(default=3000, ge=0, le=5000)
+    DropItemMaxNum_UNKO: int | None = Field(default=100, ge=0, le=500)
+    DropItemAliveMaxHours: float | None = Field(default=1.0, ge=0.0, le=24.0)
     bActiveUNKO: bool | None = False
-
-    BaseCampMaxNum: int | None = Field(default=128, ge=1, le=256)
-    BaseCampWorkerMaxNum: int | None = Field(default=20, ge=1, le=50)
-    GuildPlayerMaxNum: int | None = Field(default=20, ge=1, le=100)
-    PalEggDefaultHatchingTime: float | None = Field(default=0.0, ge=0.0, le=240.0)
-    WorkSpeedRate: float | None = Field(default=1.0, ge=0.1, le=10.0)
-
-    CrossplayPlatforms: str | None = Field(default="(Steam,Xbox,PS5,Mac)")
-    bIsMultiplay: bool | None = False
-    bShowPlayerList: bool | None = False
-    bIsShowJoinLeftMessage: bool | None = True
     SupplyDropSpan: int | None = Field(default=180, ge=0, le=1000)
 
     @field_validator("ServerName", "ServerDescription", "Region")

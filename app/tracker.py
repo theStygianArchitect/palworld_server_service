@@ -320,7 +320,7 @@ class CommunityTracker:
         self.last_pocketpair_check = time.time()
 
     def probe_local_logs(self) -> LogScraperInfo:
-        """Scrapes systemd journalctl for Palworld EOS session & lobby initialization lines.
+        """Scrapes Palworld engine log files and systemd journalctl for EOS session & lobby initialization lines.
 
         Returns:
             LogScraperInfo: Scraped session information and status metadata.
@@ -336,46 +336,76 @@ class CommunityTracker:
                 "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
             }
 
-        if os.name != "nt":
+        lines_to_check: list[str] = []
+
+        # 1. First probe direct Pal.log file on disk
+        candidate_log_files = [
+            Path("/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Logs/Pal.log"),
+            Path("/home/steam/Steam/steamapps/common/PalServer/Pal/Saved/Logs/Pal.log"),
+            Path("/home/steam/PalServer/Pal/Saved/Logs/Pal.log"),
+        ]
+        for log_file in candidate_log_files:
+            if log_file.exists():
+                try:
+                    with log_file.open("r", encoding="utf-8", errors="ignore") as f:
+                        lines_to_check = f.readlines()[-300:]
+                    if lines_to_check:
+                        break
+                except PermissionError as err:
+                    log.debug("Permission denied reading %s: %s", log_file, err)
+                except OSError as err:
+                    log.debug("OS error reading %s: %s", log_file, err)
+
+        # 2. Fallback to systemd journalctl probe if Pal.log was empty or unreadable
+        if not lines_to_check and os.name != "nt":
             try:
                 sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
                 journalctl_bin = shutil.which("journalctl") or "/bin/journalctl"
                 cmd = [sudo_bin, journalctl_bin, "-u", "palworld.service", "-n", "300", "--no-pager"]
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
                 if proc.returncode == 0:
-                    pattern = (
-                        r"Created public lobby session|EOS-SDK.*sessions|"
-                        r"Lobby.*Registered|PublicSession|Steam server initialized"
-                    )
-                    for line in proc.stdout.splitlines():
-                        if re.search(pattern, line, re.IGNORECASE):
-                            self.log_registered = True
-                            self.log_last_matched_line = line.strip()
-
-                            match = re.search(r"SessionId:\s*([A-Za-z0-9_\-]+)", line)
-                            if match:
-                                self.log_session_id = match.group(1)
-
-                            if not self.log_first_seen:
-                                self.log_first_seen = datetime.datetime.now(datetime.timezone.utc).strftime(
-                                    "%Y-%m-%d %H:%M:%S"
-                                )
-
-                            return {
-                                "registered": True,
-                                "session_id": self.log_session_id,
-                                "first_seen": self.log_first_seen,
-                                "last_line": self.log_last_matched_line,
-                                "status_label": "CONSOLE SEARCH READY",
-                                "status_color": "emerald",
-                                "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
-                            }
+                    lines_to_check = proc.stdout.splitlines()
             except subprocess.TimeoutExpired as err:
                 log.debug("Journalctl probe timed out: %s", err)
             except subprocess.SubprocessError as err:
                 log.debug("Journalctl subprocess error: %s", err)
             except OSError as err:
                 log.debug("Journalctl execution OS error: %s", err)
+
+        if lines_to_check:
+            # Capture the latest meaningful engine activity line
+            for raw_line in reversed(lines_to_check):
+                clean_line = raw_line.strip()
+                if clean_line and not clean_line.startswith("=") and len(clean_line) > 5:
+                    self.log_last_matched_line = clean_line[:120]
+                    break
+
+            pattern = (
+                r"Created public lobby session|EOS-SDK.*sessions|"
+                r"Lobby.*Registered|PublicSession|Steam server initialized|"
+                r"Server registration succeeded|LogPalServer"
+            )
+            for line in lines_to_check:
+                if re.search(pattern, line, re.IGNORECASE):
+                    self.log_registered = True
+                    self.log_last_matched_line = line.strip()[:120]
+
+                    match = re.search(r"SessionId:\s*([A-Za-z0-9_\-]+)", line)
+                    if match:
+                        self.log_session_id = match.group(1)
+
+                    if not self.log_first_seen:
+                        self.log_first_seen = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+                    return {
+                        "registered": True,
+                        "session_id": self.log_session_id or "EOS-Session-Active",
+                        "first_seen": self.log_first_seen,
+                        "last_line": self.log_last_matched_line,
+                        "status_label": "CONSOLE SEARCH READY",
+                        "status_color": "emerald",
+                        "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
+                    }
 
         return {
             "registered": self.log_registered,
