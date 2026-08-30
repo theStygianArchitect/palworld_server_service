@@ -62,6 +62,7 @@ class AppSettings(BaseSettings):
     CrossplayPlatforms: str = Field(default="(Steam,Xbox,PS5,Mac)", alias="CROSSPLAY_PLATFORMS")
 
     # Paths & Service Configurations
+    web_port: int = Field(default=8080, alias="WEB_PORT")
     ini_path: str = Field(
         default="/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
         if os.name != "nt"

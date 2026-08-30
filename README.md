@@ -65,9 +65,9 @@ uv run pytest
 
 ### 3. Start Local Development Server
 ```bash
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8080
 ```
-Open [http://localhost:8000](http://localhost:8000) in your browser.
+Open [http://localhost:8080](http://localhost:8080) in your browser.
 
 ---
 
