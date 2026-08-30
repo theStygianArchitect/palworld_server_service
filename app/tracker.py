@@ -132,6 +132,7 @@ class CommunityTracker:
         self.cached_public_ip: str = "Detecting..."
         self.cached_dns_ip: str = "Resolving..."
         self.last_ip_check: float = 0.0
+        self._last_auto_duckdns_sync: float = 0.0
 
         # 5. Persistent Player Ledger
         self.players_history: dict[str, PlayerRecord] = self._load_player_ledger()
@@ -413,6 +414,22 @@ class CommunityTracker:
             and self.cached_dns_ip != "Unresolved"
             and self.cached_public_ip == self.cached_dns_ip
         )
+
+        if not is_aligned and self.domain and "yourdomain" not in self.domain:
+            now = time.time()
+            if now - self._last_auto_duckdns_sync > 300.0:
+                self._last_auto_duckdns_sync = now
+                duck_script = Path("/home/steam/duckdns/duck.sh")
+                if duck_script.exists():
+                    try:
+                        subprocess.Popen(
+                            ["/bin/bash", str(duck_script)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        log.info("Triggered background DuckDNS sync to heal WAN/DNS IP mismatch.")
+                    except OSError as err:
+                        log.debug("Failed to spawn background DuckDNS sync: %s", err)
 
         lan_ip = os.getenv("PALWORLD_HOST_IP", "127.0.0.1")
         public_port = 8211

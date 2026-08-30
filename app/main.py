@@ -119,6 +119,31 @@ async def telemetry_streamer() -> None:
         await asyncio.sleep(2)
 
 
+async def trigger_duckdns_sync() -> None:
+    """Invokes DuckDNS dynamic DNS updater on startup if available on the host."""
+    candidate_scripts = [
+        Path("/home/steam/duckdns/duck.sh"),
+        Path("/opt/palworld-web-manager/scripts/duck.sh"),
+    ]
+    for script in candidate_scripts:
+        if script.exists():
+            try:
+                log.info("Triggering DuckDNS dynamic DNS synchronization via %s", script)
+                proc = await asyncio.create_subprocess_exec(
+                    "/bin/bash",
+                    str(script),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=10.0)
+                log.info("DuckDNS synchronization complete (exit code: %s)", proc.returncode)
+                return
+            except asyncio.TimeoutError as err:
+                log.warning("DuckDNS sync script timed out: %s", err)
+            except OSError as err:
+                log.debug("DuckDNS sync script OS error: %s", err)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Manage application lifespan and background telemetry streaming loops.
@@ -147,6 +172,7 @@ async def lifespan(_: FastAPI):
         except OSError as err:
             log.debug("OS error checking lock file on startup: %s", err)
 
+    asyncio.create_task(trigger_duckdns_sync())
     stream_task = asyncio.create_task(telemetry_streamer())
 
     async def _send_startup_notice() -> None:
