@@ -39,7 +39,7 @@ from .schemas import (
 
 settings = get_settings()
 pipeline = ConfigPipeline(settings.ini_path)
-git_mgr = IsolatedGitBackupManager(settings.ini_path)
+git_mgr = IsolatedGitBackupManager(settings.ini_path, backup_repo_dir=settings.backup_repo_dir)
 engine = PalEngine(
     admin_password=settings.AdminPassword,
     rest_port=settings.RESTAPIPort,

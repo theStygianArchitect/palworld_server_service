@@ -29,19 +29,34 @@ class IsolatedGitBackupManager:
         staged_file (Path): Path to the staged INI copy within the backup repository.
     """
 
-    def __init__(self, live_ini_path: str | Path, backup_branch: str = "config-snapshots") -> None:
+    def __init__(
+        self,
+        live_ini_path: str | Path,
+        backup_repo_dir: str | Path | None = None,
+        backup_branch: str = "config-snapshots",
+    ) -> None:
         """Initializes the Git backup repository manager.
 
         Args:
             live_ini_path (str | Path): Filepath to live PalWorldSettings.ini.
+            backup_repo_dir (str | Path | None): Directory path for isolated Git backup repository.
             backup_branch (str): Branch name for configuration commits (default: 'config-snapshots').
         """
         self.live_ini_path: Path = Path(live_ini_path).resolve()
-        self.backup_repo_dir: Path = (
-            Path("/var/lib/palmanager/backups").resolve()
-            if os.name != "nt"
-            else (Path.home() / ".palmanager" / "backups").resolve()
-        )
+        if backup_repo_dir is not None:
+            self.backup_repo_dir: Path = Path(backup_repo_dir).resolve()
+        else:
+            default_dir = (
+                Path("/var/lib/palmanager/backups").resolve()
+                if os.name != "nt"
+                else (Path.home() / ".palmanager" / "backups").resolve()
+            )
+            try:
+                default_dir.mkdir(parents=True, exist_ok=True)
+                self.backup_repo_dir = default_dir
+            except (PermissionError, OSError):
+                self.backup_repo_dir = (Path.home() / ".palmanager" / "backups").resolve()
+
         self.backup_branch: str = backup_branch
         self.staged_file: Path = self.backup_repo_dir / "PalWorldSettings.ini"
         self._init_repo()
@@ -67,7 +82,18 @@ class IsolatedGitBackupManager:
 
     def _init_repo(self) -> None:
         """Initializes repository directory and Git configuration if not present."""
-        self.backup_repo_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.backup_repo_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as err:
+            log.warning(
+                "Permission denied initializing backup repo at %s: %s. Falling back to home directory.",
+                self.backup_repo_dir,
+                err,
+            )
+            self.backup_repo_dir = (Path.home() / ".palmanager" / "backups").resolve()
+            self.staged_file = self.backup_repo_dir / "PalWorldSettings.ini"
+            self.backup_repo_dir.mkdir(parents=True, exist_ok=True)
+
         if not (self.backup_repo_dir / ".git").exists():
             self._run_git(["init", "-b", self.backup_branch])
             self._run_git(["config", "user.name", "PalworldDaemon"])

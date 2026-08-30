@@ -88,6 +88,30 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             return {}
 
 
+def _resolve_default_backup_repo_dir() -> str:
+    """Returns a writable backup repository path, falling back to home dir if unprivileged."""
+    if os.name == "nt":
+        return str(Path.home() / ".palmanager" / "backups")
+    var_lib = Path("/var/lib/palmanager/backups")
+    try:
+        var_lib.mkdir(parents=True, exist_ok=True)
+        return str(var_lib)
+    except (PermissionError, OSError):
+        return str(Path.home() / ".palmanager" / "backups")
+
+
+def _resolve_default_log_dir() -> str:
+    """Returns a writable log directory path, falling back to home dir if unprivileged."""
+    if os.name == "nt":
+        return str(Path.home() / ".palmanager" / "logs")
+    var_log = Path("/var/log/palmanager")
+    try:
+        var_log.mkdir(parents=True, exist_ok=True)
+        return str(var_log)
+    except (PermissionError, OSError):
+        return str(Path.home() / ".palmanager" / "logs")
+
+
 class AppSettings(BaseSettings):
     """Primary application configuration model.
 
@@ -151,7 +175,7 @@ class AppSettings(BaseSettings):
     )
     service_name: str = Field(default="palworld.service", alias="SERVICE_NAME")
     backup_repo_dir: str = Field(
-        default="/var/lib/palmanager/backups" if os.name != "nt" else str(Path.home() / ".palmanager" / "backups"),
+        default_factory=_resolve_default_backup_repo_dir,
         alias="BACKUP_REPO_DIR",
     )
     backup_dir: str = Field(
@@ -161,7 +185,7 @@ class AppSettings(BaseSettings):
         alias="BACKUP_DIR",
     )
     log_dir: str = Field(
-        default="/var/log/palmanager" if os.name != "nt" else str(Path.home() / ".palmanager" / "logs"),
+        default_factory=_resolve_default_log_dir,
         alias="LOG_DIR",
     )
     duckdns_domain: str = Field(default="yourdomain.duckdns.org", alias="SERVER_DOMAIN")

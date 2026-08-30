@@ -37,9 +37,20 @@ from .types import (
     TopBadgeInfo,
 )
 
-DEFAULT_LEDGER_PATH: Path = (
-    Path("/var/lib/palmanager/players.json") if os.name != "nt" else Path.home() / ".palmanager" / "players.json"
-)
+
+def _resolve_default_ledger_path() -> Path:
+    """Returns a writable ledger path, falling back to home dir if unprivileged."""
+    if os.name == "nt":
+        return Path.home() / ".palmanager" / "players.json"
+    var_lib = Path("/var/lib/palmanager/players.json")
+    try:
+        var_lib.parent.mkdir(parents=True, exist_ok=True)
+        return var_lib
+    except (PermissionError, OSError):
+        return Path.home() / ".palmanager" / "players.json"
+
+
+DEFAULT_LEDGER_PATH: Path = _resolve_default_ledger_path()
 
 
 class CommunityTracker:

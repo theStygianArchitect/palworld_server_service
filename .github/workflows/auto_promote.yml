@@ -33,6 +33,11 @@ jobs:
           echo ">>> Fetching all branches..."
           git fetch origin test:test || git checkout -b test
           git checkout test
+          DIFF_COUNT=$(git rev-list --count origin/test..origin/dev || echo 0)
+          if [ "${DIFF_COUNT}" -eq 0 ]; then
+            echo "[*] test is already up to date with dev. No promotion needed."
+            exit 0
+          fi
           echo ">>> Merging dev into test..."
           git merge --ff-only dev || git merge --no-ff dev -m "chore(release): promote dev to test [skip ci]"
           git push origin test
@@ -54,8 +59,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          DIFF_COUNT=$(git rev-list --count origin/main..origin/test || echo 0)
+          if [ "${DIFF_COUNT}" -eq 0 ]; then
+            echo "[*] main is already up to date with test. No release PR needed."
+            exit 0
+          fi
           echo ">>> Checking if active PR exists from test to main..."
-          EXISTING_PR=$(gh pr list --base main --head test --state open --json number -q '.[0].number')
+          EXISTING_PR=$(gh pr list --base main --head test --state open --json number -q '.[0].number' || echo "")
           if [ -n "${EXISTING_PR}" ]; then
             echo "[*] Active PR #${EXISTING_PR} already exists for test -> main."
           else
