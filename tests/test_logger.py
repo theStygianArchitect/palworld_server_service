@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+
 from app.logger import SensitiveDataFilter, setup_logger
 
 
@@ -30,7 +31,7 @@ def test_setup_logger_with_rotation():
         logger.info("Test log entry message")
         log_file = os.path.join(tmpdir, "test_suite_logger_custom.log")
         assert os.path.exists(log_file)
-        with open(log_file, "r", encoding="utf-8") as f:
+        with open(log_file, encoding="utf-8") as f:
             content = f.read()
         assert "Test log entry message" in content
 
@@ -40,4 +41,5 @@ def test_setup_logger_with_rotation():
             logger.removeHandler(h)
     finally:
         import shutil
+
         shutil.rmtree(tmpdir, ignore_errors=True)

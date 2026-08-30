@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
@@ -37,8 +38,24 @@ def test_api_community_tracker_route():
     json_data = response.json()
     assert json_data["status"] == "success"
     assert "data" in json_data
-    assert "network_matrix" in json_data["data"]
-    assert "source_of_truth_battlemetrics" in json_data["data"]
+    assert "discovery_hub" in json_data["data"]
+    assert "a2s_telemetry" in json_data["data"]
+    assert "security_matrix" in json_data["data"]
+
+
+def test_api_reboot_with_custom_message_route():
+    from unittest.mock import AsyncMock, patch
+
+    payload = {
+        "countdown_seconds": 60,
+        "trigger_steam_update": False,
+        "custom_message": "Scheduled memory purge and restart.",
+    }
+    with patch("app.main.engine.execute_countdown_and_reboot", new_callable=AsyncMock) as mock_reboot:
+        response = client.post("/api/service/reboot", json=payload)
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+        mock_reboot.assert_called_once_with(60, False, "", "Scheduled memory purge and restart.")
 
 
 def test_api_backups_routes():

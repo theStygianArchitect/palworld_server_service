@@ -1,5 +1,6 @@
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
+
 from .config_parser import parse_ini_file, serialize_ini_settings
 
 PROTECTED_ADMIN_KEYS = {
@@ -20,7 +21,7 @@ class ConfigPipeline:
     def __init__(self, ini_path: str):
         self.ini_path = Path(ini_path)
 
-    def read_to_json(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def read_to_json(self) -> tuple[dict[str, Any], dict[str, Any]]:
         if not self.ini_path.exists():
             raise FileNotFoundError(f"Configuration not found at: {self.ini_path}")
 
@@ -29,7 +30,7 @@ class ConfigPipeline:
         protected_view = {k: v for k, v in full_state.items() if k in PROTECTED_ADMIN_KEYS}
         return public_view, protected_view
 
-    def merge_and_serialize(self, incoming_sanitized_json: Dict[str, Any]) -> str:
+    def merge_and_serialize(self, incoming_sanitized_json: dict[str, Any]) -> str:
         if self.ini_path.exists():
             _, live_protected = self.read_to_json()
             live_full = parse_ini_file(str(self.ini_path))

@@ -28,16 +28,10 @@
     }
   </script>
   <style>
-    /* Custom scrollbars */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0f172a; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #475569; }
-    .glass-panel {
-      background: rgba(15, 23, 42, 0.85);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-    }
   </style>
 </head>
 <body class="bg-dark-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-brand-500 selection:text-white">
@@ -49,7 +43,7 @@
         <h1 class="text-base sm:text-lg lg:text-xl font-bold tracking-tight text-white flex items-center gap-2">
           <span>🎮</span> Palworld Server Operations Suite
         </h1>
-        <p class="text-[11px] sm:text-xs text-slate-400 font-mono">Dedicated SRE & Telemetry Control Plane</p>
+        <p class="text-[11px] sm:text-xs text-slate-400 font-mono">Dedicated SRE, Telemetry & Multi-Platform Control Plane</p>
       </div>
 
       <div class="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto text-xs font-mono">
@@ -80,7 +74,7 @@
     <div class="max-w-7xl mx-auto mt-3 flex items-center gap-2 border-t border-slate-800/80 pt-2.5 text-xs font-mono overflow-x-auto">
       <button onclick="switchTab('settings')" id="tab_settings" class="px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold transition whitespace-nowrap">⚙️ World Settings</button>
       <button onclick="switchTab('players')" id="tab_players" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">👥 Player Roster</button>
-      <button onclick="switchTab('metrics')" id="tab_metrics" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📊 Telemetry & Community</button>
+      <button onclick="switchTab('metrics')" id="tab_metrics" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📊 Telemetry, Discovery & Security</button>
       <button onclick="switchTab('backups')" id="tab_backups" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">🕒 Snapshots & Backups</button>
     </div>
   </header>
@@ -94,7 +88,7 @@
             <span class="text-emerald-400 font-bold text-sm sm:text-base">📋 Direct Connect & Server Details</span>
             <span id="dnsAlignBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700">DNS: Resolving...</span>
           </div>
-          <p class="text-xs text-slate-400 mt-0.5">One-click copy information for players connecting directly or via community browser.</p>
+          <p class="text-xs text-slate-400 mt-0.5">One-click copy information for players connecting directly or searching the community browser.</p>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 w-full md:w-auto text-xs font-mono">
@@ -177,7 +171,7 @@
             <span>🟢</span> Active Sessions (<span id="activePlayerCount">0</span>)
           </h2>
           <button onclick="promptWarnAll()" class="px-3 py-1 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-mono font-semibold transition">
-            📢 Broadcast to Server
+            📢 Broadcast to Server & Discord
           </button>
         </div>
         <div id="activePlayersGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -214,71 +208,85 @@
       </div>
     </div>
 
-    <!-- Tab 3: Engine, Hardware & Community Matchmaking -->
+    <!-- Tab 3: Telemetry, Discovery & Security -->
     <div id="page_metrics" class="hidden space-y-6">
       
-      <!-- Community Directory & Matchmaking Matrix Card -->
-      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-          <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
-            <span>🌐</span> Community Server Directory & Matchmaking Matrix
-          </h2>
-          <span id="lastProbedText" class="text-[10px] font-mono text-slate-400">Last Probed: --</span>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+      <!-- Section 1: Discovery & Network Operations Hub (3 Cards) -->
+      <div>
+        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono mb-3 flex items-center gap-2">
+          <span>🌐</span> Discovery & Network Operations Hub
+        </h2>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 text-xs font-mono">
           
-          <!-- BattleMetrics Tracker -->
-          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
-            <div class="flex justify-between items-center">
-              <span class="text-slate-300 font-bold">BattleMetrics API</span>
-              <span id="bmStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 border border-blue-500/50 text-blue-300">SCANNING</span>
+          <!-- Card 1: Local Log Scraper & EOS Console Hub -->
+          <div class="p-4 bg-dark-900 border border-slate-800 rounded-2xl space-y-3 shadow-xl">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2.5">
+              <span class="text-slate-200 font-bold flex items-center gap-1.5">
+                <span>🪵</span> EOS Console Discovery
+              </span>
+              <span id="logScraperBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-slate-700 text-slate-300">AWAITING EOS</span>
             </div>
             <div class="space-y-1.5 text-[11px] text-slate-400">
               <div class="flex justify-between">
-                <span>Indexed Listing:</span>
-                <strong id="bmIndexedVal" class="text-slate-200">No</strong>
+                <span>Console Readiness:</span>
+                <strong id="logScraperStatusText" class="text-slate-200">Awaiting Handshake</strong>
               </div>
               <div class="flex justify-between">
-                <span>Server ID:</span>
-                <strong id="bmServerId" class="text-slate-200 font-mono">--</strong>
-              </div>
-              <div class="flex justify-between">
-                <span>First Seen:</span>
-                <strong id="bmFirstSeen" class="text-slate-200">--</strong>
-              </div>
-              <div class="flex justify-between">
-                <span>Rate-Limit Backoff:</span>
-                <strong id="bmBackoffSec" class="text-amber-400">0s</strong>
-              </div>
-            </div>
-          </div>
-
-          <!-- Journalctl Log Scraper -->
-          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
-            <div class="flex justify-between items-center">
-              <span class="text-slate-300 font-bold">Log Scraper (EOS Lobby)</span>
-              <span id="logScraperBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-slate-700 text-slate-300">AWAITING_BEAT</span>
-            </div>
-            <div class="space-y-1.5 text-[11px] text-slate-400">
-              <div class="flex justify-between">
-                <span>Lobby Heartbeat:</span>
-                <strong id="logScraperRegistered" class="text-slate-200">Awaiting Log</strong>
+                <span>EOS Session ID:</span>
+                <strong id="logSessionId" class="text-indigo-400 font-mono truncate max-w-[150px]">--</strong>
               </div>
               <div class="flex justify-between">
                 <span>Registered At:</span>
-                <strong id="logScraperFirstSeen" class="text-slate-200">--</strong>
+                <strong id="logFirstSeen" class="text-slate-200">--</strong>
               </div>
-              <div class="text-[10px] text-slate-500 pt-1 truncate" id="logScraperLastLine">
+              <div class="flex justify-between">
+                <span>Crossplay Flags:</span>
+                <strong id="logCrossplayFlags" class="text-emerald-400">Steam, Xbox, PS5</strong>
+              </div>
+              <div class="text-[10px] text-slate-500 pt-1 truncate" id="logLastLine">
                 Pattern: Created public lobby session
               </div>
             </div>
           </div>
 
-          <!-- Network & DNS Alignment -->
-          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
-            <div class="flex justify-between items-center">
-              <span class="text-slate-300 font-bold">Network & DNS Matrix</span>
+          <!-- Card 2: Pocketpair Official Master Listing -->
+          <div class="p-4 bg-dark-900 border border-slate-800 rounded-2xl space-y-3 shadow-xl">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2.5">
+              <span class="text-slate-200 font-bold flex items-center gap-1.5">
+                <span>🌐</span> Pocketpair Master List
+              </span>
+              <span id="ppMasterBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 border border-blue-500/50 text-blue-300">SEARCHING</span>
+            </div>
+            <div class="space-y-1.5 text-[11px] text-slate-400">
+              <div class="flex justify-between">
+                <span>Directory Indexing:</span>
+                <strong id="ppListedVal" class="text-slate-200">Checking...</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>Master UUID:</span>
+                <strong id="ppUuid" class="text-slate-200 font-mono truncate max-w-[150px]">--</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>Search Keyword:</span>
+                <strong id="ppSearchKeyword" class="text-slate-200 truncate max-w-[150px]">Palworld Server</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>Registered Region:</span>
+                <strong id="ppRegion" class="text-slate-200">Global</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>Master Version:</span>
+                <strong id="ppVersion" class="text-slate-200">Live</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Network & DNS Alignment Matrix -->
+          <div class="p-4 bg-dark-900 border border-slate-800 rounded-2xl space-y-3 shadow-xl">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-2.5">
+              <span class="text-slate-200 font-bold flex items-center gap-1.5">
+                <span>📡</span> Network & DNS Alignment
+              </span>
               <span id="dnsAlignmentStatus" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300">ALIGNED</span>
             </div>
             <div class="space-y-1.5 text-[11px] text-slate-400">
@@ -291,8 +299,16 @@
                 <strong id="netDnsIp" class="text-slate-200">Resolving...</strong>
               </div>
               <div class="flex justify-between">
+                <span>Internal LAN IP:</span>
+                <strong id="netLanIp" class="text-slate-200">127.0.0.1</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>UDP Game Port:</span>
+                <strong id="netGamePort" class="text-brand-400">8211/UDP</strong>
+              </div>
+              <div class="flex justify-between">
                 <span>Direct Connect:</span>
-                <strong id="netDirectConnect" class="text-brand-400">8211/UDP</strong>
+                <strong id="netDirectAddr" class="text-emerald-400 truncate max-w-[150px]">--:8211</strong>
               </div>
             </div>
           </div>
@@ -300,11 +316,13 @@
         </div>
       </div>
 
-      <!-- Engine Telemetry -->
+      <!-- Section 2: Bare-Metal Hardware, Simulation & Steam A2S Latency -->
       <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
         <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
-          <span>⚡</span> Unreal Engine 5 Simulation Telemetry
+          <span>🖥️</span> Bare-Metal Hardware & Simulation Telemetry
         </h2>
+        
+        <!-- Top Stats Row -->
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
           <div class="p-3.5 bg-dark-950 border border-slate-800 rounded-xl">
             <div class="text-[10px] text-slate-400 uppercase">Server Tick Rate</div>
@@ -327,17 +345,29 @@
             <div class="text-[9px] text-slate-500 mt-0.5">Continuous binary run</div>
           </div>
         </div>
-      </div>
 
-      <!-- Bare-Metal Hardware -->
-      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
-        <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
-          <span>🖥️</span> Bare-Metal Hardware & Resource Telemetry
-        </h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+        <!-- Hardware & Steam A2S Row -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+          
+          <!-- Steam A2S UDP Latency (Option B) -->
           <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
             <div class="flex justify-between items-center">
-              <span class="text-slate-300 font-bold">Cgroup Slice Memory (Game Cap)</span>
+              <span class="text-slate-300 font-bold flex items-center gap-1">
+                <span>⚡</span> Steam A2S UDP Ping
+              </span>
+              <span id="a2sStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 text-emerald-300">LIVE</span>
+            </div>
+            <div class="text-2xl font-black text-emerald-400" id="a2sPingVal">-- ms</div>
+            <div class="text-[11px] text-slate-400 space-y-1">
+              <div class="flex justify-between"><span>Map:</span><strong id="a2sMapVal" class="text-slate-200">Palworld</strong></div>
+              <div class="flex justify-between"><span>Socket State:</span><strong id="a2sSocketVal" class="text-emerald-400">Listening 8211/UDP</strong></div>
+            </div>
+          </div>
+
+          <!-- Cgroup 14GB RAM Cap -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-300 font-bold">Cgroup Game RAM Cap</span>
               <span id="hwCgroupRam" class="text-indigo-400 font-bold">0.0 / 14.0 GB</span>
             </div>
             <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -349,9 +379,10 @@
             </div>
           </div>
 
+          <!-- Storage Allocation -->
           <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
             <div class="flex justify-between items-center">
-              <span class="text-slate-300 font-bold">Storage Allocation</span>
+              <span class="text-slate-300 font-bold">NVMe Disk Storage</span>
               <span id="hwDiskText" class="text-emerald-400 font-bold">0 / 0 GB</span>
             </div>
             <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -362,8 +393,10 @@
               <span>Network TX: <strong id="hwNetTx" class="text-slate-200">-- MB</strong></span>
             </div>
           </div>
+
         </div>
 
+        <!-- Per-Core CPU Distribution -->
         <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-2.5">
           <div class="flex justify-between items-center text-xs font-mono">
             <span class="text-slate-300 font-bold">Per-Core CPU Distribution</span>
@@ -372,6 +405,63 @@
           <div id="cpuCoresGrid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2 text-[10px] font-mono"></div>
         </div>
       </div>
+
+      <!-- Section 3: 🔒 Access Control & Security Matrix (Dedicated Section - Option C) -->
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+        <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
+          <span>🔒</span> Access Control & Security Matrix
+        </h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+          
+          <!-- Server Password Status -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-300 font-bold">Server Authentication</span>
+              <span id="secPassBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">PUBLIC</span>
+            </div>
+            <div class="text-[11px] text-slate-400 space-y-1.5">
+              <div class="flex justify-between items-center">
+                <span>Password State:</span>
+                <strong id="secPassState" class="text-slate-200">None (Open)</strong>
+              </div>
+              <div class="pt-1">
+                <button id="secCopyPassBtn" onclick="copyPasswordValue(this)" class="w-full py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition text-[11px] font-semibold disabled:opacity-40">
+                  📋 Copy Server Password
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Admin Management Ports -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-300 font-bold">Management Ports</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-900/60 text-indigo-300">REST + RCON</span>
+            </div>
+            <div class="text-[11px] text-slate-400 space-y-1">
+              <div class="flex justify-between"><span>REST API Port:</span><strong id="secRestPort" class="text-slate-200 font-mono">8212/TCP</strong></div>
+              <div class="flex justify-between"><span>RCON Port:</span><strong id="secRconPort" class="text-slate-200 font-mono">25575/TCP</strong></div>
+              <div class="flex justify-between"><span>Web Control Port:</span><strong class="text-emerald-400 font-mono">8080/TCP</strong></div>
+            </div>
+          </div>
+
+          <!-- Tamer Slot Capacity -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-300 font-bold">Slot Allocation</span>
+              <span id="secCapBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 text-emerald-300">SLOTS OPEN</span>
+            </div>
+            <div class="text-[11px] text-slate-400 space-y-1">
+              <div class="flex justify-between"><span>Active Sessions:</span><strong id="secCurPlayers" class="text-slate-200">0</strong></div>
+              <div class="flex justify-between"><span>Max Capacity:</span><strong id="secMaxPlayers" class="text-slate-200">32 Tamers</strong></div>
+              <div class="flex justify-between"><span>Access Policy:</span><strong class="text-brand-400">Multiplayer Community</strong></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
 
     <!-- Tab 4: Backups & Snapshots -->
@@ -388,13 +478,19 @@
     </div>
   </main>
 
-  <!-- Reboot Modal -->
+  <!-- Reboot Modal with Customizable Message -->
   <div id="rebootModal" class="hidden fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
     <div class="bg-dark-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl">
       <h3 class="text-base sm:text-lg font-bold flex items-center gap-2">🔄 Server Reboot & Broadcast</h3>
-      <p class="text-xs text-slate-400">Broadcasts progressive warnings via REST API, performs in-game save, and restarts the service cleanly.</p>
+      <p class="text-xs text-slate-400">Broadcasts progressive warnings in-game and to Discord, performs an in-game save, and cleanly restarts the service.</p>
       
       <div class="space-y-3">
+        <div>
+          <label class="block text-[11px] font-mono uppercase text-slate-400 mb-1">Custom Broadcast Announcement (Optional)</label>
+          <textarea id="customRebootMsg" rows="2" placeholder="e.g. Scheduled server maintenance & memory optimization. Saving world state..."
+                    class="w-full bg-dark-950 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"></textarea>
+        </div>
+
         <div>
           <label class="block text-[11px] font-mono uppercase text-slate-400 mb-1">In-Game Notice Duration</label>
           <select id="countdownSelect" class="w-full bg-dark-950 border border-slate-700 rounded-lg p-2.5 text-xs sm:text-sm">
@@ -405,6 +501,7 @@
             <option value="30">30 Seconds</option>
           </select>
         </div>
+
         <div class="flex items-center gap-3 p-3 bg-dark-950 border border-slate-800 rounded-lg">
           <input type="checkbox" id="updateCheck" class="w-4 h-4 rounded text-brand-600 bg-slate-800 border-slate-700">
           <label for="updateCheck" class="text-xs text-slate-300">
@@ -649,69 +746,86 @@
         document.getElementById('copyPasswordBtn').disabled = true;
       }
 
-      if (data.tracking && data.tracking.network_matrix) {
-        const nm = data.tracking.network_matrix;
-        document.getElementById('copyDirectAddr').innerText = nm.direct_connect_addr || `${nm.public_wan_ip}:8211`;
-        document.getElementById('copyLanAddr').innerText = nm.lan_connect_addr || `${nm.lan_ip}:8211`;
-
-        const alignBadge = document.getElementById('dnsAlignBadge');
-        if (nm.dns_aligned) {
-          alignBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-700";
-          alignBadge.innerText = "DNS: Aligned ✓";
-        } else {
-          alignBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-950 text-amber-300 border border-amber-700";
-          alignBadge.innerText = "DNS: Pending Match";
-        }
-
-        document.getElementById('netWanIp').innerText = nm.public_wan_ip || "Detecting...";
-        document.getElementById('netDnsIp').innerText = nm.duckdns_a_record || "Resolving...";
-        document.getElementById('netDirectConnect').innerText = nm.direct_connect_addr || "8211/UDP";
-        document.getElementById('dnsAlignmentStatus').innerText = nm.dns_aligned ? "ALIGNED" : "MISALIGNED";
-        document.getElementById('dnsAlignmentStatus').className = nm.dns_aligned
-          ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
-          : "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 border border-amber-500/50 text-amber-300";
+      // Top Badge
+      if (data.top_badge) {
+        document.getElementById('commDot').className = `w-2 h-2 rounded-full ${data.top_badge.dot || 'bg-amber-400'}`;
+        document.getElementById('commText').innerText = data.top_badge.label || 'Probing...';
       }
 
-      // 2. BattleMetrics & Community Tracker Matrix
-      if (data.tracking) {
-        const tr = data.tracking;
-        document.getElementById('lastProbedText').innerText = `Last Probed: ${tr.last_probed || '--'}`;
-
-        const topBadge = tr.top_badge;
-        if (topBadge) {
-          document.getElementById('commDot').className = `w-2 h-2 rounded-full ${topBadge.dot || 'bg-amber-400'}`;
-          document.getElementById('commText').innerText = topBadge.label || 'Probing...';
-        }
-
-        const bm = tr.source_of_truth_battlemetrics;
-        if (bm) {
-          document.getElementById('bmStatusBadge').innerText = bm.status;
-          document.getElementById('bmStatusBadge').className = bm.indexed
-            ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
-            : (bm.status === "THROTTLED" 
-                ? "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 border border-amber-500/50 text-amber-300"
-                : "px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 border border-blue-500/50 text-blue-300");
-
-          document.getElementById('bmIndexedVal').innerText = bm.indexed ? "Yes (Listed)" : "Scanning";
-          document.getElementById('bmServerId').innerText = bm.server_id || "--";
-          document.getElementById('bmFirstSeen').innerText = bm.first_seen || "--";
-          document.getElementById('bmBackoffSec').innerText = `${bm.backoff_remaining_sec || 0}s`;
-        }
-
-        const ls = tr.backup_log_scraper;
-        if (ls) {
+      // 2. Section 1: Discovery & Network Operations Hub
+      if (data.discovery_hub) {
+        const dh = data.discovery_hub;
+        
+        // Log Scraper / EOS Console
+        if (dh.log_scraper) {
+          const ls = dh.log_scraper;
           document.getElementById('logScraperBadge').innerText = ls.status;
           document.getElementById('logScraperBadge').className = ls.registered
             ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
             : "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-slate-700 text-slate-300";
 
-          document.getElementById('logScraperRegistered').innerText = ls.registered ? "Active (EOS Session)" : "Awaiting Log Line";
-          document.getElementById('logScraperFirstSeen').innerText = ls.first_seen || "--";
-          if (ls.last_line) document.getElementById('logScraperLastLine').innerText = ls.last_line;
+          document.getElementById('logScraperStatusText').innerText = ls.registered ? "Ready for Console Search ✓" : "Awaiting EOS Handshake";
+          document.getElementById('logSessionId').innerText = ls.session_id || "--";
+          document.getElementById('logFirstSeen').innerText = ls.first_seen || "--";
+          document.getElementById('logCrossplayFlags').innerText = ls.crossplay_flags || "Steam, Xbox, PS5";
+          if (ls.last_line) document.getElementById('logLastLine').innerText = ls.last_line;
+        }
+
+        // Pocketpair Master List
+        if (dh.pocketpair_master) {
+          const pp = dh.pocketpair_master;
+          document.getElementById('ppMasterBadge').innerText = pp.status;
+          document.getElementById('ppMasterBadge').className = pp.listed
+            ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
+            : "px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 border border-blue-500/50 text-blue-300";
+
+          document.getElementById('ppListedVal').innerText = pp.listed ? "Yes (Listed in Master)" : "Scanning Directory";
+          document.getElementById('ppUuid').innerText = pp.server_uuid || "--";
+          document.getElementById('ppSearchKeyword').innerText = pp.search_keyword || "Palworld Server";
+          document.getElementById('ppRegion').innerText = pp.region || "Global";
+          document.getElementById('ppVersion').innerText = pp.version || "Live";
+        }
+
+        // Network Matrix
+        if (dh.network_matrix) {
+          const nm = dh.network_matrix;
+          document.getElementById('copyDirectAddr').innerText = nm.direct_connect_addr || `${nm.public_wan_ip}:8211`;
+          document.getElementById('copyLanAddr').innerText = nm.lan_connect_addr || `${nm.lan_ip}:8211`;
+
+          const alignBadge = document.getElementById('dnsAlignBadge');
+          if (nm.dns_aligned) {
+            alignBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-700";
+            alignBadge.innerText = "DNS: Aligned ✓";
+          } else {
+            alignBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-950 text-amber-300 border border-amber-700";
+            alignBadge.innerText = "DNS: Pending Match";
+          }
+
+          document.getElementById('netWanIp').innerText = nm.public_wan_ip || "Detecting...";
+          document.getElementById('netDnsIp').innerText = nm.duckdns_a_record || "Resolving...";
+          document.getElementById('netLanIp').innerText = nm.lan_ip || "127.0.0.1";
+          document.getElementById('netGamePort').innerText = `${nm.public_port}/UDP`;
+          document.getElementById('netDirectAddr').innerText = nm.direct_connect_addr || "--:8211";
+          
+          document.getElementById('dnsAlignmentStatus').innerText = nm.dns_aligned ? "ALIGNED" : "MISMATCH";
+          document.getElementById('dnsAlignmentStatus').className = nm.dns_aligned
+            ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
+            : "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 border border-amber-500/50 text-amber-300";
         }
       }
 
-      // 3. Engine Metrics
+      // 3. Section 2: Bare-Metal & Steam A2S Telemetry
+      if (data.a2s_telemetry) {
+        const a2s = data.a2s_telemetry;
+        document.getElementById('a2sPingVal').innerText = a2s.ping_ms !== null ? `${a2s.ping_ms} ms` : "-- ms";
+        document.getElementById('a2sStatusBadge').innerText = a2s.responsive ? "LIVE" : "UNREACHABLE";
+        document.getElementById('a2sStatusBadge').className = a2s.responsive
+          ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 text-emerald-300"
+          : "px-2 py-0.5 rounded text-[10px] font-bold bg-red-900/60 text-red-300";
+        document.getElementById('a2sMapVal').innerText = a2s.map_name || "Palworld";
+        document.getElementById('a2sSocketVal').innerText = a2s.responsive ? "Listening 8211/UDP (OK)" : "No UDP Response";
+      }
+
       if (data.metrics && data.metrics.engine) {
         const eng = data.metrics.engine;
         document.getElementById('engineFps').innerText = `${eng.server_fps} FPS`;
@@ -724,7 +838,6 @@
         document.getElementById('playersCountText').innerText = `${eng.current_players} / ${eng.max_players}`;
       }
 
-      // 4. Hardware Metrics
       if (data.metrics && data.metrics.hardware) {
         const hw = data.metrics.hardware;
         document.getElementById('hwCgroupRam').innerText = `${hw.cgroup_used_gb} / ${hw.cgroup_limit_gb} GB`;
@@ -746,13 +859,28 @@
         }
       }
 
-      // 5. Disk storage
       if (data.disk) {
         document.getElementById('hwDiskText').innerText = `${data.disk.used_gb} / ${data.disk.total_gb} GB`;
         document.getElementById('hwDiskBar').style.width = `${data.disk.percentage}%`;
       }
 
-      // 6. Players
+      // 4. Section 3: Access Control & Security Matrix
+      if (data.security_matrix) {
+        const sec = data.security_matrix;
+        document.getElementById('secPassBadge').innerText = sec.is_password_protected ? "PROTECTED" : "PUBLIC";
+        document.getElementById('secPassBadge').className = sec.is_password_protected
+          ? "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 text-amber-300"
+          : "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300";
+
+        document.getElementById('secPassState').innerText = sec.is_password_protected ? "•••••••• (Password Set)" : "None (Open / Public)";
+        document.getElementById('secCopyPassBtn').disabled = !sec.is_password_protected;
+        document.getElementById('secRestPort').innerText = `${sec.rest_port || 8212}/TCP`;
+        document.getElementById('secRconPort').innerText = `${sec.rcon_port || 25575}/TCP`;
+        document.getElementById('secCurPlayers').innerText = `${sec.current_players || 0} Connected`;
+        document.getElementById('secMaxPlayers').innerText = `${sec.max_players || 32} Max Slots`;
+      }
+
+      // 5. Players
       if (data.players) {
         document.getElementById('activePlayerCount').innerText = data.players.active_count || 0;
         document.getElementById('totalKnownPlayers').innerText = `${data.players.total_registered || 0} Registered Tamers`;
@@ -828,15 +956,20 @@
     function closeRebootModal() { document.getElementById('rebootModal').classList.add('hidden'); }
 
     async function executeReboot() {
-      closeRebootModal();
+      const customMsg = document.getElementById('customRebootMsg').value.trim();
       const secs = parseInt(document.getElementById('countdownSelect').value) || 600;
       const update = document.getElementById('updateCheck').checked;
+      closeRebootModal();
 
       try {
         const res = await fetch('/api/service/reboot', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ countdown_seconds: secs, trigger_steam_update: update })
+          body: JSON.stringify({
+            countdown_seconds: secs,
+            trigger_steam_update: update,
+            custom_message: customMsg
+          })
         });
         const data = await res.json();
         if (data.status === 'success') {
@@ -850,7 +983,7 @@
     }
 
     async function kickPlayer(id) {
-      const reason = prompt('Enter kick reason (visible to player):', 'Kicked by administrator');
+      const reason = prompt('Enter kick reason (visible to player & echoed to Discord):', 'Kicked by administrator');
       if (reason === null) return;
       try {
         const res = await fetch('/api/players/kick', {
@@ -866,7 +999,7 @@
     }
 
     async function banPlayer(id) {
-      const reason = prompt('Enter permanent ban reason:', 'Banned by administrator');
+      const reason = prompt('Enter permanent ban reason (echoed to Discord audit log):', 'Banned by administrator');
       if (reason === null) return;
       try {
         const res = await fetch('/api/players/ban', {
@@ -882,7 +1015,7 @@
     }
 
     async function promptWarnAll() {
-      const msg = prompt('Enter broadcast notice to display across in-game HUD:');
+      const msg = prompt('Enter broadcast notice to display across in-game HUD and Discord:');
       if (!msg) return;
       try {
         const res = await fetch('/api/players/warn', {

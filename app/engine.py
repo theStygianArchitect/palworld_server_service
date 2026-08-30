@@ -1,17 +1,20 @@
 import asyncio
 import os
 import subprocess
+import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
-from fastapi import WebSocket
+from typing import Any
+
 import httpx
+from fastapi import WebSocket
+
 from .logger import log
 from .notifications import DiscordNotifier
 from .tracker import CommunityTracker
 
 INI_PATH = os.getenv(
     "PALWORLD_INI_PATH",
-    "/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
+    "/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
     if os.name != "nt"
     else os.path.expanduser("~/.palmanager/PalWorldSettings.ini"),
 )
@@ -20,7 +23,6 @@ UPDATE_FLAG = os.getenv(
     "PALWORLD_UPDATE_FLAG",
     "/home/steam/.update_requested" if os.name != "nt" else os.path.expanduser("~/.palmanager/.update_requested"),
 )
-import tempfile
 
 LOCK_FILE = os.getenv(
     "PALWORLD_LOCK_FILE",
@@ -31,11 +33,11 @@ LOCK_FILE = os.getenv(
 class PalEngine:
     def __init__(
         self,
-        admin_password: Optional[str] = None,
-        rest_port: Optional[int] = None,
-        server_name: Optional[str] = None,
-        domain: Optional[str] = None,
-        discord_webhook_url: Optional[str] = None,
+        admin_password: str | None = None,
+        rest_port: int | None = None,
+        server_name: str | None = None,
+        domain: str | None = None,
+        discord_webhook_url: str | None = None,
     ):
         self.admin_password = admin_password or os.getenv("PALWORLD_ADMIN_PASSWORD", "admin_password")
         self.rest_port = rest_port or int(os.getenv("PALWORLD_REST_PORT", "8212"))
@@ -44,7 +46,7 @@ class PalEngine:
 
         self.base_url = f"http://127.0.0.1:{self.rest_port}/v1/api"
         self.auth = ("admin", self.admin_password)
-        self.active_sockets: Set[WebSocket] = set()
+        self.active_sockets: set[WebSocket] = set()
         self.tracker = CommunityTracker(self.server_name, self.domain)
         self.notifier = DiscordNotifier(discord_webhook_url or os.getenv("PALWORLD_DISCORD_WEBHOOK_URL"))
 
@@ -66,14 +68,14 @@ class PalEngine:
     def unregister_socket(self, ws: WebSocket):
         self.active_sockets.discard(ws)
 
-    async def broadcast_ws(self, payload: Dict[str, Any]):
+    async def broadcast_ws(self, payload: dict[str, Any]):
         for ws in list(self.active_sockets):
             try:
                 await ws.send_json(payload)
             except Exception:
                 self.active_sockets.discard(ws)
 
-    async def send_broadcast(self, message: str) -> bool:
+    async def send_broadcast(self, message: str, mirror_discord: bool = True) -> bool:
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 res = await client.post(
@@ -81,9 +83,13 @@ class PalEngine:
                     auth=self.auth,
                     json={"message": message},
                 )
+                if mirror_discord:
+                    await self.notifier.notify_admin_broadcast(self.server_name or "Palworld Server", message)
                 return res.status_code == 200
         except Exception as e:
             log.debug(f"Broadcast notice failed: {e}")
+            if mirror_discord:
+                await self.notifier.notify_admin_broadcast(self.server_name or "Palworld Server", message)
             return False
 
     async def kick_player(self, player_id: str, message: str = "Kicked by administrator") -> bool:
@@ -138,7 +144,7 @@ class PalEngine:
             log.warning(f"World save failed: {e}")
             return False
 
-    async def get_raw_players(self) -> List[Dict[str, Any]]:
+    async def get_raw_players(self) -> list[dict[str, Any]]:
         try:
             async with httpx.AsyncClient(timeout=1.5) as client:
                 res = await client.get(f"{self.base_url}/players", auth=self.auth)
@@ -148,7 +154,7 @@ class PalEngine:
             pass
         return []
 
-    async def get_engine_metrics(self) -> Dict[str, Any]:
+    async def get_engine_metrics(self) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(timeout=1.5) as client:
                 res = await client.get(f"{self.base_url}/metrics", auth=self.auth)
@@ -173,7 +179,7 @@ class PalEngine:
             "days": 0,
         }
 
-    async def check_readiness(self) -> Dict[str, Any]:
+    async def check_readiness(self) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(timeout=1.5) as client:
                 res = await client.get(f"{self.base_url}/info", auth=self.auth)
@@ -193,6 +199,7 @@ class PalEngine:
         countdown_seconds: int = 600,
         trigger_update: bool = False,
         update_version_tag: str = "",
+        custom_message: str = "",
     ):
         if os.path.exists(LOCK_FILE):
             raise RuntimeError("Reboot countdown sequence is already active.")
@@ -208,7 +215,7 @@ class PalEngine:
                 "phase": "COUNTDOWN",
                 "remaining_seconds": countdown_seconds,
                 "total_seconds": countdown_seconds,
-                "current_broadcast": "Initiating countdown sequence...",
+                "current_broadcast": custom_message or "Initiating countdown sequence...",
                 "is_updating": trigger_update,
             }
             await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
@@ -226,16 +233,23 @@ class PalEngine:
                     else:
                         time_str = f"{remaining} seconds"
 
-                    msg = f"Server maintenance restart in {time_str}."
+                    base_msg = f"Server maintenance restart in {time_str}."
                     if trigger_update:
                         target_info = f" to {update_version_tag}" if update_version_tag else ""
-                        msg = f"Server updating{target_info} and restarting in {time_str}."
+                        base_msg = f"Server updating{target_info} and restarting in {time_str}."
 
-                    self.lifecycle_state["current_broadcast"] = msg
-                    await self.send_broadcast(msg)
+                    full_msg = f"{custom_message} - {base_msg}" if custom_message else base_msg
+
+                    self.lifecycle_state["current_broadcast"] = full_msg
+                    await self.send_broadcast(full_msg, mirror_discord=False)
 
                     if remaining in discord_intervals or remaining == countdown_seconds:
-                        await self.notifier.notify_reboot_countdown(time_str, trigger_update, update_version_tag)
+                        await self.notifier.notify_reboot_countdown(
+                            time_str,
+                            trigger_update,
+                            update_version_tag,
+                            custom_message=custom_message,
+                        )
 
                 await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
                 await asyncio.sleep(1)
@@ -264,7 +278,7 @@ class PalEngine:
                 ready_check = await self.check_readiness()
                 if ready_check["ready"]:
                     log.info("Server engine restored to ready state.")
-                    await self.notifier.notify_reboot_complete(self.server_name)
+                    await self.notifier.notify_reboot_complete(self.server_name or "Palworld Server")
                     break
                 await asyncio.sleep(2)
 

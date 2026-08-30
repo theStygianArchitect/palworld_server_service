@@ -1,6 +1,5 @@
 import os
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Type
+from typing import Any
 
 from pydantic import Field
 from pydantic_settings import (
@@ -15,7 +14,7 @@ from .config_parser import parse_ini_file
 class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
     """Custom settings source that pulls values directly from PalWorldSettings.ini."""
 
-    def __init__(self, settings_cls: Type[BaseSettings], ini_path: Optional[str] = None):
+    def __init__(self, settings_cls: type[BaseSettings], ini_path: str | None = None):
         super().__init__(settings_cls)
         self.ini_path = ini_path or os.getenv(
             "PALWORLD_INI_PATH",
@@ -24,14 +23,14 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             else os.path.expanduser("~/.palmanager/PalWorldSettings.ini"),
         )
 
-    def get_field_value(self, field: Any, field_name: str) -> Tuple[Any, str, bool]:
+    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
         return None, field_name, False
 
-    def __call__(self) -> Dict[str, Any]:
-        if not os.path.exists(self.ini_path):
+    def __call__(self) -> dict[str, Any]:
+        if not self.ini_path or not os.path.exists(self.ini_path):
             return {}
-        ini_data = parse_ini_file(self.ini_path)
-        mapped: Dict[str, Any] = {}
+        ini_data = parse_ini_file(str(self.ini_path))
+        mapped: dict[str, Any] = {}
         for k, v in ini_data.items():
             mapped[k] = v
             mapped[k.lower()] = v
@@ -81,25 +80,26 @@ class AppSettings(BaseSettings):
         alias="BACKUP_DIR",
     )
     log_dir: str = Field(
-        default="/var/log/palmanager"
-        if os.name != "nt"
-        else os.path.expanduser("~/.palmanager/logs"),
+        default="/var/log/palmanager" if os.name != "nt" else os.path.expanduser("~/.palmanager/logs"),
         alias="LOG_DIR",
     )
     duckdns_domain: str = Field(default="yourdomain.duckdns.org", alias="SERVER_DOMAIN")
     duckdns_token: str = Field(default="your_duckdns_token", alias="DUCKDNS_TOKEN")
     host_ip: str = Field(default="127.0.0.1", alias="HOST_IP")
-    discord_webhook_url: Optional[str] = Field(default=None, alias="DISCORD_WEBHOOK_URL")
+    discord_webhook_url: str | None = Field(
+        default=None,
+        validation_alias="PALWORLD_DISCORD_WEBHOOK_URL",
+    )
 
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: Type[BaseSettings],
+        settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
-    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
         return (
             init_settings,
             env_settings,

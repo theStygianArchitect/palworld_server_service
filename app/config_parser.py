@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict
+from typing import Any
 
 SETTING_METADATA = {
     "CrossplayPlatforms": {
@@ -277,9 +277,9 @@ SETTING_METADATA = {
 }
 
 
-def parse_ini_file(path: str) -> Dict[str, Any]:
+def parse_ini_file(path: str) -> dict[str, Any]:
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             content = f.read()
     except FileNotFoundError:
         return {}
@@ -311,7 +311,7 @@ def parse_ini_file(path: str) -> Dict[str, Any]:
     return tokens
 
 
-def serialize_ini_settings(settings: Dict[str, Any]) -> str:
+def serialize_ini_settings(settings: dict[str, Any]) -> str:
     pairs = []
     for k, v in settings.items():
         if isinstance(v, bool):

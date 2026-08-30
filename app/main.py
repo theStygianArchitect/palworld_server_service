@@ -4,14 +4,14 @@ import shutil
 import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from .config import settings, reload_settings
+from .config import reload_settings, settings
 from .config_parser import SETTING_METADATA
 from .config_pipeline import ConfigPipeline
 from .engine import LOCK_FILE, PalEngine
@@ -35,10 +35,11 @@ notifier = DiscordNotifier(settings.discord_webhook_url)
 
 
 class RebootRequest(BaseModel):
-    settings: Dict[str, Any] = {}
+    settings: dict[str, Any] = {}
     countdown_seconds: int = 600
     trigger_steam_update: bool = False
     update_version_tag: str = ""
+    custom_message: str = ""
 
 
 class PlayerActionRequest(BaseModel):
@@ -65,15 +66,18 @@ async def telemetry_streamer():
 
             engine_metrics = await engine.get_engine_metrics()
             host_hardware = engine.tracker.get_hardware_telemetry()
-            matchmaking_tracking = await engine.tracker.get_combined_telemetry(
+            combined_telemetry = await engine.tracker.get_combined_telemetry(
                 host_ip=settings.host_ip,
                 public_port=settings.PublicPort,
+                server_password=settings.ServerPassword,
+                rcon_port=settings.RCONPort,
+                rest_port=settings.RESTAPIPort,
+                max_players=engine_metrics.get("max_players", 32),
+                current_players=len(player_matrix.get("active_players", [])),
             )
 
             disk_target = (
-                settings.backup_dir
-                if os.path.exists(settings.backup_dir)
-                else ("/" if os.name != "nt" else "C:\\")
+                settings.backup_dir if os.path.exists(settings.backup_dir) else ("/" if os.name != "nt" else "C:\\")
             )
             try:
                 total, used, free = shutil.disk_usage(disk_target)
@@ -88,7 +92,10 @@ async def telemetry_streamer():
                     "version": readiness_data["version"],
                     "server_name": settings.ServerName,
                     "server_password": settings.ServerPassword,
-                    "tracking": matchmaking_tracking,
+                    "top_badge": combined_telemetry.get("top_badge"),
+                    "discovery_hub": combined_telemetry.get("discovery_hub"),
+                    "a2s_telemetry": combined_telemetry.get("a2s_telemetry"),
+                    "security_matrix": combined_telemetry.get("security_matrix"),
                     "players": player_matrix,
                     "metrics": {
                         "engine": engine_metrics,
@@ -160,7 +167,7 @@ async def websocket_endpoint(ws: WebSocket):
 async def serve_ui():
     if not HTML_FILE.exists():
         raise HTTPException(status_code=404, detail="index.html not found")
-    with open(HTML_FILE, "r", encoding="utf-8") as f:
+    with open(HTML_FILE, encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
 
@@ -190,7 +197,7 @@ async def save_sanitized_settings(payload: GameplaySettingsSchema):
         return {"status": "success", "message": "Settings saved cleanly to disk.", "commit": commit}
     except Exception as e:
         log.error(f"Save error: {e}")
-        raise HTTPException(status_code=500, detail=f"Save error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Save error: {e!s}")
 
 
 @app.get("/api/tracker/community")
@@ -200,6 +207,9 @@ async def get_community_tracker_data():
         "data": await engine.tracker.get_combined_telemetry(
             host_ip=settings.host_ip,
             public_port=settings.PublicPort,
+            server_password=settings.ServerPassword,
+            rcon_port=settings.RCONPort,
+            rest_port=settings.RESTAPIPort,
         ),
     }
 
@@ -218,12 +228,18 @@ async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks):
         reload_settings()
         log.info(f"Saved configuration snapshot before reboot: {commit}")
 
-    log.info(f"Initiating reboot sequence ({payload.countdown_seconds}s, update={payload.trigger_steam_update})")
+    log.info(
+        "Initiating reboot sequence (%ss, update=%s, msg=%s)",
+        payload.countdown_seconds,
+        payload.trigger_steam_update,
+        payload.custom_message,
+    )
     bg.add_task(
         engine.execute_countdown_and_reboot,
         payload.countdown_seconds,
         payload.trigger_steam_update,
         payload.update_version_tag,
+        payload.custom_message,
     )
     return {"status": "success", "message": f"Countdown sequence ({payload.countdown_seconds}s) initiated."}
 
@@ -249,10 +265,10 @@ async def handle_ban(req: PlayerActionRequest):
 @app.post("/api/players/warn")
 async def handle_warn(req: PlayerActionRequest):
     log.info(f"Admin broadcast notice: {req.message}")
-    ok = await engine.send_broadcast(f"[ADMIN NOTICE] {req.message}")
+    ok = await engine.send_broadcast(f"[ADMIN NOTICE] {req.message}", mirror_discord=True)
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to broadcast message.")
-    return {"status": "success", "message": "Broadcast alert sent across in-game HUD."}
+    return {"status": "success", "message": "Broadcast alert sent across in-game HUD and echoed to Discord."}
 
 
 @app.get("/api/backups/commits")

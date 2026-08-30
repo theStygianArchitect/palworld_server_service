@@ -149,7 +149,7 @@ run_multi_python_matrix() {
     echo "-------------------------------------------------------------------------"
     echo ">>> Running PyTest against Python ${ver}..."
     echo "-------------------------------------------------------------------------"
-    uv run --python "${ver}" pytest "${test_directory}"
+    uv run --isolated --python "${ver}" pytest "${test_directory}"
     exit_code=$?
     if [ ${exit_code} -ne 0 ]; then
       echo "[-] Multi-version test failed on Python ${ver}!"

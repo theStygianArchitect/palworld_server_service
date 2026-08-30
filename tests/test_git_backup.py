@@ -1,6 +1,7 @@
 import os
 import tempfile
 from pathlib import Path
+
 from app.git_backup import IsolatedGitBackupManager
 
 SAMPLE_INI = """[/Script/Pal.PalGameWorldSettings]
@@ -48,7 +49,7 @@ def test_git_backup_manager_lifecycle(monkeypatch):
 
         # 5. Restore commit1
         assert mgr.restore_commit(commit1) is True
-        with open(ini_file, "r", encoding="utf-8") as f:
+        with open(ini_file, encoding="utf-8") as f:
             content = f.read()
         assert "ExpRate=1.500000" in content
 

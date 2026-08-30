@@ -1,14 +1,15 @@
-import pytest
 import httpx
+import pytest
+
 from app.engine import PalEngine
 
 
 @pytest.mark.asyncio
 async def test_pal_engine_defaults():
-    engine = PalEngine(admin_password="test_password", rest_port=8212)
-    assert engine.admin_password == "test_password"
+    engine = PalEngine(admin_password="test_password", rest_port=8212)  # nosec B105,B106
+    assert engine.admin_password == "test_password"  # nosec B105
     assert engine.base_url == "http://127.0.0.1:8212/v1/api"
-    assert engine.auth == ("admin", "test_password")
+    assert engine.auth == ("admin", "test_password")  # nosec B105
 
 
 @pytest.mark.asyncio
@@ -30,14 +31,16 @@ async def test_pal_engine_metrics_offline():
 
 @pytest.mark.asyncio
 async def test_pal_engine_mock_rest_api_calls(monkeypatch):
-    engine = PalEngine(admin_password="test_password", rest_port=8212)
+    engine = PalEngine(admin_password="test_password", rest_port=8212)  # nosec B105,B106
 
     # Mock announcements
     async def mock_post(url, *args, **kwargs):
         class MockResponse:
             status_code = 200
+
             def json(self):
                 return {"message": "ok"}
+
         return MockResponse()
 
     monkeypatch.setattr(httpx.AsyncClient, "post", lambda self, url, *a, **kw: mock_post(url, *a, **kw))

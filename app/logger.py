@@ -3,7 +3,6 @@ import os
 import re
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Optional
 
 
 class SensitiveDataFilter(logging.Filter):
@@ -12,7 +11,10 @@ class SensitiveDataFilter(logging.Filter):
     PATTERNS = [
         (re.compile(r'(?i)(admin_password|password|token|secret)\s*[:=]\s*["\']?([^"\'\s,]+)'), r"\1=[REDACTED]"),
         (re.compile(r"(?i)(Basic|Bearer)\s+[A-Za-z0-9+/=._-]+"), r"\1 [REDACTED]"),
-        (re.compile(r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"), r"[REDACTED_UUID]"),
+        (
+            re.compile(r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"),
+            r"[REDACTED_UUID]",
+        ),
     ]
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -26,7 +28,7 @@ class SensitiveDataFilter(logging.Filter):
 
 def setup_logger(
     name: str = "palworld_manager",
-    log_dir: Optional[str] = None,
+    log_dir: str | None = None,
     log_level: int = logging.INFO,
     max_bytes: int = 10 * 1024 * 1024,  # 10 MB
     backup_count: int = 5,
@@ -56,11 +58,7 @@ def setup_logger(
 
     # 2. Rotating File Handler
     if log_dir is None:
-        log_dir = (
-            "/var/log/palmanager"
-            if os.name != "nt"
-            else os.path.expanduser("~/.palmanager/logs")
-        )
+        log_dir = "/var/log/palmanager" if os.name != "nt" else os.path.expanduser("~/.palmanager/logs")
 
     try:
         Path(log_dir).mkdir(parents=True, exist_ok=True)

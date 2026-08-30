@@ -6,9 +6,12 @@ import re
 import socket
 import subprocess
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 import httpx
 import psutil
+
+from .logger import log
 
 DUCKDNS_LOG = os.getenv(
     "DUCKDNS_LOG_PATH",
@@ -23,40 +26,45 @@ PLAYER_LEDGER = os.getenv(
 class CommunityTracker:
     def __init__(
         self,
-        server_name: Optional[str] = None,
-        domain: Optional[str] = None,
+        server_name: str | None = None,
+        domain: str | None = None,
     ):
         self.server_name = server_name or os.getenv("PALWORLD_SERVER_NAME", "Palworld Dedicated Server")
         self.domain = domain or os.getenv("PALWORLD_SERVER_DOMAIN", "yourdomain.duckdns.org")
 
-        # BattleMetrics Directory State
-        self.battlemetrics_indexed: bool = False
-        self.battlemetrics_first_seen: Optional[str] = None
-        self.battlemetrics_id: Optional[str] = None
-        self.battlemetrics_rank: Optional[int] = None
-        self.battlemetrics_players: int = 0
-        self.next_bm_allowed_time: float = 0.0
-        self.consecutive_429_count: int = 0
-        self.last_bm_status: str = "SCANNING"
-
-        # Local Systemd Journalctl Log Scraper State
+        # 1. Local Log Scraper & EOS Console Hub State
         self.log_registered: bool = False
-        self.log_first_seen: Optional[str] = None
-        self.log_last_matched_line: Optional[str] = None
-        self.last_check_time: Optional[str] = None
+        self.log_first_seen: str | None = None
+        self.log_session_id: str | None = None
+        self.log_last_matched_line: str | None = None
 
-        # Network & DNS Alignment State
+        # 2. Pocketpair Master Server Directory State
+        self.pocketpair_listed: bool = False
+        self.pocketpair_uuid: str | None = None
+        self.pocketpair_region: str | None = None
+        self.pocketpair_version: str | None = None
+        self.last_pocketpair_check: float = 0.0
+
+        # 3. Native Steam A2S UDP Latency & Binary State
+        self.a2s_ping_ms: float | None = None
+        self.a2s_responsive: bool = False
+        self.a2s_server_name: str | None = None
+        self.a2s_map_name: str | None = None
+        self.a2s_players: int = 0
+        self.a2s_max_players: int = 32
+
+        # 4. Network & DNS Alignment State
         self.cached_public_ip: str = "Detecting..."
         self.cached_dns_ip: str = "Resolving..."
         self.last_ip_check: float = 0.0
 
         # Player Ledger
-        self.players_history: Dict[str, Any] = self._load_player_ledger()
+        self.players_history: dict[str, Any] = self._load_player_ledger()
 
-    def _load_player_ledger(self) -> Dict[str, Any]:
+    def _load_player_ledger(self) -> dict[str, Any]:
         if os.path.exists(PLAYER_LEDGER):
             try:
-                with open(PLAYER_LEDGER, "r", encoding="utf-8") as f:
+                with open(PLAYER_LEDGER, encoding="utf-8") as f:
                     return json.load(f)
             except Exception:
                 pass
@@ -70,142 +78,206 @@ class CommunityTracker:
         except Exception:
             pass
 
-    async def probe_battlemetrics_loop(self):
-        """Continuous background poller for BattleMetrics Community Directory listings."""
-        while True:
+    @staticmethod
+    def parse_a2s_packet(data: bytes, latency_ms: float | None = None) -> dict[str, Any]:
+        """Parses a Valve A2S_INFO binary UDP response packet."""
+        if len(data) > 6 and data[:4] == b"\xff\xff\xff\xff" and data[4] == 0x49:
+            # Payload: 4-byte prefix + 1-byte header (\x49) + 1-byte protocol (\x11) + strings
+            body = data[6:]
+            parts = body.split(b"\x00")
+            server_name = parts[0].decode("utf-8", errors="ignore") if len(parts) > 0 else ""
+            map_name = parts[1].decode("utf-8", errors="ignore") if len(parts) > 1 else ""
+            folder = parts[2].decode("utf-8", errors="ignore") if len(parts) > 2 else ""
+            game = parts[3].decode("utf-8", errors="ignore") if len(parts) > 3 else ""
+
+            return {
+                "responsive": True,
+                "ping_ms": latency_ms,
+                "server_name": server_name,
+                "map_name": map_name,
+                "folder": folder,
+                "game": game,
+            }
+        return {"responsive": bool(data), "ping_ms": latency_ms}
+
+    async def probe_steam_a2s_info(self, host: str = "127.0.0.1", port: int = 8211) -> dict[str, Any]:
+        """Direct UDP A2S_INFO packet query to the server socket (measures raw latency in ms)."""
+        query_packet = b"\xff\xff\xff\xffTSource Engine Query\x00"
+        loop = asyncio.get_running_loop()
+
+        def _sync_a2s_query():
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(1.5)
+            t_start = time.perf_counter()
             try:
-                now = time.time()
-                if now >= self.next_bm_allowed_time:
-                    url = f"https://api.battlemetrics.com/servers?filter[game]=palworld&filter[search]={self.server_name}"
-                    async with httpx.AsyncClient(timeout=6.0) as client:
-                        res = await client.get(url, headers={"User-Agent": "Palworld-Manager-Daemon/1.0"})
-
-                        if res.status_code == 200:
-                            self.consecutive_429_count = 0
-                            self.last_bm_status = "OK"
-                            data = res.json()
-                            servers = data.get("data", [])
-                            if servers:
-                                s = servers[0]
-                                self.battlemetrics_indexed = True
-                                if not self.battlemetrics_first_seen:
-                                    self.battlemetrics_first_seen = datetime.datetime.now().strftime(
-                                        "%Y-%m-%d %H:%M:%S"
-                                    )
-                                self.battlemetrics_id = s.get("id")
-                                self.battlemetrics_rank = s.get("attributes", {}).get("rank")
-                                self.battlemetrics_players = s.get("attributes", {}).get("players", 0)
-                            self.next_bm_allowed_time = time.time() + 60.0
-
-                        elif res.status_code == 429:
-                            self.consecutive_429_count += 1
-                            self.last_bm_status = "THROTTLED"
-                            retry_after = res.headers.get("Retry-After")
-                            wait_seconds = (
-                                int(retry_after)
-                                if (retry_after and retry_after.isdigit())
-                                else min(30 * (2 ** (self.consecutive_429_count - 1)), 300)
-                            )
-                            self.next_bm_allowed_time = time.time() + wait_seconds
-                        else:
-                            self.next_bm_allowed_time = time.time() + 60.0
+                sock.sendto(query_packet, (host, port))
+                data, _ = sock.recvfrom(2048)
+                t_end = time.perf_counter()
+                latency_ms = round((t_end - t_start) * 1000, 1)
+                return self.parse_a2s_packet(data, latency_ms)
             except Exception:
-                self.next_bm_allowed_time = time.time() + 60.0
+                return {"responsive": False, "ping_ms": None}
+            finally:
+                sock.close()
 
-            await asyncio.sleep(2)
+        try:
+            res = await loop.run_in_executor(None, _sync_a2s_query)
+            self.a2s_responsive = res.get("responsive", False)
+            self.a2s_ping_ms = res.get("ping_ms")
+            if res.get("server_name"):
+                self.a2s_server_name = res["server_name"]
+            if res.get("map_name"):
+                self.a2s_map_name = res["map_name"]
+            return res
+        except Exception:
+            self.a2s_responsive = False
+            self.a2s_ping_ms = None
+            return {"responsive": False, "ping_ms": None}
 
-    def probe_local_logs(self) -> Dict[str, Any]:
+    async def probe_pocketpair_master_list(self):
+        """Queries Pocketpair's official matchmaking directory to verify community listing status."""
+        if time.time() - self.last_pocketpair_check < 60.0 and self.pocketpair_listed:
+            return
+
+        try:
+            # Pocketpair public master server API list endpoint
+            url = "https://palworld-server-api.pocketpair.jp/api/serverList"
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                res = await client.get(url)
+                if res.status_code == 200:
+                    data = res.json()
+                    servers = (
+                        data.get("servers", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+                    )
+                    for s in servers:
+                        s_name = s.get("name") or s.get("server_name") or ""
+                        if self.server_name.lower() in s_name.lower():
+                            self.pocketpair_listed = True
+                            self.pocketpair_uuid = str(
+                                s.get("server_id") or s.get("id") or s.get("uuid") or "Registered"
+                            )
+                            self.pocketpair_region = s.get("region", "Global")
+                            self.pocketpair_version = s.get("version", "Live")
+                            self.last_pocketpair_check = time.time()
+                            return
+        except Exception as e:
+            log.debug(f"Pocketpair directory probe exception: {e}")
+
+        self.last_pocketpair_check = time.time()
+
+    def probe_local_logs(self) -> dict[str, Any]:
         """Scrapes systemd journalctl for Palworld EOS session & lobby initialization lines."""
-        if self.log_registered:
+        if self.log_registered and self.log_session_id:
             return {
                 "registered": True,
                 "first_seen": self.log_first_seen,
+                "session_id": self.log_session_id,
                 "last_line": self.log_last_matched_line,
             }
 
         if os.name != "nt":
             try:
                 cmd = ["sudo", "journalctl", "-u", "palworld.service", "-n", "300", "--no-pager"]
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
                 if proc.returncode == 0:
+                    pattern = (
+                        r"Created public lobby session|EOS-SDK.*sessions|"
+                        r"Lobby.*Registered|PublicSession|Steam server initialized"
+                    )
                     for line in proc.stdout.splitlines():
-                        if re.search(
-                            r"Created public lobby session|EOS-SDK.*sessions|Lobby.*Registered|PublicSession|Steam server initialized",
-                            line,
-                            re.IGNORECASE,
-                        ):
+                        if re.search(pattern, line, re.IGNORECASE):
                             self.log_registered = True
                             self.log_last_matched_line = line.strip()
+
+                            # Extract Session ID if present
+                            match = re.search(r"SessionId:\s*([A-Za-z0-9_\-]+)", line)
+                            if match:
+                                self.log_session_id = match.group(1)
+
                             if not self.log_first_seen:
                                 self.log_first_seen = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
                             return {
                                 "registered": True,
+                                "session_id": self.log_session_id,
                                 "first_seen": self.log_first_seen,
                                 "last_line": self.log_last_matched_line,
                             }
             except Exception:
                 pass
         return {
-            "registered": False,
+            "registered": self.log_registered,
+            "session_id": self.log_session_id,
             "first_seen": self.log_first_seen,
-            "last_line": None,
+            "last_line": self.log_last_matched_line,
         }
 
-    async def probe_ip_and_dns(self):
-        """Probes current public WAN IP and resolves DuckDNS A-record for alignment."""
-        if time.time() - self.last_ip_check < 120.0 and self.cached_public_ip != "Detecting...":
-            return
-
+    def probe_network_alignment(self) -> dict[str, Any]:
+        """Probes WAN public IP and DuckDNS resolution to verify network alignment."""
         try:
-            async with httpx.AsyncClient(timeout=4.0) as client:
-                res = await client.get("https://api.ipify.org?format=json")
+            with httpx.Client(timeout=2.0) as client:
+                res = client.get("https://api.ipify.org?format=json")
                 if res.status_code == 200:
                     self.cached_public_ip = res.json().get("ip", "Unknown")
         except Exception:
             pass
 
         try:
-            self.cached_dns_ip = socket.gethostbyname(self.domain)
+            if self.domain:
+                self.cached_dns_ip = socket.gethostbyname(str(self.domain))
+            else:
+                self.cached_dns_ip = "Unresolved"
         except Exception:
             self.cached_dns_ip = "Unresolved"
 
-        self.last_ip_check = time.time()
+        is_aligned = bool(
+            self.cached_public_ip
+            and self.cached_dns_ip != "Unresolved"
+            and self.cached_public_ip == self.cached_dns_ip
+        )
 
-    def update_and_get_players(self, live_players_raw: List[Dict[str, Any]]) -> Dict[str, Any]:
+        return {
+            "public_ip": self.cached_public_ip or "Unknown",
+            "dns_ip": self.cached_dns_ip or "Unresolved",
+            "domain": self.domain,
+            "is_aligned": is_aligned,
+        }
+
+    def update_and_get_players(self, live_players_raw: list[dict[str, Any]]) -> dict[str, Any]:
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         active_list = []
         active_ids = set()
 
         for p in live_players_raw:
-            pid = str(p.get("playerId") or p.get("userId") or p.get("name"))
+            pid = str(p.get("playerId", ""))
+            if not pid:
+                continue
             active_ids.add(pid)
-            name = p.get("name", "Unknown Pal Tamer")
-            lvl = p.get("level", 1)
-            ping = round(float(p.get("ping", 0)), 1)
-            loc_x = round(float(p.get("location_x", 0)), 1)
-            loc_y = round(float(p.get("location_y", 0)), 1)
 
-            entry = {
+            player_record = {
                 "playerId": pid,
-                "userId": p.get("userId", pid),
-                "name": name,
-                "level": lvl,
-                "ping": ping,
-                "coords": f"X: {loc_x}, Y: {loc_y}",
+                "userId": p.get("userId", ""),
+                "name": p.get("name", "Unknown Tamer"),
+                "level": p.get("level", 1),
+                "ping": p.get("ping", 0.0),
+                "location": {
+                    "x": p.get("location_x", 0.0),
+                    "y": p.get("location_y", 0.0),
+                },
                 "status": "ONLINE",
                 "last_seen": now_str,
             }
-            active_list.append(entry)
-            self.players_history[pid] = entry
 
-        self._save_player_ledger()
+            self.players_history[pid] = player_record
+            active_list.append(player_record)
 
         offline_list = []
-        for pid, data in self.players_history.items():
+        for pid, record in self.players_history.items():
             if pid not in active_ids:
-                d = dict(data)
-                d["status"] = "OFFLINE"
-                offline_list.append(d)
+                record["status"] = "OFFLINE"
+                offline_list.append(record)
+
+        self._save_player_ledger()
 
         return {
             "active_count": len(active_list),
@@ -214,12 +286,12 @@ class CommunityTracker:
             "offline_players": offline_list,
         }
 
-    def get_hardware_telemetry(self) -> Dict[str, Any]:
+    def get_hardware_telemetry(self) -> dict[str, Any]:
         cgroup_ram_bytes = 0
         cgroup_path = "/sys/fs/cgroup/system.slice/palworld.service/memory.current"
         if os.name != "nt" and os.path.exists(cgroup_path):
             try:
-                with open(cgroup_path, "r") as f:
+                with open(cgroup_path, encoding="utf-8") as f:
                     cgroup_ram_bytes = int(f.read().strip())
             except Exception:
                 pass
@@ -248,21 +320,20 @@ class CommunityTracker:
     async def get_combined_telemetry(
         self,
         is_multiplay: bool = True,
-        host_ip: Optional[str] = None,
+        host_ip: str | None = None,
         public_port: int = 8211,
-    ) -> Dict[str, Any]:
-        self.last_check_time = datetime.datetime.now().strftime("%H:%M:%S")
-        await self.probe_ip_and_dns()
+        server_password: str = "",
+        rcon_port: int = 25575,
+        rest_port: int = 8212,
+        max_players: int = 32,
+        current_players: int = 0,
+    ) -> dict[str, Any]:
+        self.probe_network_alignment()
+        await self.probe_pocketpair_master_list()
+        await self.probe_steam_a2s_info(host=host_ip or "127.0.0.1", port=public_port)
         log_res = self.probe_local_logs()
 
         lan_ip = host_ip or os.getenv("PALWORLD_HOST_IP", "127.0.0.1")
-        now = time.time()
-        backoff_sec = max(0, int(self.next_bm_allowed_time - now)) if self.next_bm_allowed_time > now else 0
-        bm_status_label = (
-            "INDEXED"
-            if self.battlemetrics_indexed
-            else ("THROTTLED" if self.last_bm_status == "THROTTLED" else "SCANNING")
-        )
 
         dns_match = (
             self.cached_public_ip != "Detecting..."
@@ -270,53 +341,75 @@ class CommunityTracker:
             and self.cached_public_ip == self.cached_dns_ip
         )
 
-        if self.battlemetrics_indexed:
+        direct_connect_host = (
+            self.domain
+            if (self.domain and "yourdomain" not in self.domain)
+            else (self.cached_public_ip if self.cached_public_ip != "Detecting..." else lan_ip)
+        )
+
+        # Header Badge
+        if self.pocketpair_listed:
             badge_label = "Community Listed"
             badge_style = "bg-emerald-900/60 border border-emerald-500/50 text-emerald-300 font-bold"
             badge_dot = "bg-emerald-400"
+        elif log_res.get("registered"):
+            badge_label = "Console Search Ready"
+            badge_style = "bg-brand-900/60 border border-brand-500/50 text-brand-300 font-bold"
+            badge_dot = "bg-brand-400 animate-pulse"
         elif not is_multiplay:
             badge_label = "Private Server"
             badge_style = "bg-slate-800 border border-slate-700 text-slate-300"
             badge_dot = "bg-slate-400"
         else:
-            badge_label = f"Direct Connect Ready ({lan_ip}:{public_port})"
+            badge_label = f"Direct Connect ({lan_ip}:{public_port})"
             badge_style = "bg-amber-900/60 border border-amber-500/50 text-amber-300"
-            badge_dot = "bg-amber-400 animate-pulse"
-
-        direct_connect_host = self.domain if (self.domain and "yourdomain" not in self.domain) else (
-            self.cached_public_ip if self.cached_public_ip != "Detecting..." else lan_ip
-        )
+            badge_dot = "bg-amber-400"
 
         return {
             "top_badge": {
                 "label": badge_label,
                 "style": badge_style,
                 "dot": badge_dot,
-                "is_indexed": self.battlemetrics_indexed,
             },
-            "network_matrix": {
-                "public_wan_ip": self.cached_public_ip,
-                "duckdns_a_record": self.cached_dns_ip,
-                "dns_aligned": dns_match,
-                "lan_ip": lan_ip,
-                "public_port": public_port,
-                "direct_connect_addr": f"{direct_connect_host}:{public_port}",
-                "lan_connect_addr": f"{lan_ip}:{public_port}",
+            "discovery_hub": {
+                "log_scraper": {
+                    "status": "CONSOLE SEARCH READY" if log_res.get("registered") else "AWAITING EOS HANDSHAKE",
+                    "registered": log_res.get("registered", False),
+                    "session_id": log_res.get("session_id") or "--",
+                    "first_seen": log_res.get("first_seen") or "--",
+                    "crossplay_flags": "Steam, Xbox, PS5, Mac" if is_multiplay else "Singleplayer / Private",
+                    "last_line": log_res.get("last_line") or "Pattern: Created public lobby session",
+                },
+                "pocketpair_master": {
+                    "status": "OFFICIALLY LISTED" if self.pocketpair_listed else "SEARCHING MASTER LIST",
+                    "listed": self.pocketpair_listed,
+                    "server_uuid": self.pocketpair_uuid or "--",
+                    "search_keyword": self.server_name,
+                    "region": self.pocketpair_region or "Global",
+                    "version": self.pocketpair_version or "Live",
+                },
+                "network_matrix": {
+                    "public_wan_ip": self.cached_public_ip,
+                    "duckdns_a_record": self.cached_dns_ip,
+                    "dns_aligned": dns_match,
+                    "lan_ip": lan_ip,
+                    "public_port": public_port,
+                    "direct_connect_addr": f"{direct_connect_host}:{public_port}",
+                    "lan_connect_addr": f"{lan_ip}:{public_port}",
+                },
             },
-            "source_of_truth_battlemetrics": {
-                "status": bm_status_label,
-                "indexed": self.battlemetrics_indexed,
-                "first_seen": self.battlemetrics_first_seen,
-                "server_id": self.battlemetrics_id,
-                "rank": self.battlemetrics_rank,
-                "players": self.battlemetrics_players,
-                "backoff_remaining_sec": backoff_sec,
+            "a2s_telemetry": {
+                "responsive": self.a2s_responsive,
+                "ping_ms": self.a2s_ping_ms,
+                "server_name": self.a2s_server_name or self.server_name,
+                "map_name": self.a2s_map_name or "Palworld",
             },
-            "backup_log_scraper": {
-                "status": "HEARTBEAT_DETECTED" if log_res.get("registered") else "AWAITING_BEAT",
-                "registered": log_res.get("registered", False),
-                "first_seen": self.log_first_seen,
-                "last_line": log_res.get("last_line"),
+            "security_matrix": {
+                "is_password_protected": bool(server_password),
+                "server_password": server_password,
+                "rcon_port": rcon_port,
+                "rest_port": rest_port,
+                "current_players": current_players,
+                "max_players": max_players,
             },
-            "last_probed": self.last_check_time,
         }

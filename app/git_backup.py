@@ -1,7 +1,8 @@
 import os
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from .config_parser import parse_ini_file, serialize_ini_settings
 from .config_pipeline import PROTECTED_ADMIN_KEYS
 
@@ -18,7 +19,7 @@ class IsolatedGitBackupManager:
         self.staged_file = self.backup_repo_dir / "PalWorldSettings.ini"
         self._init_repo()
 
-    def _run_git(self, args: List[str], check: bool = True) -> subprocess.CompletedProcess:
+    def _run_git(self, args: list[str], check: bool = True) -> subprocess.CompletedProcess:
         return subprocess.run(
             ["git"] + args,
             cwd=str(self.backup_repo_dir),
@@ -35,7 +36,7 @@ class IsolatedGitBackupManager:
             self._run_git(["config", "user.email", "daemon@palworld.local"])
             self._run_git(["config", "commit.gpgsign", "false"])
 
-    def create_commit(self, tag: str, message: str) -> Optional[str]:
+    def create_commit(self, tag: str, message: str) -> str | None:
         if not self.live_ini_path.exists():
             return None
 
@@ -67,7 +68,7 @@ class IsolatedGitBackupManager:
         rev = self._run_git(["rev-parse", "--short", "HEAD"])
         return rev.stdout.strip()
 
-    def get_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_history(self, limit: int = 50) -> list[dict[str, Any]]:
         log_format = "%h|%an|%ad|%s"
         res = self._run_git(
             [
@@ -86,12 +87,14 @@ class IsolatedGitBackupManager:
         for line in res.stdout.strip().split("\n"):
             parts = line.split("|", 3)
             if len(parts) == 4:
-                commits.append({
-                    "hash": parts[0],
-                    "author": parts[1],
-                    "date": parts[2],
-                    "message": parts[3],
-                })
+                commits.append(
+                    {
+                        "hash": parts[0],
+                        "author": parts[1],
+                        "date": parts[2],
+                        "message": parts[3],
+                    }
+                )
         return commits
 
     def get_diff(self, commit_hash: str) -> str:
