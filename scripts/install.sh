@@ -112,8 +112,10 @@ echo "[ OK ]"
 
 # 6. UV Virtualenv & Dependency Installation
 echo -n "[6/8] Building Python environment with uv... "
+cp "${REPO_ROOT}/uv.lock" "${APP_DIR}/" 2>/dev/null || true
+chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 cd "${APP_DIR}"
-su -s /bin/bash "${APP_USER}" -c "uv venv --clear .venv --python python3 > /dev/null && uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic httpx websockets psutil > /dev/null"
+su -s /bin/bash "${APP_USER}" -c "uv venv --clear .venv --python python3 > /dev/null && uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil > /dev/null"
 echo "[ OK ]"
 
 # 7. Crontabs & DNS Initialization

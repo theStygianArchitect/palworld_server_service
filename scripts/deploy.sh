@@ -32,6 +32,7 @@ echo "[ OK ]"
 echo -n "[2/4] Syncing application code to ${APP_DIR}... "
 cp -r "${REPO_ROOT}/app" "${APP_DIR}/"
 cp "${REPO_ROOT}/pyproject.toml" "${APP_DIR}/"
+cp "${REPO_ROOT}/uv.lock" "${APP_DIR}/" 2>/dev/null || true
 if [ -f "${REPO_ROOT}/README.md" ]; then
     cp "${REPO_ROOT}/README.md" "${APP_DIR}/"
 fi
@@ -40,7 +41,7 @@ echo "[ OK ]"
 
 echo -n "[3/4] Updating Python dependencies via uv... "
 cd "${APP_DIR}"
-su -s /bin/bash "${APP_USER}" -c "uv pip install --python .venv/bin/python -r <(uv pip compile pyproject.toml) > /dev/null 2>&1 || uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic httpx websockets psutil > /dev/null"
+su -s /bin/bash "${APP_USER}" -c "uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil > /dev/null"
 echo "[ OK ]"
 
 echo -n "[4/4] Restarting palworld-manager.service... "
