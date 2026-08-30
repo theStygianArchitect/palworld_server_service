@@ -54,7 +54,24 @@ def _resolve_default_ledger_path() -> Path:
         return Path.home() / ".palmanager" / "players.json"
 
 
+def _resolve_default_session_path() -> Path:
+    """Returns a writable session cache path, falling back to home dir if unprivileged."""
+    if os.name == "nt":
+        return Path.home() / ".palmanager" / "eos_session.json"
+    var_lib = Path("/var/lib/palmanager/eos_session.json")
+    try:
+        var_lib.parent.mkdir(parents=True, exist_ok=True)
+        return var_lib
+    except PermissionError as err:
+        log.debug("Permission denied creating /var/lib/palmanager (%s), using home dir fallback.", err)
+        return Path.home() / ".palmanager" / "eos_session.json"
+    except OSError as err:
+        log.debug("OS error creating /var/lib/palmanager (%s), using home dir fallback.", err)
+        return Path.home() / ".palmanager" / "eos_session.json"
+
+
 DEFAULT_LEDGER_PATH: Path = _resolve_default_ledger_path()
+DEFAULT_SESSION_PATH: Path = _resolve_default_session_path()
 
 
 def resolve_host_lan_ip() -> str:
@@ -128,6 +145,7 @@ class CommunityTracker:
         server_name: str | None = None,
         domain: str | None = None,
         player_ledger_path: str | Path | None = None,
+        session_cache_path: str | Path | None = None,
     ) -> None:
         """Initializes the CommunityTracker with server identity and storage paths.
 
@@ -135,6 +153,7 @@ class CommunityTracker:
             server_name (str | None): Server name for directory matching.
             domain (str | None): DuckDNS domain for DNS resolution.
             player_ledger_path (str | Path | None): Filepath for persistent player ledger.
+            session_cache_path (str | Path | None): Filepath for persistent EOS session cache.
         """
         self.server_name: str = server_name or os.getenv("PALWORLD_SERVER_NAME") or "Palworld Dedicated Server"
         raw_domain = (
@@ -155,11 +174,20 @@ class CommunityTracker:
             env_ledger = os.getenv("PLAYER_LEDGER_PATH")
             self.player_ledger_path = Path(env_ledger) if env_ledger else DEFAULT_LEDGER_PATH
 
+        if session_cache_path is not None:
+            self.session_cache_path: Path = Path(session_cache_path)
+        else:
+            env_session = os.getenv("SESSION_CACHE_PATH")
+            self.session_cache_path = Path(env_session) if env_session else DEFAULT_SESSION_PATH
+
         # 1. Local Log Scraper State (EOS Public Session ID)
         self.log_registered: bool = False
         self.log_first_seen: str | None = None
         self.log_session_id: str | None = None
         self.log_last_matched_line: str = "Awaiting initial engine log lines..."
+
+        # Load persisted session cache if available across web service restarts
+        self._load_session_cache()
 
         # 2. Pocketpair Master Server Directory Probe State
         self.pocketpair_listed: bool = False
@@ -184,6 +212,47 @@ class CommunityTracker:
 
         # 5. Persistent Player Ledger
         self.players_history: dict[str, PlayerRecord] = self._load_player_ledger()
+
+    def _load_session_cache(self) -> None:
+        """Loads cached EOS session metadata from disk across service restarts."""
+        if not self.session_cache_path.exists():
+            return
+        try:
+            content = self.session_cache_path.read_text(encoding="utf-8")
+            data = json.loads(content)
+            if isinstance(data, dict):
+                self.log_registered = bool(data.get("registered", False))
+                self.log_session_id = data.get("session_id")
+                self.log_first_seen = data.get("first_seen")
+                if data.get("last_line"):
+                    self.log_last_matched_line = str(data["last_line"])
+        except FileNotFoundError as err:
+            log.debug("Session cache file disappeared during read: %s", err)
+        except PermissionError as err:
+            log.debug("Permission denied reading session cache: %s", err)
+        except json.JSONDecodeError as err:
+            log.debug("Malformed JSON in session cache: %s", err)
+        except OSError as err:
+            log.debug("I/O error reading session cache: %s", err)
+
+    def _save_session_cache(self) -> None:
+        """Persists current EOS session state to disk using an atomic file swap."""
+        try:
+            self.session_cache_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "registered": self.log_registered,
+                "session_id": self.log_session_id,
+                "first_seen": self.log_first_seen,
+                "last_line": self.log_last_matched_line,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            temp_path = self.session_cache_path.with_suffix(".tmp")
+            temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            temp_path.replace(self.session_cache_path)
+        except PermissionError as err:
+            log.debug("Permission denied writing session cache: %s", err)
+        except OSError as err:
+            log.debug("Failed writing session cache: %s", err)
 
     def _load_player_ledger(self) -> dict[str, PlayerRecord]:
         """Loads historical player roster from persistent JSON storage.
@@ -358,11 +427,50 @@ class CommunityTracker:
         self.last_pocketpair_check = time.time()
 
     def probe_local_logs(self) -> LogScraperInfo:
-        """Scrapes Palworld engine log files and systemd journalctl for EOS session & lobby initialization lines.
+        """Performs real-time and retroactive log scraping across active/archived Pal.log files and journalctl.
 
         Returns:
             LogScraperInfo: Scraped session information and status metadata.
         """
+        candidate_log_dirs = [
+            Path("/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Logs"),
+            Path("/home/steam/Steam/steamapps/common/PalServer/Pal/Saved/Logs"),
+            Path("/home/steam/PalServer/Pal/Saved/Logs"),
+        ]
+
+        active_log_file: Path | None = None
+        all_log_files: list[Path] = []
+        for log_dir in candidate_log_dirs:
+            if log_dir.is_dir():
+                main_log = log_dir / "Pal.log"
+                if main_log.exists():
+                    active_log_file = main_log
+                try:
+                    found_logs = sorted(
+                        log_dir.glob("Pal*.log"),
+                        key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
+                        reverse=True,
+                    )
+                    all_log_files.extend(found_logs)
+                except OSError as err:
+                    log.debug("Error listing log directory %s: %s", log_dir, err)
+                if all_log_files:
+                    break
+
+        # 1. Tail latest line from active Pal.log for real-time engine activity
+        if active_log_file and active_log_file.exists():
+            try:
+                with active_log_file.open("r", encoding="utf-8", errors="ignore") as f:
+                    recent_lines = f.readlines()[-50:]
+                    for raw_line in reversed(recent_lines):
+                        clean_line = raw_line.strip()
+                        if clean_line and not clean_line.startswith("=") and len(clean_line) > 5:
+                            self.log_last_matched_line = clean_line[:120]
+                            break
+            except OSError as err:
+                log.debug("Error tailing active Pal.log: %s", err)
+
+        # If already registered and have session ID, return cached info
         if self.log_registered and self.log_session_id:
             return {
                 "registered": True,
@@ -374,76 +482,83 @@ class CommunityTracker:
                 "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
             }
 
-        lines_to_check: list[str] = []
+        # 2. Retroactive Deep Scan across all historical Pal*.log files
+        pattern = (
+            r"Created public lobby session|EOS-SDK.*sessions|"
+            r"Lobby.*Registered|PublicSession|Steam server initialized|"
+            r"Server registration succeeded|LogPalServer"
+        )
 
-        # 1. First probe direct Pal.log file on disk
-        candidate_log_files = [
-            Path("/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Logs/Pal.log"),
-            Path("/home/steam/Steam/steamapps/common/PalServer/Pal/Saved/Logs/Pal.log"),
-            Path("/home/steam/PalServer/Pal/Saved/Logs/Pal.log"),
-        ]
-        for log_file in candidate_log_files:
-            if log_file.exists():
-                try:
-                    with log_file.open("r", encoding="utf-8", errors="ignore") as f:
-                        lines_to_check = f.readlines()[-300:]
-                    if lines_to_check:
+        for log_file in all_log_files:
+            try:
+                with log_file.open("r", encoding="utf-8", errors="ignore") as f:
+                    lines = f.readlines()[:10000]
+                for line in lines:
+                    if re.search(pattern, line, re.IGNORECASE):
+                        self.log_registered = True
+                        match = re.search(r"SessionId:\s*([A-Za-z0-9_\-]+)", line)
+                        if match:
+                            self.log_session_id = match.group(1)
+
+                        if not self.log_first_seen:
+                            ts_match = re.search(r"\[(\d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2})", line)
+                            if ts_match:
+                                self.log_first_seen = ts_match.group(1).replace(".", "-").replace("-", " ", 1)
+                            else:
+                                self.log_first_seen = datetime.datetime.now(datetime.timezone.utc).strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                )
                         break
-                except PermissionError as err:
-                    log.debug("Permission denied reading %s: %s", log_file, err)
-                except OSError as err:
-                    log.debug("OS error reading %s: %s", log_file, err)
+                if self.log_registered and self.log_session_id:
+                    break
+            except OSError as err:
+                log.debug("Retroactive scan error on %s: %s", log_file, err)
 
-        # 2. Fallback to systemd journalctl probe if Pal.log was empty or unreadable
-        if not lines_to_check and os.name != "nt":
+        # 3. Retroactive Deep Scan in systemd journal (scans up to 5,000 lines from current boot)
+        if not self.log_registered and os.name != "nt":
             try:
                 sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
                 journalctl_bin = shutil.which("journalctl") or "/bin/journalctl"
-                cmd = [sudo_bin, journalctl_bin, "-u", "palworld.service", "-n", "300", "--no-pager"]
+                cmd = [sudo_bin, journalctl_bin, "-u", "palworld.service", "-b", "-n", "5000", "--no-pager"]
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)
                 if proc.returncode == 0:
-                    lines_to_check = proc.stdout.splitlines()
+                    lines = proc.stdout.splitlines()
+                    for raw_line in reversed(lines[-50:]):
+                        clean_line = raw_line.strip()
+                        if clean_line and not clean_line.startswith("=") and len(clean_line) > 5:
+                            self.log_last_matched_line = clean_line[:120]
+                            break
+
+                    for line in lines:
+                        if re.search(pattern, line, re.IGNORECASE):
+                            self.log_registered = True
+                            match = re.search(r"SessionId:\s*([A-Za-z0-9_\-]+)", line)
+                            if match:
+                                self.log_session_id = match.group(1)
+
+                            if not self.log_first_seen:
+                                self.log_first_seen = datetime.datetime.now(datetime.timezone.utc).strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                )
+                            break
             except subprocess.TimeoutExpired as err:
-                log.debug("Journalctl probe timed out: %s", err)
+                log.debug("Journalctl retroactive scan timed out: %s", err)
             except subprocess.SubprocessError as err:
-                log.debug("Journalctl subprocess error: %s", err)
+                log.debug("Journalctl retroactive scan subprocess error: %s", err)
             except OSError as err:
-                log.debug("Journalctl execution OS error: %s", err)
+                log.debug("Journalctl retroactive scan OS error: %s", err)
 
-        if lines_to_check:
-            # Capture the latest meaningful engine activity line
-            for raw_line in reversed(lines_to_check):
-                clean_line = raw_line.strip()
-                if clean_line and not clean_line.startswith("=") and len(clean_line) > 5:
-                    self.log_last_matched_line = clean_line[:120]
-                    break
-
-            pattern = (
-                r"Created public lobby session|EOS-SDK.*sessions|"
-                r"Lobby.*Registered|PublicSession|Steam server initialized|"
-                r"Server registration succeeded|LogPalServer"
-            )
-            for line in lines_to_check:
-                if re.search(pattern, line, re.IGNORECASE):
-                    self.log_registered = True
-                    self.log_last_matched_line = line.strip()[:120]
-
-                    match = re.search(r"SessionId:\s*([A-Za-z0-9_\-]+)", line)
-                    if match:
-                        self.log_session_id = match.group(1)
-
-                    if not self.log_first_seen:
-                        self.log_first_seen = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-                    return {
-                        "registered": True,
-                        "session_id": self.log_session_id or "EOS-Session-Active",
-                        "first_seen": self.log_first_seen,
-                        "last_line": self.log_last_matched_line,
-                        "status_label": "CONSOLE SEARCH READY",
-                        "status_color": "emerald",
-                        "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
-                    }
+        if self.log_registered:
+            self._save_session_cache()
+            return {
+                "registered": True,
+                "session_id": self.log_session_id or "EOS-Session-Active",
+                "first_seen": self.log_first_seen,
+                "last_line": self.log_last_matched_line,
+                "status_label": "CONSOLE SEARCH READY",
+                "status_color": "emerald",
+                "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
+            }
 
         return {
             "registered": self.log_registered,
