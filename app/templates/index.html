@@ -529,6 +529,31 @@
     <p id="countdownMsg" class="text-[11px] text-amber-300 leading-snug">Notice broadcast sent...</p>
   </div>
 
+  <!-- Mobile / Quick Copy Modal -->
+  <div id="copyModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-dark-900 border border-slate-800 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-bold text-slate-200 flex items-center gap-1.5">
+          <span>📋</span> <span id="copyModalTitle">Copy Details</span>
+        </h3>
+        <button onclick="closeCopyModal()" class="text-slate-400 hover:text-white text-sm font-bold p-1">✕</button>
+      </div>
+      <p class="text-xs text-slate-400">Tap below to auto-select and copy to your device clipboard:</p>
+      <div class="relative">
+        <input type="text" id="copyModalInput" readonly onclick="this.select(); this.setSelectionRange(0, 99999);"
+               class="w-full bg-dark-950 border border-brand-500 rounded-xl p-3 text-sm font-mono text-emerald-400 font-bold focus:outline-none focus:ring-2 focus:ring-brand-400 select-all cursor-pointer">
+      </div>
+      <div class="flex gap-2 pt-1">
+        <button onclick="execModalCopy()" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold transition">
+          📋 Copy Now
+        </button>
+        <button onclick="closeCopyModal()" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let settingsMetadata = {};
     let currentSettings = {};
@@ -571,62 +596,99 @@
       }, 2000);
     }
 
-    function writeTextToClipboard(text, btn = null) {
+    function openCopyModal(title, value) {
+      document.getElementById('copyModalTitle').innerText = title || "Copy Details";
+      const input = document.getElementById('copyModalInput');
+      input.value = value;
+      document.getElementById('copyModal').classList.remove('hidden');
+      setTimeout(() => {
+        input.focus();
+        input.select();
+        input.setSelectionRange(0, 99999);
+      }, 50);
+    }
+
+    function closeCopyModal() {
+      document.getElementById('copyModal').classList.add('hidden');
+    }
+
+    function execModalCopy() {
+      const input = document.getElementById('copyModalInput');
+      input.focus();
+      input.select();
+      input.setSelectionRange(0, 99999);
+      let copied = false;
+      try {
+        copied = document.execCommand('copy');
+      } catch (e) {
+        copied = false;
+      }
+      if (!copied && navigator.clipboard) {
+        navigator.clipboard.writeText(input.value).then(() => {
+          showAlert("Copied to clipboard!");
+          setTimeout(closeCopyModal, 500);
+        }).catch(() => {
+          showAlert("Text selected! Press Copy on your device keyboard.", false);
+        });
+        return;
+      }
+      if (copied) {
+        showAlert("Copied to clipboard!");
+        setTimeout(closeCopyModal, 500);
+      } else {
+        showAlert("Text selected! Tap Copy above.", false);
+      }
+    }
+
+    async function writeTextToClipboard(text, btn = null, label = "Copy") {
       if (!text) return false;
       let copied = false;
 
-      // 1. Synchronous Range Selection for iOS Safari / WebKit & Android / Desktop Browsers
-      const textArea = document.createElement("textarea");
-      textArea.value = text;
-      textArea.style.fontSize = "12pt";
-      textArea.style.border = "0";
-      textArea.style.padding = "0";
-      textArea.style.margin = "0";
-      textArea.style.position = "absolute";
-      textArea.style.left = "-9999px";
-      const yPosition = window.pageYOffset || document.documentElement.scrollTop;
-      textArea.style.top = `${yPosition}px`;
-      textArea.setAttribute("readonly", "");
-      document.body.appendChild(textArea);
-
-      const isIOS = navigator.userAgent.match(/ipad|iphone|ipod/i);
-      if (isIOS) {
-        const range = document.createRange();
-        range.selectNodeContents(textArea);
-        const selection = window.getSelection();
-        if (selection) {
-          selection.removeAllRanges();
-          selection.addRange(range);
+      // 1. Try Modern Clipboard API first (supported directly during user gesture)
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        } catch (err) {
+          console.debug("navigator.clipboard direct write failed, attempting in-viewport fallback:", err);
         }
-        textArea.setSelectionRange(0, 999999);
-      } else {
-        textArea.focus();
-        textArea.select();
       }
 
-      try {
-        copied = document.execCommand("copy");
-      } catch (err) {
-        console.debug("execCommand copy error:", err);
-      }
-      document.body.removeChild(textArea);
+      // 2. In-Viewport iOS WebKit & Desktop Fallback (Avoid off-screen position which WebKit blocks)
+      if (!copied) {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = text;
+        input.setAttribute("readonly", "");
+        input.style.position = "fixed";
+        input.style.top = "50%";
+        input.style.left = "50%";
+        input.style.transform = "translate(-50%, -50%)";
+        input.style.opacity = "0.01";
+        input.style.zIndex = "-1";
+        input.style.fontSize = "16px";
+        document.body.appendChild(input);
 
-      // 2. Modern Clipboard API fallback if secure context and execCommand failed
-      if (!copied && navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(text).then(() => {
-          triggerCopyFeedback(btn);
-        }).catch(err => {
-          console.debug("navigator.clipboard fallback failed:", err);
-          prompt("Copy to clipboard (Hold & Copy):", text);
-        });
-        return true;
+        input.focus();
+        input.select();
+        input.setSelectionRange(0, 99999);
+
+        try {
+          copied = document.execCommand("copy");
+        } catch (err) {
+          console.debug("execCommand copy error:", err);
+          copied = false;
+        }
+        document.body.removeChild(input);
       }
 
       if (copied) {
         triggerCopyFeedback(btn);
+        showAlert("Copied to clipboard!");
         return true;
       } else {
-        prompt("Copy to clipboard (Hold & Copy):", text);
+        // 3. Resilient Interactive Sheet for strict iOS HTTP sandbox
+        openCopyModal(label, text);
         return true;
       }
     }
@@ -635,7 +697,8 @@
       const el = document.getElementById(elementId);
       if (!el) return;
       const text = el.innerText.trim();
-      writeTextToClipboard(text, btn);
+      const label = el.previousElementSibling ? el.previousElementSibling.innerText : "Value";
+      writeTextToClipboard(text, btn, label);
     }
 
     function copyPasswordValue(btn) {
@@ -644,8 +707,7 @@
         showAlert("No server join password is set (server is public).");
         return;
       }
-      writeTextToClipboard(pass, btn);
-      showAlert("Server password copied to clipboard!");
+      writeTextToClipboard(pass, btn, "Server Password");
     }
 
     async function loadSettings() {
