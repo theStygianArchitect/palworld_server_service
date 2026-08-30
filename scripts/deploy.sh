@@ -40,6 +40,11 @@ if [ -f "${REPO_ROOT}/scripts/palworld-manager.service" ]; then
     cp "${REPO_ROOT}/scripts/palworld-manager.service" /etc/systemd/system/palworld-manager.service
     systemctl daemon-reload
 fi
+if [ -f "${REPO_ROOT}/scripts/duck.sh" ] && [ -d "/home/steam/duckdns" ]; then
+    cp "${REPO_ROOT}/scripts/duck.sh" /home/steam/duckdns/duck.sh
+    chmod 0755 /home/steam/duckdns/duck.sh
+    chown steam:steam /home/steam/duckdns/duck.sh 2>/dev/null || true
+fi
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 echo "[ OK ]"
 
