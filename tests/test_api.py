@@ -1,13 +1,18 @@
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 
-client = TestClient(app)
+
+@pytest.fixture
+def client() -> TestClient:
+    """Provides an isolated FastAPI TestClient fixture."""
+    return TestClient(app)
 
 
-def test_api_health_and_ready_routes():
+def test_api_health_and_ready_routes(client: TestClient):
     # 1. Test /health liveness endpoint
     res_health = client.get("/health")
     assert res_health.status_code == 200
@@ -34,14 +39,14 @@ def test_api_health_and_ready_routes():
         assert res_ready.json()["version"] == "v0.3.5"
 
 
-def test_api_index_html_route():
+def test_api_index_html_route(client: TestClient):
     response = client.get("/")
     assert response.status_code == 200
     assert "Palworld" in response.text
     assert "html" in response.headers.get("content-type", "")
 
 
-def test_api_settings_get_route():
+def test_api_settings_get_route(client: TestClient):
     response = client.get("/api/settings")
     assert response.status_code == 200
     json_data = response.json()
@@ -50,7 +55,7 @@ def test_api_settings_get_route():
     assert "data" in json_data
 
 
-def test_api_settings_post_route():
+def test_api_settings_post_route(client: TestClient):
     payload = {
         "ExpRate": 2.5,
         "PalCaptureRate": 1.5,
@@ -61,7 +66,7 @@ def test_api_settings_post_route():
     assert response.json()["status"] == "success"
 
 
-def test_api_community_tracker_route():
+def test_api_community_tracker_route(client: TestClient):
     response = client.get("/api/tracker/community")
     assert response.status_code == 200
     json_data = response.json()
@@ -72,7 +77,7 @@ def test_api_community_tracker_route():
     assert "security_matrix" in json_data["data"]
 
 
-def test_api_reboot_with_custom_message_route():
+def test_api_reboot_with_custom_message_route(client: TestClient):
     payload = {
         "countdown_seconds": 2,
         "trigger_steam_update": False,
@@ -85,7 +90,7 @@ def test_api_reboot_with_custom_message_route():
         mock_reboot.assert_called_once_with(2, False, "", "Scheduled memory purge and restart.")
 
 
-def test_api_moderation_routes():
+def test_api_moderation_routes(client: TestClient):
     with patch("app.main.engine.kick_player", new_callable=AsyncMock, return_value=True) as mock_kick:
         res = client.post("/api/players/kick", json={"player_id": "1001", "message": "Spamming"})
         assert res.status_code == 200
@@ -105,7 +110,7 @@ def test_api_moderation_routes():
         mock_warn.assert_called_once_with("[ADMIN NOTICE] Maintenance starting in 15m", mirror_discord=True)
 
 
-def test_api_backups_routes():
+def test_api_backups_routes(client: TestClient):
     # Commits list
     commits_res = client.get("/api/backups/commits")
     assert commits_res.status_code == 200
