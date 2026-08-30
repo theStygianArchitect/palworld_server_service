@@ -99,8 +99,17 @@ class CommunityTracker:
             player_ledger_path (str | Path | None): Filepath for persistent player ledger.
         """
         self.server_name: str = server_name or os.getenv("PALWORLD_SERVER_NAME") or "Palworld Dedicated Server"
-        raw_domain = domain or os.getenv("PALWORLD_SERVER_DOMAIN") or os.getenv("PALWORLD_DOMAIN") or "yourdomain.duckdns.org"
-        self.domain: str = raw_domain.split(":")[0].strip()
+        raw_domain = (
+            domain
+            or os.getenv("PALWORLD_DOMAIN")
+            or os.getenv("PALWORLD_SERVER_DOMAIN")
+            or os.getenv("DUCKDNS_DOMAIN")
+            or "yourdomain.duckdns.org"
+        )
+        clean_domain = raw_domain.split(":")[0].strip()
+        if clean_domain and "." not in clean_domain and clean_domain != "yourdomain":
+            clean_domain = f"{clean_domain}.duckdns.org"
+        self.domain: str = clean_domain
 
         if player_ledger_path is not None:
             self.player_ledger_path: Path = Path(player_ledger_path)

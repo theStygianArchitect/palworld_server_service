@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -259,20 +259,52 @@ class AppSettings(BaseSettings):
         default_factory=_resolve_default_log_dir,
         alias="LOG_DIR",
     )
-    duckdns_domain: str = Field(default="yourdomain.duckdns.org", alias="SERVER_DOMAIN")
-    duckdns_token: str = Field(default="your_duckdns_token", alias="DUCKDNS_TOKEN")
-    host_ip: str = Field(default="127.0.0.1", alias="HOST_IP")
+    duckdns_domain: str = Field(
+        default="yourdomain.duckdns.org",
+        validation_alias=AliasChoices(
+            "PALWORLD_DOMAIN",
+            "PALWORLD_SERVER_DOMAIN",
+            "PALWORLD_DUCKDNS_DOMAIN",
+            "DUCKDNS_DOMAIN",
+            "SERVER_DOMAIN",
+            "duckdns_domain",
+        ),
+    )
+    duckdns_token: str = Field(
+        default="your_duckdns_token",
+        validation_alias=AliasChoices(
+            "PALWORLD_DUCKDNS_TOKEN",
+            "DUCKDNS_TOKEN",
+            "duckdns_token",
+        ),
+    )
+    host_ip: str = Field(
+        default="127.0.0.1",
+        validation_alias=AliasChoices("PALWORLD_HOST_IP", "HOST_IP", "host_ip"),
+    )
     discord_webhook_url: str | None = Field(
         default=None,
-        validation_alias="PALWORLD_DISCORD_WEBHOOK_URL",
+        validation_alias=AliasChoices(
+            "PALWORLD_DISCORD_WEBHOOK_URL",
+            "DISCORD_WEBHOOK_URL",
+            "discord_webhook_url",
+        ),
     )
     discord_log_level: str = Field(
         default="ERROR",
-        validation_alias="PALWORLD_DISCORD_LOG_LEVEL",
+        validation_alias=AliasChoices(
+            "PALWORLD_DISCORD_LOG_LEVEL",
+            "DISCORD_LOG_LEVEL",
+            "discord_log_level",
+        ),
     )
     discord_critical_ping: str = Field(
         default="@thestygianarchitect",
-        validation_alias="PALWORLD_DISCORD_CRITICAL_PING",
+        validation_alias=AliasChoices(
+            "PALWORLD_DISCORD_CRITICAL_PING",
+            "DISCORD_CRITICAL_PING",
+            "discord_critical_ping",
+        ),
     )
 
     @classmethod
