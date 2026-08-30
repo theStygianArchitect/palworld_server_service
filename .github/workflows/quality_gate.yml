@@ -5,6 +5,8 @@ on:
     branches: [main, test, dev, "feature/**"]
   pull_request:
     branches: [main, test, dev]
+  workflow_call:
+  workflow_dispatch:
 
 jobs:
   quality-gate:
@@ -32,25 +34,25 @@ jobs:
         run: uv sync --all-groups --python ${{ matrix.python-version }}
 
       - name: Run Zero-Leak Secret Scanner
-        run: uv run --python ${{ matrix.python-version }} python scripts/scan_secrets.py
+        run: uv run python scripts/scan_secrets.py
 
       - name: Run AST Exception & Logging Audit
-        run: uv run --python ${{ matrix.python-version }} python scripts/audit_exceptions.py app scripts tests
+        run: uv run python scripts/audit_exceptions.py app scripts tests
 
       - name: Run Dependency Vulnerability Audit (pip-audit)
-        run: uv run --python ${{ matrix.python-version }} pip-audit
+        run: uv run pip-audit
 
       - name: Run Static Application Security Testing (Bandit)
-        run: uv run --python ${{ matrix.python-version }} bandit -c pyproject.toml -r app scripts tests
+        run: uv run bandit -c pyproject.toml -r app scripts tests
 
       - name: Run Ruff Linter & Formatter Check
-        run: uv run --python ${{ matrix.python-version }} ruff check .
+        run: uv run ruff check .
 
       - name: Run Strict Mypy Type Analysis
-        run: uv run --python ${{ matrix.python-version }} mypy app scripts tests
+        run: uv run mypy app scripts tests
 
       - name: Run Google Docstring Validation (pydocstyle)
-        run: uv run --python ${{ matrix.python-version }} pydocstyle app scripts
+        run: uv run pydocstyle app scripts
 
       - name: Run Parallel Unit Tests & Code Coverage (pytest-xdist)
-        run: uv run --python ${{ matrix.python-version }} pytest -n auto --cov=app --cov-report=term-missing tests
+        run: uv run pytest -n auto --cov=app --cov-report=term-missing tests
