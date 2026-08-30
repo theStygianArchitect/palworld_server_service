@@ -1,0 +1,60 @@
+name: Production Deployment & Health Verification
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate-gate:
+    name: Verify Quality & Security Gate
+    uses: ./.github/workflows/quality_gate.yml
+
+  deploy:
+    name: Deploy to Production Linux Host
+    needs: validate-gate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Host via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        if: env.SSH_HOST != ''
+        env:
+          SSH_HOST: ${{ secrets.PROD_HOST }}
+          SSH_USER: ${{ secrets.PROD_USER }}
+          SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          SSH_PORT: ${{ secrets.PROD_PORT || 22 }}
+          APP_PATH: ${{ secrets.PROD_APP_DIR || '/opt/palworld_server_service' }}
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: ${{ secrets.PROD_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            echo ">>> Pulling latest release on production host..."
+            cd "${{ secrets.PROD_APP_DIR || '/opt/palworld_server_service' }}"
+            git pull origin main
+            
+            echo ">>> Syncing Python virtual environment with uv..."
+            uv sync --no-dev
+            
+            echo ">>> Restarting palworld-manager.service daemon..."
+            sudo systemctl restart palworld-manager.service
+            
+            echo ">>> Verifying daemon status..."
+            sudo systemctl is-active --quiet palworld-manager.service
+            echo "[+] Deployment successful. Daemon is active."
+
+      - name: Post-Deployment Liveness & Health Probe
+        if: env.PROD_URL != ''
+        env:
+          PROD_URL: ${{ secrets.PROD_PUBLIC_URL }}
+        run: |
+          echo ">>> Probing /health endpoint at ${{ secrets.PROD_PUBLIC_URL }}/health..."
+          curl --fail --retry 5 --retry-delay 3 --max-time 10 "${{ secrets.PROD_PUBLIC_URL }}/health"
+          echo "[+] Liveness check passed. Production service is online."
