@@ -1,3 +1,12 @@
+"""Community Discovery Hub & Bare-Metal Telemetry Engine.
+
+Provides multi-layer discovery tracking, Valve Steam A2S UDP packet queries,
+Pocketpair Master Server directory probes, EOS Session ID journal scraping,
+and bare-metal resource monitoring in accordance with 3 AM standards.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import datetime
 import json
@@ -13,39 +22,38 @@ import psutil
 
 from .logger import log
 
-DUCKDNS_LOG = os.getenv(
-    "DUCKDNS_LOG_PATH",
-    "/home/steam/duckdns/duck.log" if os.name != "nt" else os.path.expanduser("~/.palmanager/duck.log"),
-)
-PLAYER_LEDGER = os.getenv(
-    "PLAYER_LEDGER_PATH",
-    "/var/lib/palmanager/players.json" if os.name != "nt" else os.path.expanduser("~/.palmanager/players.json"),
+DEFAULT_LEDGER_PATH = (
+    "/var/lib/palmanager/players.json" if os.name != "nt" else os.path.expanduser("~/.palmanager/players.json")
 )
 
 
 class CommunityTracker:
+    """Probes Palworld community listings, A2S UDP sockets, and bare-metal resource telemetry."""
+
     def __init__(
         self,
         server_name: str | None = None,
         domain: str | None = None,
-    ):
-        self.server_name = server_name or os.getenv("PALWORLD_SERVER_NAME", "Palworld Dedicated Server")
-        self.domain = domain or os.getenv("PALWORLD_SERVER_DOMAIN", "yourdomain.duckdns.org")
+        player_ledger_path: str | None = None,
+    ) -> None:
+        self.server_name: str = server_name or os.getenv("PALWORLD_SERVER_NAME") or "Palworld Dedicated Server"
+        self.domain: str = domain or os.getenv("PALWORLD_SERVER_DOMAIN") or "yourdomain.duckdns.org"
+        self.player_ledger_path: str = player_ledger_path or os.getenv("PLAYER_LEDGER_PATH") or DEFAULT_LEDGER_PATH
 
-        # 1. Local Log Scraper & EOS Console Hub State
+        # 1. Local Log Scraper State (EOS Public Session ID)
         self.log_registered: bool = False
         self.log_first_seen: str | None = None
         self.log_session_id: str | None = None
-        self.log_last_matched_line: str | None = None
+        self.log_last_matched_line: str = "Awaiting initial engine log lines..."
 
-        # 2. Pocketpair Master Server Directory State
+        # 2. Pocketpair Master Server Directory Probe State
         self.pocketpair_listed: bool = False
-        self.pocketpair_uuid: str | None = None
-        self.pocketpair_region: str | None = None
-        self.pocketpair_version: str | None = None
+        self.pocketpair_server_id: str = "Unlisted"
+        self.pocketpair_name: str = self.server_name
+        self.pocketpair_version: str = "Unknown"
         self.last_pocketpair_check: float = 0.0
 
-        # 3. Native Steam A2S UDP Latency & Binary State
+        # 3. Valve Steam A2S_INFO UDP Query State
         self.a2s_ping_ms: float | None = None
         self.a2s_responsive: bool = False
         self.a2s_server_name: str | None = None
@@ -58,31 +66,32 @@ class CommunityTracker:
         self.cached_dns_ip: str = "Resolving..."
         self.last_ip_check: float = 0.0
 
-        # Player Ledger
+        # 5. Persistent Player Ledger
         self.players_history: dict[str, Any] = self._load_player_ledger()
 
     def _load_player_ledger(self) -> dict[str, Any]:
-        if os.path.exists(PLAYER_LEDGER):
+        """Loads historical player roster from persistent JSON storage."""
+        if os.path.exists(self.player_ledger_path):
             try:
-                with open(PLAYER_LEDGER, encoding="utf-8") as f:
+                with open(self.player_ledger_path, encoding="utf-8") as f:
                     return json.load(f)
-            except Exception:
-                pass
+            except (json.JSONDecodeError, OSError) as e:
+                log.warning("Failed to parse player ledger from %s: %s", self.player_ledger_path, e)
         return {}
 
-    def _save_player_ledger(self):
+    def _save_player_ledger(self) -> None:
+        """Persists current player roster to disk."""
         try:
-            os.makedirs(os.path.dirname(PLAYER_LEDGER), exist_ok=True)
-            with open(PLAYER_LEDGER, "w", encoding="utf-8") as f:
+            os.makedirs(os.path.dirname(self.player_ledger_path), exist_ok=True)
+            with open(self.player_ledger_path, "w", encoding="utf-8") as f:
                 json.dump(self.players_history, f, indent=2)
-        except Exception:
-            pass
+        except OSError as e:
+            log.warning("Failed to write player ledger to %s: %s", self.player_ledger_path, e)
 
     @staticmethod
     def parse_a2s_packet(data: bytes, latency_ms: float | None = None) -> dict[str, Any]:
         """Parses a Valve A2S_INFO binary UDP response packet."""
         if len(data) > 6 and data[:4] == b"\xff\xff\xff\xff" and data[4] == 0x49:
-            # Payload: 4-byte prefix + 1-byte header (\x49) + 1-byte protocol (\x11) + strings
             body = data[6:]
             parts = body.split(b"\x00")
             server_name = parts[0].decode("utf-8", errors="ignore") if len(parts) > 0 else ""
@@ -105,7 +114,7 @@ class CommunityTracker:
         query_packet = b"\xff\xff\xff\xffTSource Engine Query\x00"
         loop = asyncio.get_running_loop()
 
-        def _sync_a2s_query():
+        def _sync_a2s_query() -> dict[str, Any]:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.settimeout(1.5)
             t_start = time.perf_counter()
@@ -115,53 +124,50 @@ class CommunityTracker:
                 t_end = time.perf_counter()
                 latency_ms = round((t_end - t_start) * 1000, 1)
                 return self.parse_a2s_packet(data, latency_ms)
-            except Exception:
+            except (TimeoutError, OSError) as e:
+                log.debug("A2S socket query failed on %s:%s: %s", host, port, e)
                 return {"responsive": False, "ping_ms": None}
             finally:
                 sock.close()
 
         try:
             res = await loop.run_in_executor(None, _sync_a2s_query)
-            self.a2s_responsive = res.get("responsive", False)
+            self.a2s_responsive = bool(res.get("responsive"))
             self.a2s_ping_ms = res.get("ping_ms")
             if res.get("server_name"):
                 self.a2s_server_name = res["server_name"]
             if res.get("map_name"):
                 self.a2s_map_name = res["map_name"]
             return res
-        except Exception:
+        except Exception as e:
+            log.debug("A2S async executor exception: %s", e)
             self.a2s_responsive = False
             self.a2s_ping_ms = None
             return {"responsive": False, "ping_ms": None}
 
-    async def probe_pocketpair_master_list(self):
-        """Queries Pocketpair's official matchmaking directory to verify community listing status."""
-        if time.time() - self.last_pocketpair_check < 60.0 and self.pocketpair_listed:
+    async def probe_pocketpair_master_list(self) -> None:
+        """Probes Pocketpair's public master server directory API to verify official server listing."""
+        if time.time() - self.last_pocketpair_check < 120.0 and self.pocketpair_listed:
             return
 
         try:
-            # Pocketpair public master server API list endpoint
-            url = "https://palworld-server-api.pocketpair.jp/api/serverList"
             async with httpx.AsyncClient(timeout=4.0) as client:
-                res = await client.get(url)
+                res = await client.get("https://palworld-server-api.pocketpair.jp/v1/server/list")
                 if res.status_code == 200:
                     data = res.json()
-                    servers = (
-                        data.get("servers", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
-                    )
+                    servers = data.get("servers", [])
+                    clean_target = (self.server_name or "").lower().strip()
                     for s in servers:
-                        s_name = s.get("name") or s.get("server_name") or ""
-                        if self.server_name.lower() in s_name.lower():
+                        s_name = s.get("name", "").lower().strip()
+                        if clean_target and clean_target in s_name:
                             self.pocketpair_listed = True
-                            self.pocketpair_uuid = str(
-                                s.get("server_id") or s.get("id") or s.get("uuid") or "Registered"
-                            )
-                            self.pocketpair_region = s.get("region", "Global")
+                            self.pocketpair_server_id = s.get("server_id", "Listed")
+                            self.pocketpair_name = s.get("name", self.server_name)
                             self.pocketpair_version = s.get("version", "Live")
                             self.last_pocketpair_check = time.time()
                             return
-        except Exception as e:
-            log.debug(f"Pocketpair directory probe exception: {e}")
+        except httpx.HTTPError as e:
+            log.debug("Pocketpair directory probe exception: %s", e)
 
         self.last_pocketpair_check = time.time()
 
@@ -189,7 +195,6 @@ class CommunityTracker:
                             self.log_registered = True
                             self.log_last_matched_line = line.strip()
 
-                            # Extract Session ID if present
                             match = re.search(r"SessionId:\s*([A-Za-z0-9_\-]+)", line)
                             if match:
                                 self.log_session_id = match.group(1)
@@ -203,8 +208,9 @@ class CommunityTracker:
                                 "first_seen": self.log_first_seen,
                                 "last_line": self.log_last_matched_line,
                             }
-            except Exception:
-                pass
+            except (subprocess.SubprocessError, OSError) as e:
+                log.debug("Journalctl probe failed: %s", e)
+
         return {
             "registered": self.log_registered,
             "session_id": self.log_session_id,
@@ -219,21 +225,20 @@ class CommunityTracker:
                 res = client.get("https://api.ipify.org?format=json")
                 if res.status_code == 200:
                     self.cached_public_ip = res.json().get("ip", "Unknown")
-        except Exception:
-            pass
+        except httpx.HTTPError as e:
+            log.debug("WAN IP detection failed: %s", e)
 
         try:
             if self.domain:
                 self.cached_dns_ip = socket.gethostbyname(str(self.domain))
             else:
                 self.cached_dns_ip = "Unresolved"
-        except Exception:
+        except (socket.gaierror, OSError) as e:
+            log.debug("DNS resolution failed for %s: %s", self.domain, e)
             self.cached_dns_ip = "Unresolved"
 
         is_aligned = bool(
-            self.cached_public_ip
-            and self.cached_dns_ip != "Unresolved"
-            and self.cached_public_ip == self.cached_dns_ip
+            self.cached_public_ip and self.cached_dns_ip != "Unresolved" and self.cached_public_ip == self.cached_dns_ip
         )
 
         return {
@@ -244,6 +249,7 @@ class CommunityTracker:
         }
 
     def update_and_get_players(self, live_players_raw: list[dict[str, Any]]) -> dict[str, Any]:
+        """Merges live player telemetry into persistent roster ledger."""
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         active_list = []
         active_ids = set()
@@ -287,14 +293,15 @@ class CommunityTracker:
         }
 
     def get_hardware_telemetry(self) -> dict[str, Any]:
+        """Collects bare-metal hardware and systemd cgroup 14GB allocation metrics."""
         cgroup_ram_bytes = 0
         cgroup_path = "/sys/fs/cgroup/system.slice/palworld.service/memory.current"
         if os.name != "nt" and os.path.exists(cgroup_path):
             try:
                 with open(cgroup_path, encoding="utf-8") as f:
                     cgroup_ram_bytes = int(f.read().strip())
-            except Exception:
-                pass
+            except (OSError, ValueError) as e:
+                log.debug("Failed reading cgroup memory.current: %s", e)
 
         vm = psutil.virtual_memory()
         swap = psutil.swap_memory()
@@ -302,19 +309,36 @@ class CommunityTracker:
         net_all = psutil.net_io_counters(pernic=True)
         net = net_all.get("eth0", psutil.net_io_counters())
 
+        cgroup_ram_gb = round(cgroup_ram_bytes / (1024**3), 2)
+        cgroup_limit_gb = 14.0
+        cgroup_ram_pct = round((cgroup_ram_gb / cgroup_limit_gb) * 100, 1)
+
+        disk_path = "/" if os.name != "nt" else "C:\\"
+        try:
+            disk = psutil.disk_usage(disk_path)
+            disk_used_gb = round(disk.used / (1024**3), 1)
+            disk_total_gb = round(disk.total / (1024**3), 1)
+            disk_pct = round(disk.percent, 1)
+        except OSError:
+            disk_used_gb, disk_total_gb, disk_pct = 0.0, 0.0, 0.0
+
         return {
-            "cgroup_used_gb": round(cgroup_ram_bytes / (1024**3), 2),
-            "cgroup_limit_gb": 14.0,
-            "cgroup_pct": round((cgroup_ram_bytes / (14 * 1024**3)) * 100, 1) if cgroup_ram_bytes else 0,
-            "host_ram_used_gb": round((vm.total - vm.available) / (1024**3), 2),
+            "host_ram_used_gb": round(vm.used / (1024**3), 2),
             "host_ram_total_gb": round(vm.total / (1024**3), 2),
-            "host_ram_pct": vm.percent,
-            "host_swap_used_gb": round(swap.used / (1024**3), 2),
-            "host_swap_total_gb": round(swap.total / (1024**3), 2),
-            "cpu_cores": cpu_pcts,
-            "cpu_avg": round(sum(cpu_pcts) / len(cpu_pcts), 1) if cpu_pcts else 0,
-            "net_bytes_sent_mb": round(net.bytes_sent / (1024**2), 1),
-            "net_bytes_recv_mb": round(net.bytes_recv / (1024**2), 1),
+            "host_ram_pct": round(vm.percent, 1),
+            "cgroup_ram_used_gb": cgroup_ram_gb,
+            "cgroup_limit_gb": cgroup_limit_gb,
+            "cgroup_ram_pct": min(cgroup_ram_pct, 100.0),
+            "swap_used_gb": round(swap.used / (1024**3), 2),
+            "swap_total_gb": round(swap.total / (1024**3), 2),
+            "swap_pct": round(swap.percent, 1),
+            "cpu_cores": [round(c, 1) for c in cpu_pcts],
+            "cpu_avg_pct": round(sum(cpu_pcts) / len(cpu_pcts), 1) if cpu_pcts else 0.0,
+            "disk_used_gb": disk_used_gb,
+            "disk_total_gb": disk_total_gb,
+            "disk_pct": disk_pct,
+            "net_bytes_sent": net.bytes_sent,
+            "net_bytes_recv": net.bytes_recv,
         }
 
     async def get_combined_telemetry(
@@ -328,18 +352,13 @@ class CommunityTracker:
         max_players: int = 32,
         current_players: int = 0,
     ) -> dict[str, Any]:
+        """Assembles full 3-section telemetry matrix for the reactive UI dashboard."""
         self.probe_network_alignment()
         await self.probe_pocketpair_master_list()
         await self.probe_steam_a2s_info(host=host_ip or "127.0.0.1", port=public_port)
         log_res = self.probe_local_logs()
 
         lan_ip = host_ip or os.getenv("PALWORLD_HOST_IP", "127.0.0.1")
-
-        dns_match = (
-            self.cached_public_ip != "Detecting..."
-            and self.cached_public_ip != "Unknown"
-            and self.cached_public_ip == self.cached_dns_ip
-        )
 
         direct_connect_host = (
             self.domain
@@ -373,25 +392,27 @@ class CommunityTracker:
             },
             "discovery_hub": {
                 "log_scraper": {
-                    "status": "CONSOLE SEARCH READY" if log_res.get("registered") else "AWAITING EOS HANDSHAKE",
                     "registered": log_res.get("registered", False),
-                    "session_id": log_res.get("session_id") or "--",
-                    "first_seen": log_res.get("first_seen") or "--",
-                    "crossplay_flags": "Steam, Xbox, PS5, Mac" if is_multiplay else "Singleplayer / Private",
-                    "last_line": log_res.get("last_line") or "Pattern: Created public lobby session",
+                    "session_id": log_res.get("session_id"),
+                    "first_seen": log_res.get("first_seen"),
+                    "last_line": log_res.get("last_line", ""),
+                    "status_label": "CONSOLE SEARCH READY" if log_res.get("registered") else "AWAITING EOS HANDSHAKE",
+                    "status_color": "emerald" if log_res.get("registered") else "amber",
+                    "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
                 },
                 "pocketpair_master": {
-                    "status": "OFFICIALLY LISTED" if self.pocketpair_listed else "SEARCHING MASTER LIST",
                     "listed": self.pocketpair_listed,
-                    "server_uuid": self.pocketpair_uuid or "--",
-                    "search_keyword": self.server_name,
-                    "region": self.pocketpair_region or "Global",
-                    "version": self.pocketpair_version or "Live",
+                    "server_id": self.pocketpair_server_id,
+                    "name": self.pocketpair_name,
+                    "version": self.pocketpair_version,
+                    "status_label": "OFFICIALLY LISTED" if self.pocketpair_listed else "COMMUNITY / DIRECT MODE",
+                    "status_color": "emerald" if self.pocketpair_listed else "amber",
                 },
                 "network_matrix": {
-                    "public_wan_ip": self.cached_public_ip,
-                    "duckdns_a_record": self.cached_dns_ip,
-                    "dns_aligned": dns_match,
+                    "public_ip": self.cached_public_ip,
+                    "dns_ip": self.cached_dns_ip,
+                    "domain": self.domain,
+                    "is_aligned": bool(self.cached_public_ip == self.cached_dns_ip),
                     "lan_ip": lan_ip,
                     "public_port": public_port,
                     "direct_connect_addr": f"{direct_connect_host}:{public_port}",
@@ -402,14 +423,20 @@ class CommunityTracker:
                 "responsive": self.a2s_responsive,
                 "ping_ms": self.a2s_ping_ms,
                 "server_name": self.a2s_server_name or self.server_name,
-                "map_name": self.a2s_map_name or "Palworld",
+                "map_name": self.a2s_map_name or "Pal/Maps/World",
+                "folder": "Pal",
+                "game": "Palworld",
             },
             "security_matrix": {
                 "is_password_protected": bool(server_password),
+                "password_status_label": "🔒 Password Protected"
+                if server_password
+                else "🔓 Public Access (No Password)",
                 "server_password": server_password,
                 "rcon_port": rcon_port,
                 "rest_port": rest_port,
-                "current_players": current_players,
                 "max_players": max_players,
+                "current_players": current_players,
+                "slot_capacity_label": f"{current_players} / {max_players} Tamers",
             },
         }

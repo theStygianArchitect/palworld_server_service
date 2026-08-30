@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock, patch
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -44,8 +46,6 @@ def test_api_community_tracker_route():
 
 
 def test_api_reboot_with_custom_message_route():
-    from unittest.mock import AsyncMock, patch
-
     payload = {
         "countdown_seconds": 60,
         "trigger_steam_update": False,
@@ -56,6 +56,26 @@ def test_api_reboot_with_custom_message_route():
         assert response.status_code == 200
         assert response.json()["status"] == "success"
         mock_reboot.assert_called_once_with(60, False, "", "Scheduled memory purge and restart.")
+
+
+def test_api_moderation_routes():
+    with patch("app.main.engine.kick_player", new_callable=AsyncMock, return_value=True) as mock_kick:
+        res = client.post("/api/players/kick", json={"player_id": "1001", "message": "Spamming"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+        mock_kick.assert_called_once_with("1001", "Spamming")
+
+    with patch("app.main.engine.ban_player", new_callable=AsyncMock, return_value=True) as mock_ban:
+        res = client.post("/api/players/ban", json={"player_id": "1002", "message": "Cheating"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+        mock_ban.assert_called_once_with("1002", "Cheating")
+
+    with patch("app.main.engine.send_broadcast", new_callable=AsyncMock, return_value=True) as mock_warn:
+        res = client.post("/api/players/warn", json={"message": "Maintenance starting in 15m"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+        mock_warn.assert_called_once_with("[ADMIN NOTICE] Maintenance starting in 15m", mirror_discord=True)
 
 
 def test_api_backups_routes():

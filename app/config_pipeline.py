@@ -30,6 +30,13 @@ class ConfigPipeline:
         protected_view = {k: v for k, v in full_state.items() if k in PROTECTED_ADMIN_KEYS}
         return public_view, protected_view
 
+    def get_public_view(self) -> dict[str, Any]:
+        """Returns only public gameplay settings, hiding protected keys."""
+        if not self.ini_path.exists():
+            return {}
+        public_view, _ = self.read_to_json()
+        return public_view
+
     def merge_and_serialize(self, incoming_sanitized_json: dict[str, Any]) -> str:
         if self.ini_path.exists():
             _, live_protected = self.read_to_json()

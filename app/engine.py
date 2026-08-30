@@ -1,3 +1,11 @@
+"""Palworld Engine Management & Lifecycle Orchestrator.
+
+Manages REST API interactions, RCON commands, systemd lifecycle states,
+declarative reboot countdown warnings, and Discord notification mirroring.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import os
 import subprocess
@@ -12,25 +20,25 @@ from .logger import log
 from .notifications import DiscordNotifier
 from .tracker import CommunityTracker
 
-INI_PATH = os.getenv(
-    "PALWORLD_INI_PATH",
+DEFAULT_INI_PATH = (
     "/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
     if os.name != "nt"
-    else os.path.expanduser("~/.palmanager/PalWorldSettings.ini"),
+    else os.path.expanduser("~/.palmanager/PalWorldSettings.ini")
 )
-SERVICE_NAME = os.getenv("PALWORLD_SERVICE_NAME", "palworld.service")
-UPDATE_FLAG = os.getenv(
-    "PALWORLD_UPDATE_FLAG",
-    "/home/steam/.update_requested" if os.name != "nt" else os.path.expanduser("~/.palmanager/.update_requested"),
+DEFAULT_SERVICE_NAME = "palworld.service"
+DEFAULT_UPDATE_FLAG = (
+    "/home/steam/.update_requested" if os.name != "nt" else os.path.expanduser("~/.palmanager/.update_requested")
 )
+DEFAULT_LOCK_FILE = os.path.join(tempfile.gettempdir(), "palworld_reboot.lock")
 
-LOCK_FILE = os.getenv(
-    "PALWORLD_LOCK_FILE",
-    os.path.join(tempfile.gettempdir(), "palworld_reboot.lock"),
-)
+# Declarative 3 AM countdown alert schedule
+COUNTDOWN_DISCORD_INTERVALS: set[int] = {600, 300, 60}
+COUNTDOWN_ALL_INTERVALS: set[int] = {600, 300, 180, 120, 60, 30, 15, 10, 5, 4, 3, 2, 1}
 
 
 class PalEngine:
+    """Core orchestrator for Palworld REST API, systemd operations, and reboot lifecycle."""
+
     def __init__(
         self,
         admin_password: str | None = None,
@@ -38,19 +46,30 @@ class PalEngine:
         server_name: str | None = None,
         domain: str | None = None,
         discord_webhook_url: str | None = None,
-    ):
-        self.admin_password = admin_password or os.getenv("PALWORLD_ADMIN_PASSWORD", "admin_password")
-        self.rest_port = rest_port or int(os.getenv("PALWORLD_REST_PORT", "8212"))
-        self.server_name = server_name or os.getenv("PALWORLD_SERVER_NAME", "Palworld Dedicated Server")
-        self.domain = domain or os.getenv("PALWORLD_SERVER_DOMAIN", "yourdomain.duckdns.org")
+        ini_path: str | None = None,
+        service_name: str | None = None,
+        update_flag: str | None = None,
+        lock_file: str | None = None,
+    ) -> None:
+        self.admin_password: str = admin_password or os.getenv("PALWORLD_ADMIN_PASSWORD") or "admin_password"
+        self.rest_port: int = rest_port or int(os.getenv("PALWORLD_REST_PORT", "8212"))
+        self.server_name: str = server_name or os.getenv("PALWORLD_SERVER_NAME") or "Palworld Dedicated Server"
+        self.domain: str = domain or os.getenv("PALWORLD_SERVER_DOMAIN") or "yourdomain.duckdns.org"
+
+        self.ini_path: str = ini_path or os.getenv("PALWORLD_INI_PATH") or DEFAULT_INI_PATH
+        self.service_name: str = service_name or os.getenv("PALWORLD_SERVICE_NAME") or DEFAULT_SERVICE_NAME
+        self.update_flag: str = update_flag or os.getenv("PALWORLD_UPDATE_FLAG") or DEFAULT_UPDATE_FLAG
+        self.lock_file: str = lock_file or os.getenv("PALWORLD_LOCK_FILE") or DEFAULT_LOCK_FILE
 
         self.base_url = f"http://127.0.0.1:{self.rest_port}/v1/api"
         self.auth = ("admin", self.admin_password)
         self.active_sockets: set[WebSocket] = set()
+
         self.tracker = CommunityTracker(self.server_name, self.domain)
         self.notifier = DiscordNotifier(discord_webhook_url or os.getenv("PALWORLD_DISCORD_WEBHOOK_URL"))
+        self._lifecycle_lock = asyncio.Lock()
 
-        self.lifecycle_state = {
+        self.lifecycle_state: dict[str, Any] = {
             "phase": "IDLE",
             "remaining_seconds": 0,
             "total_seconds": 0,
@@ -58,24 +77,79 @@ class PalEngine:
             "is_updating": False,
         }
 
-    async def start_background_tracker(self):
-        asyncio.create_task(self.tracker.probe_battlemetrics_loop())
-
-    async def register_socket(self, ws: WebSocket):
+    async def register_socket(self, ws: WebSocket) -> None:
+        """Registers an active client WebSocket connection for real-time telemetry."""
         await ws.accept()
         self.active_sockets.add(ws)
 
-    def unregister_socket(self, ws: WebSocket):
+    def unregister_socket(self, ws: WebSocket) -> None:
+        """Removes a disconnected client WebSocket."""
         self.active_sockets.discard(ws)
 
-    async def broadcast_ws(self, payload: dict[str, Any]):
-        for ws in list(self.active_sockets):
+    async def broadcast_ws(self, message: dict[str, Any]) -> None:
+        """Broadcasts a JSON telemetry payload to all connected frontend clients."""
+        dead_sockets = set()
+        for ws in self.active_sockets:
             try:
-                await ws.send_json(payload)
+                await ws.send_json(message)
             except Exception:
-                self.active_sockets.discard(ws)
+                dead_sockets.add(ws)
+        self.active_sockets -= dead_sockets
+
+    async def check_readiness(self) -> dict[str, Any]:
+        """Probes the Palworld internal REST API for operational readiness."""
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                res = await client.get(f"{self.base_url}/info", auth=self.auth)
+                if res.status_code == 200:
+                    info = res.json()
+                    return {
+                        "ready": True,
+                        "version": info.get("version"),
+                        "server_name": info.get("servername", self.server_name),
+                    }
+        except httpx.HTTPError:
+            pass
+        return {"ready": False, "version": None, "server_name": self.server_name}
+
+    async def get_engine_metrics(self) -> dict[str, Any]:
+        """Fetches live server FPS, frame time, uptime, and player count from REST API."""
+        metrics = {
+            "server_fps": 0,
+            "server_frame_time_ms": 0.0,
+            "uptime_seconds": 0,
+            "days": 0,
+            "current_players": 0,
+            "max_players": 32,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                res = await client.get(f"{self.base_url}/metrics", auth=self.auth)
+                if res.status_code == 200:
+                    data = res.json()
+                    metrics["server_fps"] = data.get("serverfps", 0)
+                    metrics["server_frame_time_ms"] = round(float(data.get("serverframetime", 0.0)), 2)
+                    metrics["uptime_seconds"] = data.get("uptime", 0)
+                    metrics["days"] = data.get("days", 0)
+                    metrics["current_players"] = data.get("currentplayernum", 0)
+                    metrics["max_players"] = data.get("maxplayernum", 32)
+        except httpx.HTTPError:
+            pass
+        return metrics
+
+    async def get_raw_players(self) -> list[dict[str, Any]]:
+        """Retrieves raw online player list from REST API."""
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                res = await client.get(f"{self.base_url}/players", auth=self.auth)
+                if res.status_code == 200:
+                    return res.json().get("players", [])
+        except httpx.HTTPError:
+            pass
+        return []
 
     async def send_broadcast(self, message: str, mirror_discord: bool = True) -> bool:
+        """Broadcasts an announcement banner across the in-game HUD and optionally echoes to Discord."""
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 res = await client.post(
@@ -86,210 +160,177 @@ class PalEngine:
                 if mirror_discord:
                     await self.notifier.notify_admin_broadcast(self.server_name or "Palworld Server", message)
                 return res.status_code == 200
-        except Exception as e:
-            log.debug(f"Broadcast notice failed: {e}")
+        except httpx.HTTPError as e:
+            log.debug("Broadcast notice HTTP error: %s", e)
             if mirror_discord:
                 await self.notifier.notify_admin_broadcast(self.server_name or "Palworld Server", message)
             return False
 
     async def kick_player(self, player_id: str, message: str = "Kicked by administrator") -> bool:
+        """Kicks a player from the server via REST API and logs an audit embed to Discord."""
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
+            async with httpx.AsyncClient(timeout=2.0) as client:
                 res = await client.post(
                     f"{self.base_url}/kick",
                     auth=self.auth,
                     json={"userid": player_id, "message": message},
                 )
-                if res.status_code == 200:
+                success = res.status_code == 200
+                if success:
                     await self.notifier.notify_player_action("kick", player_id, message)
-                    return True
-        except Exception as e:
-            log.warning(f"Kick player {player_id} failed: {e}")
-        return False
+                return success
+        except httpx.HTTPError as e:
+            log.warning("Failed to kick player %s: %s", player_id, e)
+            return False
 
     async def ban_player(self, player_id: str, message: str = "Banned by administrator") -> bool:
+        """Bans a player from the server via REST API and logs an audit embed to Discord."""
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
+            async with httpx.AsyncClient(timeout=2.0) as client:
                 res = await client.post(
                     f"{self.base_url}/ban",
                     auth=self.auth,
                     json={"userid": player_id, "message": message},
                 )
-                if res.status_code == 200:
+                success = res.status_code == 200
+                if success:
                     await self.notifier.notify_player_action("ban", player_id, message)
-                    return True
-        except Exception as e:
-            log.warning(f"Ban player {player_id} failed: {e}")
-        return False
+                return success
+        except httpx.HTTPError as e:
+            log.warning("Failed to ban player %s: %s", player_id, e)
+            return False
 
     async def unban_player(self, player_id: str) -> bool:
+        """Unbans a player from the server via REST API."""
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
+            async with httpx.AsyncClient(timeout=2.0) as client:
                 res = await client.post(
                     f"{self.base_url}/unban",
                     auth=self.auth,
                     json={"userid": player_id},
                 )
                 return res.status_code == 200
-        except Exception as e:
-            log.warning(f"Unban player {player_id} failed: {e}")
+        except httpx.HTTPError as e:
+            log.warning("Failed to unban player %s: %s", player_id, e)
             return False
 
     async def trigger_save(self) -> bool:
+        """Triggers an in-engine world save via REST API."""
         try:
-            async with httpx.AsyncClient(timeout=4.0) as client:
+            async with httpx.AsyncClient(timeout=5.0) as client:
                 res = await client.post(f"{self.base_url}/save", auth=self.auth)
                 return res.status_code == 200
-        except Exception as e:
-            log.warning(f"World save failed: {e}")
+        except httpx.HTTPError as e:
+            log.warning("World save failed: %s", e)
             return False
 
-    async def get_raw_players(self) -> list[dict[str, Any]]:
-        try:
-            async with httpx.AsyncClient(timeout=1.5) as client:
-                res = await client.get(f"{self.base_url}/players", auth=self.auth)
-                if res.status_code == 200:
-                    return res.json().get("players", [])
-        except Exception:
-            pass
-        return []
-
-    async def get_engine_metrics(self) -> dict[str, Any]:
-        try:
-            async with httpx.AsyncClient(timeout=1.5) as client:
-                res = await client.get(f"{self.base_url}/metrics", auth=self.auth)
-                if res.status_code == 200:
-                    d = res.json()
-                    return {
-                        "server_fps": round(float(d.get("serverfps", 0)), 1),
-                        "server_frame_time_ms": round(float(d.get("serverframetime", 0)), 2),
-                        "current_players": d.get("currentplayernum", 0),
-                        "max_players": d.get("maxplayernum", 32),
-                        "uptime_sec": d.get("uptime", 0),
-                        "days": d.get("days", 0),
-                    }
-        except Exception:
-            pass
-        return {
-            "server_fps": 0,
-            "server_frame_time_ms": 0,
-            "current_players": 0,
-            "max_players": 32,
-            "uptime_sec": 0,
-            "days": 0,
-        }
-
-    async def check_readiness(self) -> dict[str, Any]:
-        try:
-            async with httpx.AsyncClient(timeout=1.5) as client:
-                res = await client.get(f"{self.base_url}/info", auth=self.auth)
-                if res.status_code == 200:
-                    data = res.json()
-                    return {
-                        "ready": True,
-                        "version": data.get("version", "Live"),
-                        "server_name": data.get("servername", ""),
-                    }
-        except Exception:
-            pass
-        return {"ready": False, "version": None, "server_name": None}
+    @staticmethod
+    def format_countdown_string(remaining_seconds: int) -> str:
+        """Formats remaining countdown seconds into human-readable string."""
+        if remaining_seconds >= 60:
+            mins = remaining_seconds // 60
+            return f"{mins} minute{'s' if mins > 1 else ''}"
+        return f"{remaining_seconds} seconds"
 
     async def execute_countdown_and_reboot(
         self,
-        countdown_seconds: int = 600,
+        countdown_seconds: int = 60,
         trigger_update: bool = False,
         update_version_tag: str = "",
         custom_message: str = "",
-    ):
-        if os.path.exists(LOCK_FILE):
+    ) -> None:
+        """Executes a linear, atomic reboot countdown sequence with in-game and Discord notifications."""
+        if os.path.exists(self.lock_file):
             raise RuntimeError("Reboot countdown sequence is already active.")
 
-        Path(LOCK_FILE).parent.mkdir(parents=True, exist_ok=True)
-        Path(LOCK_FILE).touch()
-        try:
-            if trigger_update:
-                Path(UPDATE_FLAG).parent.mkdir(parents=True, exist_ok=True)
-                Path(UPDATE_FLAG).touch()
+        async with self._lifecycle_lock:
+            Path(self.lock_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(self.lock_file).touch()
 
-            self.lifecycle_state = {
-                "phase": "COUNTDOWN",
-                "remaining_seconds": countdown_seconds,
-                "total_seconds": countdown_seconds,
-                "current_broadcast": custom_message or "Initiating countdown sequence...",
-                "is_updating": trigger_update,
-            }
-            await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+            try:
+                if trigger_update:
+                    Path(self.update_flag).parent.mkdir(parents=True, exist_ok=True)
+                    Path(self.update_flag).touch()
 
-            intervals = {600, 300, 180, 120, 60, 30, 15, 10, 5, 4, 3, 2, 1}
-            discord_intervals = {600, 300, 60}  # 10m, 5m, 1m warnings to Discord
-            remaining = countdown_seconds
-
-            while remaining > 0:
-                self.lifecycle_state["remaining_seconds"] = remaining
-                if remaining in intervals or remaining == countdown_seconds:
-                    if remaining >= 60:
-                        mins = remaining // 60
-                        time_str = f"{mins} minute{'s' if mins > 1 else ''}"
-                    else:
-                        time_str = f"{remaining} seconds"
-
-                    base_msg = f"Server maintenance restart in {time_str}."
-                    if trigger_update:
-                        target_info = f" to {update_version_tag}" if update_version_tag else ""
-                        base_msg = f"Server updating{target_info} and restarting in {time_str}."
-
-                    full_msg = f"{custom_message} - {base_msg}" if custom_message else base_msg
-
-                    self.lifecycle_state["current_broadcast"] = full_msg
-                    await self.send_broadcast(full_msg, mirror_discord=False)
-
-                    if remaining in discord_intervals or remaining == countdown_seconds:
-                        await self.notifier.notify_reboot_countdown(
-                            time_str,
-                            trigger_update,
-                            update_version_tag,
-                            custom_message=custom_message,
-                        )
-
+                self.lifecycle_state = {
+                    "phase": "COUNTDOWN",
+                    "remaining_seconds": countdown_seconds,
+                    "total_seconds": countdown_seconds,
+                    "current_broadcast": custom_message or "Initiating countdown sequence...",
+                    "is_updating": trigger_update,
+                }
                 await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+
+                remaining = countdown_seconds
+                while remaining > 0:
+                    self.lifecycle_state["remaining_seconds"] = remaining
+
+                    if remaining in COUNTDOWN_ALL_INTERVALS or remaining == countdown_seconds:
+                        time_str = self.format_countdown_string(remaining)
+
+                        base_msg = f"Server maintenance restart in {time_str}."
+                        if trigger_update:
+                            target_info = f" to {update_version_tag}" if update_version_tag else ""
+                            base_msg = f"Server updating{target_info} and restarting in {time_str}."
+
+                        full_msg = f"{custom_message} - {base_msg}" if custom_message else base_msg
+                        self.lifecycle_state["current_broadcast"] = full_msg
+
+                        await self.send_broadcast(full_msg, mirror_discord=False)
+
+                        if remaining in COUNTDOWN_DISCORD_INTERVALS or remaining == countdown_seconds:
+                            await self.notifier.notify_reboot_countdown(
+                                time_str,
+                                trigger_update,
+                                update_version_tag,
+                                custom_message=custom_message,
+                            )
+
+                    await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+                    await asyncio.sleep(1)
+                    remaining -= 1
+
+                # 1. World Save Phase
+                self.lifecycle_state["phase"] = "SAVING"
+                self.lifecycle_state["current_broadcast"] = "Saving world state to disk..."
+                await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+                await self.send_broadcast("Server restarting NOW. Saving progress.")
+                await self.trigger_save()
                 await asyncio.sleep(1)
-                remaining -= 1
 
-            self.lifecycle_state["phase"] = "SAVING"
-            self.lifecycle_state["current_broadcast"] = "Saving world state to disk..."
-            await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
-            await self.send_broadcast("Server restarting NOW. Saving progress.")
-            await self.trigger_save()
-            await asyncio.sleep(1)
+                # 2. Systemctl Restart Phase
+                self.lifecycle_state["phase"] = "MAINTENANCE"
+                self.lifecycle_state["current_broadcast"] = "Executing systemctl restart & backup hooks..."
+                await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
 
-            self.lifecycle_state["phase"] = "MAINTENANCE"
-            self.lifecycle_state["current_broadcast"] = "Executing systemctl restart & backup hooks..."
-            await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+                if os.name != "nt":
+                    log.info("Triggering systemctl restart for %s", self.service_name)
+                    subprocess.run(["sudo", "/bin/systemctl", "restart", self.service_name], check=False)
 
-            if os.name != "nt":
-                log.info(f"Triggering systemctl restart for {SERVICE_NAME}")
-                subprocess.run(["sudo", "/bin/systemctl", "restart", SERVICE_NAME], check=False)
+                # 3. Probing Readiness Phase
+                self.lifecycle_state["phase"] = "PROBING"
+                self.lifecycle_state["current_broadcast"] = "Probing engine initialization and readiness..."
+                await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
 
-            self.lifecycle_state["phase"] = "PROBING"
-            self.lifecycle_state["current_broadcast"] = "Probing engine initialization and readiness..."
-            await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+                for _ in range(90):
+                    ready_check = await self.check_readiness()
+                    if ready_check["ready"]:
+                        log.info("Server engine restored to ready state.")
+                        await self.notifier.notify_reboot_complete(self.server_name or "Palworld Server")
+                        break
+                    await asyncio.sleep(2)
 
-            for _ in range(90):
-                ready_check = await self.check_readiness()
-                if ready_check["ready"]:
-                    log.info("Server engine restored to ready state.")
-                    await self.notifier.notify_reboot_complete(self.server_name or "Palworld Server")
-                    break
-                await asyncio.sleep(2)
+            finally:
+                if os.path.exists(self.lock_file):
+                    os.remove(self.lock_file)
+                self.lifecycle_state = {
+                    "phase": "IDLE",
+                    "remaining_seconds": 0,
+                    "total_seconds": 0,
+                    "current_broadcast": "",
+                    "is_updating": False,
+                }
+                await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
 
-        finally:
-            if os.path.exists(LOCK_FILE):
-                os.remove(LOCK_FILE)
-            self.lifecycle_state = {
-                "phase": "IDLE",
-                "remaining_seconds": 0,
-                "total_seconds": 0,
-                "current_broadcast": "",
-                "is_updating": False,
-            }
-            await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+
+LOCK_FILE = DEFAULT_LOCK_FILE
