@@ -45,6 +45,11 @@ if [ -f "${REPO_ROOT}/scripts/duck.sh" ] && [ -d "/home/steam/duckdns" ]; then
     chmod 0755 /home/steam/duckdns/duck.sh
     chown steam:steam /home/steam/duckdns/duck.sh 2>/dev/null || true
 fi
+if [ -f "${APP_DIR}/.env" ] && [ -d "/home/steam/duckdns" ]; then
+    cp "${APP_DIR}/.env" /home/steam/duckdns/.env
+    chmod 0600 /home/steam/duckdns/.env
+    chown steam:steam /home/steam/duckdns/.env 2>/dev/null || true
+fi
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 echo "[ OK ]"
 
