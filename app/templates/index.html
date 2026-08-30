@@ -560,33 +560,70 @@
       setTimeout(() => box.classList.add('hidden'), 5000);
     }
 
+    async function writeTextToClipboard(text, btn = null) {
+      if (!text) return false;
+      let copied = false;
+
+      // 1. Modern Secure Context Clipboard API
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        } catch (err) {
+          console.debug("navigator.clipboard failed, attempting execCommand fallback:", err);
+        }
+      }
+
+      // 2. Universal Legacy ExecCommand Fallback (works across HTTP & LAN IP contexts)
+      if (!copied) {
+        try {
+          const textArea = document.createElement("textarea");
+          textArea.value = text;
+          textArea.style.position = "fixed";
+          textArea.style.left = "-999999px";
+          textArea.style.top = "-999999px";
+          document.body.appendChild(textArea);
+          textArea.focus();
+          textArea.select();
+          copied = document.execCommand('copy');
+          textArea.remove();
+        } catch (err) {
+          console.debug("execCommand fallback failed:", err);
+        }
+      }
+
+      if (copied) {
+        if (btn) {
+          const orig = btn.innerText;
+          btn.innerText = "✓ Copied!";
+          btn.classList.add("bg-emerald-600");
+          setTimeout(() => {
+            btn.innerText = orig;
+            btn.classList.remove("bg-emerald-600");
+          }, 2000);
+        }
+        return true;
+      } else {
+        prompt("Copy to clipboard (Ctrl+C, Enter):", text);
+        return true;
+      }
+    }
+
     function copyToClipboard(elementId, btn) {
-      const text = document.getElementById(elementId).innerText.trim();
-      navigator.clipboard.writeText(text).then(() => {
-        const orig = btn.innerText;
-        btn.innerText = "✓ Copied!";
-        btn.classList.add("bg-emerald-600");
-        setTimeout(() => {
-          btn.innerText = orig;
-          btn.classList.remove("bg-emerald-600");
-        }, 2000);
-      });
+      const el = document.getElementById(elementId);
+      if (!el) return;
+      const text = el.innerText.trim();
+      writeTextToClipboard(text, btn);
     }
 
     function copyPasswordValue(btn) {
-      if (!liveServerPassword) {
-        showAlert("No server password is set (public access).");
+      const pass = liveServerPassword || (currentSettings && currentSettings.ServerPassword) || (document.getElementById('field_ServerPassword') ? document.getElementById('field_ServerPassword').value : '') || '';
+      if (!pass) {
+        showAlert("No server join password is set (server is public).");
         return;
       }
-      navigator.clipboard.writeText(liveServerPassword).then(() => {
-        const orig = btn.innerText;
-        btn.innerText = "✓ Copied!";
-        btn.classList.add("bg-emerald-600");
-        setTimeout(() => {
-          btn.innerText = orig;
-          btn.classList.remove("bg-emerald-600");
-        }, 2000);
-      });
+      writeTextToClipboard(pass, btn);
+      showAlert("Server password copied to clipboard!");
     }
 
     async function loadSettings() {
@@ -596,6 +633,11 @@
         if (data.status === 'success') {
           settingsMetadata = data.metadata;
           currentSettings = data.data;
+          if (currentSettings.ServerPassword && !liveServerPassword) {
+            liveServerPassword = currentSettings.ServerPassword;
+            if (document.getElementById('copyPasswordText')) document.getElementById('copyPasswordText').innerText = "•••••••• (Set)";
+            if (document.getElementById('copyPasswordBtn')) document.getElementById('copyPasswordBtn').disabled = false;
+          }
           renderSettingsForm();
         }
       } catch (err) {
