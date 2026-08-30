@@ -21,17 +21,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check Deployment Configuration
-        if: ${{ env.HAS_PROD_HOST == 'false' }}
-        env:
-          HAS_PROD_HOST: ${{ secrets.PROD_HOST != '' }}
+        if: ${{ secrets.PROD_HOST == '' }}
         run: |
           echo "[*] No PROD_HOST secret configured in repository settings."
           echo "[*] Skipping automated SSH deployment to host. Quality Gate passed successfully."
 
       - name: Deploy to Host via SSH
-        if: ${{ env.HAS_PROD_HOST == 'true' }}
-        env:
-          HAS_PROD_HOST: ${{ secrets.PROD_HOST != '' }}
+        if: ${{ secrets.PROD_HOST != '' }}
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.PROD_HOST }}
@@ -55,10 +51,8 @@ jobs:
             echo "[+] Deployment successful. Daemon is active."
 
       - name: Post-Deployment Liveness & Health Probe
-        if: ${{ env.HAS_PROD_URL == 'true' }}
-        env:
-          HAS_PROD_URL: ${{ secrets.PROD_PUBLIC_URL != '' }}
+        if: ${{ secrets.PROD_PUBLIC_URL != '' }}
         run: |
-          echo ">>> Probing /health endpoint at ${{ secrets.PROD_PUBLIC_URL }}/health..."
-          curl --fail --retry 5 --retry-delay 3 --max-time 10 "${{ secrets.PROD_PUBLIC_URL }}/health"
-          echo "[+] Liveness check passed. Production service is online."
+          echo ">>> Probing ${{ secrets.PROD_PUBLIC_URL }}/health..."
+          curl -f -s -m 10 "${{ secrets.PROD_PUBLIC_URL }}/health" || (echo "Health check failed" && exit 1)
+          echo "[+] Production health check passed! Production service is online."

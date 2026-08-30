@@ -352,8 +352,19 @@ async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks) -> dict[st
     if payload.settings:
         serialized_ini = pipeline.merge_and_serialize(payload.settings)
         ini_file = Path(settings.ini_path)
-        ini_file.parent.mkdir(parents=True, exist_ok=True)
-        ini_file.write_text(serialized_ini, encoding="utf-8")
+        try:
+            ini_file.parent.mkdir(parents=True, exist_ok=True)
+            ini_file.write_text(serialized_ini, encoding="utf-8")
+        except PermissionError as err:
+            log.warning("Permission denied writing INI at %s: %s. Using home directory fallback.", ini_file, err)
+            ini_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
+            ini_file.parent.mkdir(parents=True, exist_ok=True)
+            ini_file.write_text(serialized_ini, encoding="utf-8")
+        except OSError as err:
+            log.warning("OS error writing INI at %s: %s. Using home directory fallback.", ini_file, err)
+            ini_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
+            ini_file.parent.mkdir(parents=True, exist_ok=True)
+            ini_file.write_text(serialized_ini, encoding="utf-8")
         commit = git_mgr.create_commit("RESTART", f"Prior to reboot ({payload.countdown_seconds}s countdown)")
         reload_settings()
         log.info("Saved configuration snapshot before reboot: %s", commit)
