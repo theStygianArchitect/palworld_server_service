@@ -84,3 +84,4 @@ def test_discord_log_handler_formatting():
     payload_err = handler._queue.get_nowait()
     assert payload_err["content"] is None
     assert payload_err["embeds"][0]["color"] == DiscordLogHandler.COLOR_ERROR
+    handler.close()

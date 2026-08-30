@@ -57,6 +57,7 @@ def test_git_backup_manager_lifecycle(monkeypatch):
 def test_git_backup_manager_empty_or_missing_file():
     with tempfile.TemporaryDirectory() as tmpdir:
         ini_file = os.path.join(tmpdir, "non_existent.ini")
-        mgr = IsolatedGitBackupManager(ini_file)
+        repo_dir = os.path.join(tmpdir, "backup_repo")
+        mgr = IsolatedGitBackupManager(ini_file, backup_repo_dir=repo_dir)
         assert mgr.create_commit("SAVE", "Missing file commit") is None
         assert mgr.get_diff("non_existent_hash") == ""

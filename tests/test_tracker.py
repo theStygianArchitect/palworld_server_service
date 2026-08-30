@@ -7,10 +7,10 @@ import pytest
 from app.tracker import CommunityTracker
 
 
-def test_tracker_player_ledger():
+def test_tracker_player_ledger(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         ledger_path = os.path.join(tmpdir, "players.json")
-        os.environ["PLAYER_LEDGER_PATH"] = ledger_path
+        monkeypatch.setenv("PLAYER_LEDGER_PATH", ledger_path)
 
         tracker = CommunityTracker("TestServer", "test.duckdns.org")
 
