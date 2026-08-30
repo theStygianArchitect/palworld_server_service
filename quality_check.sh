@@ -48,7 +48,7 @@ run_bandit_check() {
 
 run_dependency_check() {
   echo ">>> [2/7] Starting dependency vulnerability audit (pip-audit)..."
-  uv run pip-audit
+  uv run pip-audit --local --skip-editable
   exit_code=$?
   if [ ${exit_code} -ne 0 ]; then
     echo "[-] pip-audit detected vulnerable dependencies."

@@ -21,17 +21,15 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Install uv Package Manager
+      - name: Install uv and Set up Python ${{ matrix.python-version }}
         uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
+          python-version: ${{ matrix.python-version }}
           enable-cache: true
 
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
       - name: Sync Dependencies with uv
-        run: uv sync --all-groups --python ${{ matrix.python-version }}
+        run: uv sync --all-groups
 
       - name: Run Zero-Leak Secret Scanner
         run: uv run python scripts/scan_secrets.py
@@ -40,7 +38,7 @@ jobs:
         run: uv run python scripts/audit_exceptions.py app scripts tests
 
       - name: Run Dependency Vulnerability Audit (pip-audit)
-        run: uv run pip-audit
+        run: uv run pip-audit --local --skip-editable
 
       - name: Run Static Application Security Testing (Bandit)
         run: uv run bandit -c pyproject.toml -r app scripts tests
