@@ -1,0 +1,25 @@
+[Unit]
+Description=Palworld Dedicated Server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=steam
+Group=steam
+Environment="templdpath=$LD_LIBRARY_PATH"
+Environment="LD_LIBRARY_PATH=/home/steam/:$LD_LIBRARY_PATH"
+Environment="SteamAppId=2394010"
+ExecStartPre=/home/steam/palworld-maintenance.sh
+ExecStart=/home/steam/.steam/steam/steamapps/common/PalServer/PalServer.sh -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS -publiclobby > /dev/null
+Restart=always
+
+MemoryAccounting=yes
+MemoryHigh=14G
+MemoryMax=16G
+OOMScoreAdjust=500
+LimitNOFILE=65535
+LimitNPROC=65535
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

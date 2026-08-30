@@ -1,0 +1,24 @@
+[Unit]
+Description=Palworld Web Management & Telemetry Plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=palmanager
+Group=palmanager
+WorkingDirectory=/opt/palworld-web-manager
+Environment="PATH=/opt/palworld-web-manager/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PALWORLD_INI_PATH=/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
+Environment="PALWORLD_SERVICE_NAME=palworld.service"
+Environment="PALWORLD_BACKUP_REPO_DIR=/var/lib/palmanager/backups"
+ExecStart=/bin/bash -c 'ETH0_IP=$(ip -4 -o addr show dev eth0 2>/dev/null | awk -F "[ /]+" "{print \$4}" || true); exec /opt/palworld-web-manager/.venv/bin/uvicorn app.main:app --host "${ETH0_IP:-0.0.0.0}" --port 8080'
+Restart=always
+RestartSec=5
+
+ProtectSystem=full
+ProtectHome=false
+PrivateTmp=true
+ReadWritePaths=/var/lib/palmanager /var/lib/palmanager/backups /home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer /opt/palworld-web-manager /home/steam/duckdns /tmp
+
+[Install]
+WantedBy=multi-user.target
