@@ -30,16 +30,15 @@ jobs:
       - name: Fast-Forward / Merge dev into test
         run: |
           set -euo pipefail
-          echo ">>> Fetching all branches..."
-          git fetch origin test:test || git checkout -b test
+          echo ">>> Checking out test branch..."
           git checkout test
-          DIFF_COUNT=$(git rev-list --count origin/test..origin/dev || echo 0)
+          DIFF_COUNT=$(git rev-list --count test..origin/dev || echo 0)
           if [ "${DIFF_COUNT}" -eq 0 ]; then
             echo "[*] test is already up to date with dev. No promotion needed."
             exit 0
           fi
           echo ">>> Merging dev into test..."
-          git merge --ff-only dev || git merge --no-ff dev -m "chore(release): promote dev to test [skip ci]"
+          git merge --ff-only origin/dev || git merge --no-ff origin/dev -m "chore(release): promote dev to test [skip ci]"
           git push origin test
           echo "[+] Successfully promoted dev -> test."
 
