@@ -560,51 +560,73 @@
       setTimeout(() => box.classList.add('hidden'), 5000);
     }
 
-    async function writeTextToClipboard(text, btn = null) {
+    function triggerCopyFeedback(btn) {
+      if (!btn) return;
+      const orig = btn.innerText;
+      btn.innerText = "✓ Copied!";
+      btn.classList.add("bg-emerald-600");
+      setTimeout(() => {
+        btn.innerText = orig;
+        btn.classList.remove("bg-emerald-600");
+      }, 2000);
+    }
+
+    function writeTextToClipboard(text, btn = null) {
       if (!text) return false;
       let copied = false;
 
-      // 1. Modern Secure Context Clipboard API
-      if (navigator.clipboard && window.isSecureContext) {
-        try {
-          await navigator.clipboard.writeText(text);
-          copied = true;
-        } catch (err) {
-          console.debug("navigator.clipboard failed, attempting execCommand fallback:", err);
+      // 1. Synchronous Range Selection for iOS Safari / WebKit & Android / Desktop Browsers
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.style.fontSize = "12pt";
+      textArea.style.border = "0";
+      textArea.style.padding = "0";
+      textArea.style.margin = "0";
+      textArea.style.position = "absolute";
+      textArea.style.left = "-9999px";
+      const yPosition = window.pageYOffset || document.documentElement.scrollTop;
+      textArea.style.top = `${yPosition}px`;
+      textArea.setAttribute("readonly", "");
+      document.body.appendChild(textArea);
+
+      const isIOS = navigator.userAgent.match(/ipad|iphone|ipod/i);
+      if (isIOS) {
+        const range = document.createRange();
+        range.selectNodeContents(textArea);
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(range);
         }
+        textArea.setSelectionRange(0, 999999);
+      } else {
+        textArea.focus();
+        textArea.select();
       }
 
-      // 2. Universal Legacy ExecCommand Fallback (works across HTTP & LAN IP contexts)
-      if (!copied) {
-        try {
-          const textArea = document.createElement("textarea");
-          textArea.value = text;
-          textArea.style.position = "fixed";
-          textArea.style.left = "-999999px";
-          textArea.style.top = "-999999px";
-          document.body.appendChild(textArea);
-          textArea.focus();
-          textArea.select();
-          copied = document.execCommand('copy');
-          textArea.remove();
-        } catch (err) {
-          console.debug("execCommand fallback failed:", err);
-        }
+      try {
+        copied = document.execCommand("copy");
+      } catch (err) {
+        console.debug("execCommand copy error:", err);
+      }
+      document.body.removeChild(textArea);
+
+      // 2. Modern Clipboard API fallback if secure context and execCommand failed
+      if (!copied && navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => {
+          triggerCopyFeedback(btn);
+        }).catch(err => {
+          console.debug("navigator.clipboard fallback failed:", err);
+          prompt("Copy to clipboard (Hold & Copy):", text);
+        });
+        return true;
       }
 
       if (copied) {
-        if (btn) {
-          const orig = btn.innerText;
-          btn.innerText = "✓ Copied!";
-          btn.classList.add("bg-emerald-600");
-          setTimeout(() => {
-            btn.innerText = orig;
-            btn.classList.remove("bg-emerald-600");
-          }, 2000);
-        }
+        triggerCopyFeedback(btn);
         return true;
       } else {
-        prompt("Copy to clipboard (Ctrl+C, Enter):", text);
+        prompt("Copy to clipboard (Hold & Copy):", text);
         return true;
       }
     }
