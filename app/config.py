@@ -114,3 +114,9 @@ def get_settings() -> AppSettings:
 
 
 settings = get_settings()
+
+
+def reload_settings() -> AppSettings:
+    global settings
+    settings = AppSettings()
+    return settings

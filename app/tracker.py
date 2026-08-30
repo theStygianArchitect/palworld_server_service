@@ -28,22 +28,29 @@ class CommunityTracker:
     ):
         self.server_name = server_name or os.getenv("PALWORLD_SERVER_NAME", "Palworld Dedicated Server")
         self.domain = domain or os.getenv("PALWORLD_SERVER_DOMAIN", "yourdomain.duckdns.org")
+
+        # BattleMetrics Directory State
         self.battlemetrics_indexed: bool = False
         self.battlemetrics_first_seen: Optional[str] = None
         self.battlemetrics_id: Optional[str] = None
-
-        self.log_registered: bool = False
-        self.log_first_seen: Optional[str] = None
-        self.last_check_time: Optional[str] = None
-
+        self.battlemetrics_rank: Optional[int] = None
+        self.battlemetrics_players: int = 0
         self.next_bm_allowed_time: float = 0.0
         self.consecutive_429_count: int = 0
         self.last_bm_status: str = "SCANNING"
 
+        # Local Systemd Journalctl Log Scraper State
+        self.log_registered: bool = False
+        self.log_first_seen: Optional[str] = None
+        self.log_last_matched_line: Optional[str] = None
+        self.last_check_time: Optional[str] = None
+
+        # Network & DNS Alignment State
         self.cached_public_ip: str = "Detecting..."
         self.cached_dns_ip: str = "Resolving..."
         self.last_ip_check: float = 0.0
 
+        # Player Ledger
         self.players_history: Dict[str, Any] = self._load_player_ledger()
 
     def _load_player_ledger(self) -> Dict[str, Any]:
@@ -64,6 +71,7 @@ class CommunityTracker:
             pass
 
     async def probe_battlemetrics_loop(self):
+        """Continuous background poller for BattleMetrics Community Directory listings."""
         while True:
             try:
                 now = time.time()
@@ -85,6 +93,8 @@ class CommunityTracker:
                                         "%Y-%m-%d %H:%M:%S"
                                     )
                                 self.battlemetrics_id = s.get("id")
+                                self.battlemetrics_rank = s.get("attributes", {}).get("rank")
+                                self.battlemetrics_players = s.get("attributes", {}).get("players", 0)
                             self.next_bm_allowed_time = time.time() + 60.0
 
                         elif res.status_code == 429:
@@ -105,8 +115,13 @@ class CommunityTracker:
             await asyncio.sleep(2)
 
     def probe_local_logs(self) -> Dict[str, Any]:
+        """Scrapes systemd journalctl for Palworld EOS session & lobby initialization lines."""
         if self.log_registered:
-            return {"registered": True, "first_seen": self.log_first_seen}
+            return {
+                "registered": True,
+                "first_seen": self.log_first_seen,
+                "last_line": self.log_last_matched_line,
+            }
 
         if os.name != "nt":
             try:
@@ -115,19 +130,29 @@ class CommunityTracker:
                 if proc.returncode == 0:
                     for line in proc.stdout.splitlines():
                         if re.search(
-                            r"Created public lobby session|EOS-SDK.*sessions|Lobby.*Registered|PublicSession",
+                            r"Created public lobby session|EOS-SDK.*sessions|Lobby.*Registered|PublicSession|Steam server initialized",
                             line,
                             re.IGNORECASE,
                         ):
                             self.log_registered = True
+                            self.log_last_matched_line = line.strip()
                             if not self.log_first_seen:
                                 self.log_first_seen = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            return {"registered": True, "first_seen": self.log_first_seen}
+                            return {
+                                "registered": True,
+                                "first_seen": self.log_first_seen,
+                                "last_line": self.log_last_matched_line,
+                            }
             except Exception:
                 pass
-        return {"registered": False, "first_seen": self.log_first_seen}
+        return {
+            "registered": False,
+            "first_seen": self.log_first_seen,
+            "last_line": None,
+        }
 
     async def probe_ip_and_dns(self):
+        """Probes current public WAN IP and resolves DuckDNS A-record for alignment."""
         if time.time() - self.last_ip_check < 120.0 and self.cached_public_ip != "Detecting...":
             return
 
@@ -192,7 +217,7 @@ class CommunityTracker:
     def get_hardware_telemetry(self) -> Dict[str, Any]:
         cgroup_ram_bytes = 0
         cgroup_path = "/sys/fs/cgroup/system.slice/palworld.service/memory.current"
-        if os.path.exists(cgroup_path):
+        if os.name != "nt" and os.path.exists(cgroup_path):
             try:
                 with open(cgroup_path, "r") as f:
                     cgroup_ram_bytes = int(f.read().strip())
@@ -221,7 +246,10 @@ class CommunityTracker:
         }
 
     async def get_combined_telemetry(
-        self, is_multiplay: bool = True, host_ip: Optional[str] = None
+        self,
+        is_multiplay: bool = True,
+        host_ip: Optional[str] = None,
+        public_port: int = 8211,
     ) -> Dict[str, Any]:
         self.last_check_time = datetime.datetime.now().strftime("%H:%M:%S")
         await self.probe_ip_and_dns()
@@ -251,9 +279,13 @@ class CommunityTracker:
             badge_style = "bg-slate-800 border border-slate-700 text-slate-300"
             badge_dot = "bg-slate-400"
         else:
-            badge_label = f"Direct Connect Ready ({lan_ip}:8211)"
+            badge_label = f"Direct Connect Ready ({lan_ip}:{public_port})"
             badge_style = "bg-amber-900/60 border border-amber-500/50 text-amber-300"
             badge_dot = "bg-amber-400 animate-pulse"
+
+        direct_connect_host = self.domain if (self.domain and "yourdomain" not in self.domain) else (
+            self.cached_public_ip if self.cached_public_ip != "Detecting..." else lan_ip
+        )
 
         return {
             "top_badge": {
@@ -267,18 +299,24 @@ class CommunityTracker:
                 "duckdns_a_record": self.cached_dns_ip,
                 "dns_aligned": dns_match,
                 "lan_ip": lan_ip,
+                "public_port": public_port,
+                "direct_connect_addr": f"{direct_connect_host}:{public_port}",
+                "lan_connect_addr": f"{lan_ip}:{public_port}",
             },
             "source_of_truth_battlemetrics": {
                 "status": bm_status_label,
                 "indexed": self.battlemetrics_indexed,
                 "first_seen": self.battlemetrics_first_seen,
                 "server_id": self.battlemetrics_id,
+                "rank": self.battlemetrics_rank,
+                "players": self.battlemetrics_players,
                 "backoff_remaining_sec": backoff_sec,
             },
             "backup_log_scraper": {
                 "status": "HEARTBEAT_DETECTED" if log_res.get("registered") else "AWAITING_BEAT",
                 "registered": log_res.get("registered", False),
                 "first_seen": self.log_first_seen,
+                "last_line": log_res.get("last_line"),
             },
             "last_probed": self.last_check_time,
         }

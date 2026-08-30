@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from .config import settings
+from .config import settings, reload_settings
 from .config_parser import SETTING_METADATA
 from .config_pipeline import ConfigPipeline
 from .engine import LOCK_FILE, PalEngine
@@ -65,7 +65,10 @@ async def telemetry_streamer():
 
             engine_metrics = await engine.get_engine_metrics()
             host_hardware = engine.tracker.get_hardware_telemetry()
-            matchmaking_tracking = await engine.tracker.get_combined_telemetry(host_ip=settings.host_ip)
+            matchmaking_tracking = await engine.tracker.get_combined_telemetry(
+                host_ip=settings.host_ip,
+                public_port=settings.PublicPort,
+            )
 
             disk_target = (
                 settings.backup_dir
@@ -83,6 +86,8 @@ async def telemetry_streamer():
                     "liveness": liveness,
                     "readiness": readiness_data["ready"],
                     "version": readiness_data["version"],
+                    "server_name": settings.ServerName,
+                    "server_password": settings.ServerPassword,
                     "tracking": matchmaking_tracking,
                     "players": player_matrix,
                     "metrics": {
@@ -180,11 +185,23 @@ async def save_sanitized_settings(payload: GameplaySettingsSchema):
         with open(settings.ini_path, "w", encoding="utf-8") as f:
             f.write(serialized_ini)
         commit = git_mgr.create_commit("SAVE", "Web UI sanitized update")
+        reload_settings()  # Live reload settings from updated INI
         log.info(f"Saved settings cleanly to disk. Git snapshot: {commit}")
         return {"status": "success", "message": "Settings saved cleanly to disk.", "commit": commit}
     except Exception as e:
         log.error(f"Save error: {e}")
         raise HTTPException(status_code=500, detail=f"Save error: {str(e)}")
+
+
+@app.get("/api/tracker/community")
+async def get_community_tracker_data():
+    return {
+        "status": "success",
+        "data": await engine.tracker.get_combined_telemetry(
+            host_ip=settings.host_ip,
+            public_port=settings.PublicPort,
+        ),
+    }
 
 
 @app.post("/api/service/reboot")
@@ -198,6 +215,7 @@ async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks):
         with open(settings.ini_path, "w", encoding="utf-8") as f:
             f.write(serialized_ini)
         commit = git_mgr.create_commit("RESTART", f"Prior to reboot ({payload.countdown_seconds}s countdown)")
+        reload_settings()
         log.info(f"Saved configuration snapshot before reboot: {commit}")
 
     log.info(f"Initiating reboot sequence ({payload.countdown_seconds}s, update={payload.trigger_steam_update})")
@@ -251,4 +269,5 @@ async def get_diff(commit_hash: str):
 async def restore_commit(commit_hash: str):
     log.info(f"Restoring configuration from snapshot {commit_hash}")
     git_mgr.restore_commit(commit_hash)
+    reload_settings()
     return {"status": "success", "message": f"Restored configuration from {commit_hash}."}

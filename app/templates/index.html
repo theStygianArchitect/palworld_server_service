@@ -2,8 +2,8 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>The Cool Kids Palworld Server | Operations Suite</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Palworld Server Operations Suite</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -11,41 +11,36 @@
       theme: {
         extend: {
           colors: {
-            brand: { 500: '#6366f1', 600: '#4f46e5' },
-            dark: { 800: '#1e293b', 900: '#0f172a', 950: '#020617' }
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            dark: {
+              800: '#1e293b',
+              900: '#0f172a',
+              950: '#020617',
+            }
           }
         }
       }
     }
   </script>
+  <style>
+    /* Custom scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+  </style>
 </head>
-<body class="bg-dark-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-brand-500 selection:text-white pb-16">
-
-  <!-- Lifecycle HUD -->
-  <div id="lifecycleHUD" class="hidden bg-indigo-950/95 border-b border-indigo-500/50 p-3 sm:p-4 sticky top-0 z-50 shadow-2xl backdrop-blur-md">
-    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-      <div class="flex items-center gap-3 w-full sm:w-auto">
-        <div class="relative w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 flex items-center justify-center">
-          <svg class="w-full h-full transform -rotate-90">
-            <circle cx="20" cy="20" r="16" stroke="currentColor" stroke-width="3.5" class="text-indigo-900" fill="transparent" />
-            <circle id="hudProgressRing" cx="20" cy="20" r="16" stroke="currentColor" stroke-width="3.5" class="text-indigo-400 transition-all duration-1000" fill="transparent" stroke-dasharray="100.5" stroke-dashoffset="0" />
-          </svg>
-          <span id="hudTimer" class="absolute text-[10px] sm:text-[11px] font-mono font-bold">00:00</span>
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2">
-            <span id="hudPhaseBadge" class="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-indigo-500 text-white font-mono">COUNTDOWN</span>
-            <span class="text-xs font-semibold text-slate-200 truncate">Lifecycle Event Active</span>
-          </div>
-          <p id="hudBroadcastMsg" class="text-[11px] sm:text-xs font-mono text-indigo-300 mt-0.5 truncate">Broadcasting notice...</p>
-        </div>
-      </div>
-      <div class="flex items-center gap-2 text-[10px] sm:text-xs font-mono text-indigo-200 bg-indigo-900/60 px-2.5 py-1 rounded-lg border border-indigo-700/50 self-end sm:self-center">
-        <span class="w-2 h-2 rounded-full bg-indigo-400 animate-ping"></span>
-        <span>WebSocket Live</span>
-      </div>
-    </div>
-  </div>
+<body class="bg-dark-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-brand-500 selection:text-white">
 
   <!-- Header -->
   <header class="bg-dark-900 border-b border-slate-800 sticky top-0 z-40 px-4 sm:px-6 py-3.5 shadow-xl backdrop-blur-md bg-opacity-90">
@@ -70,7 +65,7 @@
 
         <div id="communityTopBadge" class="flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-dark-800 border border-slate-700">
           <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" id="commDot"></span>
-          <span id="commText" class="text-[11px] sm:text-xs text-slate-300">Probing Lobby...</span>
+          <span id="commText" class="text-[11px] sm:text-xs text-slate-300">Probing Directory...</span>
         </div>
 
         <div class="flex items-center gap-2 ml-auto lg:ml-0">
@@ -81,13 +76,75 @@
       </div>
     </div>
 
+    <!-- Navigation Tabs -->
     <div class="max-w-7xl mx-auto mt-3 flex items-center gap-2 border-t border-slate-800/80 pt-2.5 text-xs font-mono overflow-x-auto">
       <button onclick="switchTab('settings')" id="tab_settings" class="px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold transition whitespace-nowrap">⚙️ World Settings</button>
       <button onclick="switchTab('players')" id="tab_players" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">👥 Player Roster</button>
-      <button onclick="switchTab('metrics')" id="tab_metrics" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📊 Engine & Hardware</button>
+      <button onclick="switchTab('metrics')" id="tab_metrics" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📊 Telemetry & Community</button>
       <button onclick="switchTab('backups')" id="tab_backups" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">🕒 Snapshots & Backups</button>
     </div>
   </header>
+
+  <!-- Quick Connection Info Box (Copy-Paste Bar) -->
+  <section class="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-4">
+    <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
+      <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-emerald-400 font-bold text-sm sm:text-base">📋 Direct Connect & Server Details</span>
+            <span id="dnsAlignBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700">DNS: Resolving...</span>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">One-click copy information for players connecting directly or via community browser.</p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 w-full md:w-auto text-xs font-mono">
+          <!-- Direct Connect Copy -->
+          <div class="p-2.5 bg-dark-950 border border-slate-800 rounded-xl flex items-center justify-between gap-2">
+            <div class="truncate">
+              <span class="text-[10px] text-slate-500 block uppercase">Direct Connect</span>
+              <span id="copyDirectAddr" class="font-bold text-slate-200 truncate">127.0.0.1:8211</span>
+            </div>
+            <button onclick="copyToClipboard('copyDirectAddr', this)" class="px-2.5 py-1.5 bg-brand-600/80 hover:bg-brand-500 text-white rounded-lg transition text-[11px] font-semibold whitespace-nowrap">
+              📋 Copy
+            </button>
+          </div>
+
+          <!-- LAN Connect Copy -->
+          <div class="p-2.5 bg-dark-950 border border-slate-800 rounded-xl flex items-center justify-between gap-2">
+            <div class="truncate">
+              <span class="text-[10px] text-slate-500 block uppercase">LAN IP</span>
+              <span id="copyLanAddr" class="font-bold text-slate-200 truncate">127.0.0.1:8211</span>
+            </div>
+            <button onclick="copyToClipboard('copyLanAddr', this)" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition text-[11px] font-semibold whitespace-nowrap">
+              📋 Copy
+            </button>
+          </div>
+
+          <!-- Server Password Copy -->
+          <div class="p-2.5 bg-dark-950 border border-slate-800 rounded-xl flex items-center justify-between gap-2">
+            <div class="truncate">
+              <span class="text-[10px] text-slate-500 block uppercase">Server Password</span>
+              <span id="copyPasswordText" class="font-bold text-amber-300 truncate">None (Public)</span>
+            </div>
+            <button id="copyPasswordBtn" onclick="copyPasswordValue(this)" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition text-[11px] font-semibold whitespace-nowrap disabled:opacity-40">
+              📋 Copy
+            </button>
+          </div>
+
+          <!-- Server Search Name Copy -->
+          <div class="p-2.5 bg-dark-950 border border-slate-800 rounded-xl flex items-center justify-between gap-2">
+            <div class="truncate">
+              <span class="text-[10px] text-slate-500 block uppercase">Server Name</span>
+              <span id="copyServerName" class="font-bold text-slate-200 truncate">Palworld Server</span>
+            </div>
+            <button onclick="copyToClipboard('copyServerName', this)" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition text-[11px] font-semibold whitespace-nowrap">
+              📋 Copy
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
   <!-- Alert Banner -->
   <div id="alertBox" class="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-4 hidden">
@@ -138,55 +195,141 @@
           <span class="text-[10px] font-mono text-slate-400" id="totalKnownPlayers">0 Registered Tamers</span>
         </div>
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs font-mono">
-            <thead class="text-[10px] uppercase text-slate-400 border-b border-slate-800">
+          <table class="w-full text-left text-xs font-mono text-slate-300">
+            <thead class="bg-dark-950 text-[11px] text-slate-400 uppercase">
               <tr>
-                <th class="py-2 px-3">Player / ID</th>
-                <th class="py-2 px-3">Level</th>
-                <th class="py-2 px-3">Last Seen</th>
-                <th class="py-2 px-3 text-right">Actions</th>
+                <th class="p-2.5">Player Name</th>
+                <th class="p-2.5">Player ID</th>
+                <th class="p-2.5">Steam / User ID</th>
+                <th class="p-2.5">Level</th>
+                <th class="p-2.5">Last Seen</th>
+                <th class="p-2.5 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody id="offlineTableBody" class="divide-y divide-slate-800 text-slate-300">
-              <tr>
-                <td colspan="4" class="py-4 text-center text-slate-500">No historical records available.</td>
-              </tr>
+            <tbody id="offlinePlayersTable" class="divide-y divide-slate-800/60">
+              <tr><td colspan="6" class="p-4 text-center text-slate-500">No historical records logged yet.</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </div>
 
-    <!-- Tab 3: Metrics -->
+    <!-- Tab 3: Engine, Hardware & Community Matchmaking -->
     <div id="page_metrics" class="hidden space-y-6">
+      
+      <!-- Community Directory & Matchmaking Matrix Card -->
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
+            <span>🌐</span> Community Server Directory & Matchmaking Matrix
+          </h2>
+          <span id="lastProbedText" class="text-[10px] font-mono text-slate-400">Last Probed: --</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+          
+          <!-- BattleMetrics Tracker -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-300 font-bold">BattleMetrics API</span>
+              <span id="bmStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 border border-blue-500/50 text-blue-300">SCANNING</span>
+            </div>
+            <div class="space-y-1.5 text-[11px] text-slate-400">
+              <div class="flex justify-between">
+                <span>Indexed Listing:</span>
+                <strong id="bmIndexedVal" class="text-slate-200">No</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>Server ID:</span>
+                <strong id="bmServerId" class="text-slate-200 font-mono">--</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>First Seen:</span>
+                <strong id="bmFirstSeen" class="text-slate-200">--</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>Rate-Limit Backoff:</span>
+                <strong id="bmBackoffSec" class="text-amber-400">0s</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Journalctl Log Scraper -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-300 font-bold">Log Scraper (EOS Lobby)</span>
+              <span id="logScraperBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-slate-700 text-slate-300">AWAITING_BEAT</span>
+            </div>
+            <div class="space-y-1.5 text-[11px] text-slate-400">
+              <div class="flex justify-between">
+                <span>Lobby Heartbeat:</span>
+                <strong id="logScraperRegistered" class="text-slate-200">Awaiting Log</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>Registered At:</span>
+                <strong id="logScraperFirstSeen" class="text-slate-200">--</strong>
+              </div>
+              <div class="text-[10px] text-slate-500 pt-1 truncate" id="logScraperLastLine">
+                Pattern: Created public lobby session
+              </div>
+            </div>
+          </div>
+
+          <!-- Network & DNS Alignment -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-300 font-bold">Network & DNS Matrix</span>
+              <span id="dnsAlignmentStatus" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300">ALIGNED</span>
+            </div>
+            <div class="space-y-1.5 text-[11px] text-slate-400">
+              <div class="flex justify-between">
+                <span>Public WAN IP:</span>
+                <strong id="netWanIp" class="text-slate-200">Detecting...</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>DuckDNS A-Record:</span>
+                <strong id="netDnsIp" class="text-slate-200">Resolving...</strong>
+              </div>
+              <div class="flex justify-between">
+                <span>Direct Connect:</span>
+                <strong id="netDirectConnect" class="text-brand-400">8211/UDP</strong>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Engine Telemetry -->
       <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
         <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
-          <span>⚡</span> Palworld Unreal Engine Simulation
+          <span>⚡</span> Unreal Engine 5 Simulation Telemetry
         </h2>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
           <div class="p-3.5 bg-dark-950 border border-slate-800 rounded-xl">
-            <div class="text-[10px] text-slate-400 uppercase">Engine Tickrate</div>
-            <div class="text-lg font-bold text-emerald-400 mt-1" id="engineFps">-- FPS</div>
+            <div class="text-[10px] text-slate-400 uppercase">Server Tick Rate</div>
+            <div class="text-xl sm:text-2xl font-bold text-emerald-400 mt-1" id="engineFps">-- FPS</div>
             <div class="text-[9px] text-slate-500 mt-0.5">Target: 60.0 FPS</div>
           </div>
           <div class="p-3.5 bg-dark-950 border border-slate-800 rounded-xl">
-            <div class="text-[10px] text-slate-400 uppercase">Frame Delivery Time</div>
-            <div class="text-lg font-bold text-indigo-400 mt-1" id="engineFrameTime">-- ms</div>
-            <div class="text-[9px] text-slate-500 mt-0.5">Tick execution budget</div>
+            <div class="text-[10px] text-slate-400 uppercase">Frame Time</div>
+            <div class="text-xl sm:text-2xl font-bold text-indigo-400 mt-1" id="engineFrameTime">-- ms</div>
+            <div class="text-[9px] text-slate-500 mt-0.5">Lower is smoother</div>
           </div>
           <div class="p-3.5 bg-dark-950 border border-slate-800 rounded-xl">
             <div class="text-[10px] text-slate-400 uppercase">World In-Game Day</div>
-            <div class="text-lg font-bold text-amber-400 mt-1" id="engineDays">Day --</div>
+            <div class="text-xl sm:text-2xl font-bold text-amber-400 mt-1" id="engineDays">Day --</div>
             <div class="text-[9px] text-slate-500 mt-0.5">Persistent world clock</div>
           </div>
           <div class="p-3.5 bg-dark-950 border border-slate-800 rounded-xl">
             <div class="text-[10px] text-slate-400 uppercase">Engine Uptime</div>
-            <div class="text-lg font-bold text-slate-200 mt-1" id="engineUptime">--</div>
+            <div class="text-lg sm:text-xl font-bold text-slate-200 mt-1" id="engineUptime">--</div>
             <div class="text-[9px] text-slate-500 mt-0.5">Continuous binary run</div>
           </div>
         </div>
       </div>
 
+      <!-- Bare-Metal Hardware -->
       <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
         <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
           <span>🖥️</span> Bare-Metal Hardware & Resource Telemetry
@@ -208,7 +351,7 @@
 
           <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
             <div class="flex justify-between items-center">
-              <span class="text-slate-300 font-bold">NVMe Storage Allocation</span>
+              <span class="text-slate-300 font-bold">Storage Allocation</span>
               <span id="hwDiskText" class="text-emerald-400 font-bold">0 / 0 GB</span>
             </div>
             <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -278,400 +421,541 @@
     </div>
   </div>
 
+  <!-- Countdown Banner HUD -->
+  <div id="countdownBanner" class="hidden fixed bottom-4 right-4 max-w-sm w-full bg-amber-950/95 border border-amber-500/60 rounded-2xl p-4 shadow-2xl backdrop-blur-md z-50 font-mono text-amber-200">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs uppercase font-bold flex items-center gap-1.5">
+        <span class="animate-ping w-2 h-2 rounded-full bg-amber-400"></span> Reboot in Progress
+      </span>
+      <span id="countdownTimerText" class="text-base font-black text-amber-400">00:00</span>
+    </div>
+    <p id="countdownMsg" class="text-[11px] text-amber-300 leading-snug">Notice broadcast sent...</p>
+  </div>
+
   <script>
+    let settingsMetadata = {};
     let currentSettings = {};
-    let metadata = {};
-    let ws = null;
+    let liveServerPassword = "";
+    let socket;
 
     function switchTab(tab) {
       ['settings', 'players', 'metrics', 'backups'].forEach(t => {
         document.getElementById(`page_${t}`).classList.add('hidden');
-        document.getElementById(`tab_${t}`).className = "px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap";
+        document.getElementById(`tab_${t}`).classList.remove('bg-brand-600', 'text-white', 'font-bold');
+        document.getElementById(`tab_${t}`).classList.add('bg-dark-800', 'text-slate-300');
       });
       document.getElementById(`page_${tab}`).classList.remove('hidden');
-      document.getElementById(`tab_${tab}`).className = "px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold transition whitespace-nowrap";
+      document.getElementById(`tab_${tab}`).classList.add('bg-brand-600', 'text-white', 'font-bold');
+      document.getElementById(`tab_${tab}`).classList.remove('bg-dark-800', 'text-slate-300');
+
       if (tab === 'backups') loadCommits();
     }
 
-    function connectWebSocket() {
-      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${proto}//${window.location.host}/ws/telemetry`);
-
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'TELEMETRY') updateTelemetry(msg.data);
-        if (msg.type === 'LIFECYCLE_UPDATE') updateLifecycleHUD(msg.data);
-      };
-
-      ws.onclose = () => {
-        document.getElementById('statusDot').className = "w-2.5 h-2.5 rounded-full bg-slate-500";
-        document.getElementById('statusText').textContent = "Reconnecting...";
-        setTimeout(connectWebSocket, 3000);
-      };
+    function showAlert(msg, isError = false) {
+      const box = document.getElementById('alertBox');
+      const container = document.getElementById('alertContainer');
+      const text = document.getElementById('alertMsg');
+      box.classList.remove('hidden');
+      text.innerText = msg;
+      container.className = isError 
+        ? "p-3.5 rounded-xl border text-xs sm:text-sm flex items-center justify-between shadow-lg bg-red-950/90 border-red-800 text-red-200"
+        : "p-3.5 rounded-xl border text-xs sm:text-sm flex items-center justify-between shadow-lg bg-emerald-950/90 border-emerald-800 text-emerald-200";
+      setTimeout(() => box.classList.add('hidden'), 5000);
     }
 
-    function updateTelemetry(d) {
-      const dot = document.getElementById('statusDot');
-      const txt = document.getElementById('statusText');
-      
-      if (d.readiness) {
-        dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]";
-        txt.textContent = `Online (${d.version || 'Live'})`;
-      } else if (d.liveness) {
-        dot.className = "w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse";
-        txt.textContent = "Booting / Ready";
-      } else {
-        dot.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
-        txt.textContent = "Offline";
-      }
-
-      if (d.tracking) {
-        const tb = d.tracking.top_badge;
-        const commBadge = document.getElementById('communityTopBadge');
-        const commDot = document.getElementById('commDot');
-        const commText = document.getElementById('commText');
-        commBadge.className = `flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full ${tb.style}`;
-        commDot.className = `w-2 h-2 rounded-full ${tb.dot}`;
-        commText.textContent = tb.label;
-      }
-
-      if (d.players) {
-        document.getElementById('playersCountText').textContent = `${d.players.active_count} / 32`;
-        document.getElementById('activePlayerCount').textContent = d.players.active_count;
-        document.getElementById('totalKnownPlayers').textContent = `${d.players.total_registered} Registered Tamers`;
-        renderActivePlayers(d.players.active_players);
-        renderOfflinePlayers(d.players.offline_players);
-      }
-
-      if (d.metrics) {
-        const eng = d.metrics.engine;
-        document.getElementById('engineFps').textContent = `${eng.server_fps} FPS`;
-        document.getElementById('engineFrameTime').textContent = `${eng.server_frame_time_ms} ms`;
-        document.getElementById('engineDays').textContent = `Day ${eng.days}`;
-        const upMins = Math.floor(eng.uptime_sec / 60);
-        document.getElementById('engineUptime').textContent = `${Math.floor(upMins/60)}h ${upMins%60}m`;
-
-        const hw = d.metrics.hardware;
-        document.getElementById('hwCgroupRam').textContent = `${hw.cgroup_used_gb} / ${hw.cgroup_limit_gb} GB`;
-        document.getElementById('hwCgroupBar').style.width = `${Math.min(hw.cgroup_pct, 100)}%`;
-        document.getElementById('hwHostRam').textContent = `${hw.host_ram_used_gb} / ${hw.host_ram_total_gb} GB`;
-        document.getElementById('hwHostSwap').textContent = `${hw.host_swap_used_gb} / ${hw.host_swap_total_gb} GB`;
-        document.getElementById('hwCpuAvg').textContent = `Overall: ${hw.cpu_avg}%`;
-        document.getElementById('hwNetRx').textContent = `${hw.net_bytes_recv_mb} MB`;
-        document.getElementById('hwNetTx').textContent = `${hw.net_bytes_sent_mb} MB`;
-
-        const coreGrid = document.getElementById('cpuCoresGrid');
-        coreGrid.innerHTML = hw.cpu_cores.map((c, i) => `
-          <div class="p-1.5 bg-dark-900 border border-slate-800 rounded">
-            <div class="flex justify-between text-[8px] text-slate-400"><span>C${i}</span><span>${c}%</span></div>
-            <div class="w-full bg-slate-800 h-1 rounded-full mt-1 overflow-hidden">
-              <div class="bg-amber-400 h-full" style="width: ${c}%"></div>
-            </div>
-          </div>
-        `).join('');
-      }
-
-      if (d.disk) {
-        document.getElementById('hwDiskText').textContent = `${d.disk.used_gb} / ${d.disk.total_gb} GB`;
-        document.getElementById('hwDiskBar').style.width = `${d.disk.percentage}%`;
-      }
+    function copyToClipboard(elementId, btn) {
+      const text = document.getElementById(elementId).innerText.trim();
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.innerText;
+        btn.innerText = "✓ Copied!";
+        btn.classList.add("bg-emerald-600");
+        setTimeout(() => {
+          btn.innerText = orig;
+          btn.classList.remove("bg-emerald-600");
+        }, 2000);
+      });
     }
 
-    function renderActivePlayers(players) {
-      const grid = document.getElementById('activePlayersGrid');
-      if (!players || players.length === 0) {
-        grid.innerHTML = '<div class="p-6 bg-dark-900 border border-slate-800 rounded-2xl text-center text-slate-400 font-mono text-xs col-span-full">No players currently online.</div>';
+    function copyPasswordValue(btn) {
+      if (!liveServerPassword) {
+        showAlert("No server password is set (public access).");
         return;
       }
-
-      grid.innerHTML = players.map(p => `
-        <div class="p-4 bg-dark-900 border border-slate-800 rounded-2xl shadow-lg space-y-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="font-bold text-slate-100 flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>${p.name}</span>
-              </div>
-              <div class="text-[10px] font-mono text-slate-500">${p.userId}</div>
-            </div>
-            <span class="px-2 py-0.5 bg-indigo-950 border border-indigo-500/40 text-indigo-300 rounded font-mono font-bold text-xs">LVL ${p.level}</span>
-          </div>
-          <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-2 border-t border-slate-800">
-            <span>Ping: <strong class="${p.ping < 50 ? 'text-emerald-400' : 'text-amber-400'}">${p.ping} ms</strong></span>
-            <span>${p.coords}</span>
-          </div>
-          <div class="grid grid-cols-3 gap-1.5 pt-1">
-            <button onclick="warnPlayer('${p.userId}')" class="py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] font-mono font-semibold transition">💬 Alert</button>
-            <button onclick="kickPlayer('${p.userId}', '${p.name}')" class="py-1 bg-amber-950/80 border border-amber-800 text-amber-300 hover:bg-amber-900 rounded text-[10px] font-mono font-semibold transition">👢 Kick</button>
-            <button onclick="banPlayer('${p.userId}', '${p.name}')" class="py-1 bg-rose-950/80 border border-rose-800 text-rose-300 hover:bg-rose-900 rounded text-[10px] font-mono font-semibold transition">🚫 Ban</button>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    function renderOfflinePlayers(players) {
-      const body = document.getElementById('offlineTableBody');
-      if (!players || players.length === 0) {
-        body.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-slate-500">No historical records available.</td></tr>';
-        return;
-      }
-      body.innerHTML = players.map(p => `
-        <tr class="hover:bg-dark-950 transition">
-          <td class="py-2.5 px-3">
-            <div class="font-bold text-slate-200">${p.name}</div>
-            <div class="text-[9px] text-slate-500">${p.userId}</div>
-          </td>
-          <td class="py-2.5 px-3"><span class="px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded text-[10px]">LVL ${p.level}</span></td>
-          <td class="py-2.5 px-3 text-slate-400">${p.last_seen}</td>
-          <td class="py-2.5 px-3 text-right">
-            <button onclick="banPlayer('${p.userId}', '${p.name}')" class="px-2 py-1 bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 rounded text-[10px] transition">Ban ID</button>
-          </td>
-        </tr>
-      `).join('');
-    }
-
-    async function kickPlayer(id, name) {
-      const reason = prompt(`Kick ${name}? Enter reason:`, "Kicked by server administrator");
-      if (reason === null) return;
-      const res = await fetch('/api/players/kick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_id: id, message: reason })
+      navigator.clipboard.writeText(liveServerPassword).then(() => {
+        const orig = btn.innerText;
+        btn.innerText = "✓ Copied!";
+        btn.classList.add("bg-emerald-600");
+        setTimeout(() => {
+          btn.innerText = orig;
+          btn.classList.remove("bg-emerald-600");
+        }, 2000);
       });
-      if (res.ok) showAlert(`Kicked ${name}.`, 'success');
-      else showAlert(`Failed kicking ${name}.`, 'error');
     }
 
-    async function banPlayer(id, name) {
-      if (!confirm(`BAN ${name} (${id}) from the server permanently?`)) return;
-      const res = await fetch('/api/players/ban', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_id: id, message: "Banned by administrator" })
-      });
-      if (res.ok) showAlert(`Banned ${name}.`, 'success');
-      else showAlert(`Failed banning ${name}.`, 'error');
-    }
-
-    async function warnPlayer(id) {
-      const msg = prompt("Enter in-game alert message:");
-      if (!msg) return;
-      const res = await fetch('/api/players/warn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_id: id, message: msg })
-      });
-      if (res.ok) showAlert("Notice broadcasted to server.", 'success');
-    }
-
-    async function promptWarnAll() {
-      const msg = prompt("Broadcast message across all in-game HUDs:");
-      if (!msg) return;
-      const res = await fetch('/api/players/warn', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player_id: "ALL", message: msg })
-      });
-      if (res.ok) showAlert("Broadcast dispatched.", 'success');
-    }
-
-    function updateLifecycleHUD(data) {
-      const hud = document.getElementById('lifecycleHUD');
-      if (!data || data.phase === 'IDLE') {
-        hud.classList.add('hidden');
-        return;
-      }
-      hud.classList.remove('hidden');
-      document.getElementById('hudPhaseBadge').textContent = data.phase;
-      document.getElementById('hudBroadcastMsg').textContent = data.current_broadcast || 'Processing transition...';
-
-      const rem = data.remaining_seconds;
-      const mins = Math.floor(rem / 60);
-      const secs = rem % 60;
-      document.getElementById('hudTimer').textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
-      if (data.total_seconds > 0) {
-        const offset = 100.5 * (1 - (rem / data.total_seconds));
-        document.getElementById('hudProgressRing').style.strokeDashoffset = offset;
-      }
-    }
-
-    async function init() {
-      await fetchSettings();
-      connectWebSocket();
-    }
-
-    async function fetchSettings() {
+    async function loadSettings() {
       try {
         const res = await fetch('/api/settings');
         const data = await res.json();
-        currentSettings = data.data || {};
-        metadata = data.metadata || {};
-        renderForm();
+        if (data.status === 'success') {
+          settingsMetadata = data.metadata;
+          currentSettings = data.data;
+          renderSettingsForm();
+        }
       } catch (err) {
-        showAlert('Failed loading settings.', 'error');
+        showAlert('Failed to load world settings from server.', true);
       }
     }
 
-    function renderForm() {
+    function renderSettingsForm() {
       const container = document.getElementById('categoriesContainer');
       container.innerHTML = '';
-      const categories = {};
-      
-      const allKeys = Object.keys(metadata).length > 0 ? Object.keys(metadata) : Object.keys(currentSettings);
-      
-      allKeys.forEach(key => {
-        const val = currentSettings[key] !== undefined ? currentSettings[key] : (metadata[key] ? metadata[key].default : '');
-        const meta = metadata[key] || { category: '⚙️ Advanced Parameters', type: typeof val, label: key };
-        const cat = meta.category || '⚙️ Advanced Parameters';
-        if (!categories[cat]) categories[cat] = [];
-        categories[cat].push({ key, val, meta });
-      });
 
-      for (const [catName, fields] of Object.entries(categories)) {
-        const section = document.createElement('div');
-        section.className = "category-group bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-3 sm:space-y-4";
-        section.innerHTML = `<h2 class="text-xs sm:text-sm font-bold text-slate-300 uppercase tracking-wider font-mono">${catName}</h2>
-                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4"></div>`;
-        const grid = section.querySelector('div');
+      const grouped = {};
+      for (const [key, meta] of Object.entries(settingsMetadata)) {
+        const cat = meta.category || 'General Settings';
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push({ key, ...meta, value: currentSettings[key] });
+      }
 
-        fields.forEach(({ key, val, meta }) => {
-          const card = document.createElement('div');
-          card.className = "setting-card bg-dark-950 p-3.5 sm:p-4 rounded-xl border border-slate-800/80 flex flex-col justify-between space-y-2.5";
-          
-          let inputHTML = '';
-          if (meta.type === 'bool' || typeof val === 'boolean') {
-            inputHTML = `
-              <label class="relative inline-flex items-center cursor-pointer mt-1">
-                <input type="checkbox" id="field_${key}" ${val ? 'checked' : ''} class="sr-only peer" onchange="updateVal('${key}', this.checked)">
-                <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-600"></div>
-              </label>`;
-          } else if (meta.type === 'select') {
-            const opts = (meta.options || []).map(o => `<option value="${o}" ${o === val ? 'selected' : ''}>${o}</option>`).join('');
-            inputHTML = `<select id="field_${key}" onchange="updateVal('${key}', this.value)" class="w-full bg-dark-900 border border-slate-700 rounded-lg p-2.5 text-xs">${opts}</select>`;
-          } else {
-            inputHTML = `<input type="${typeof val === 'number' ? 'number' : 'text'}" id="field_${key}" value="${val !== undefined ? val : ''}" 
-                         step="${meta.step || (typeof val === 'float' ? '0.1' : '1')}" 
-                         oninput="updateVal('${key}', this.value, '${typeof val}')"
-                         class="w-full bg-dark-900 border border-slate-700 rounded-lg p-2.5 text-xs font-mono focus:border-brand-500 focus:outline-none">`;
-          }
-
-          card.innerHTML = `
-            <div>
-              <label class="text-xs font-semibold text-slate-200 block">${meta.label || key}</label>
-              <span class="text-[10px] font-mono text-slate-500">${key}</span>
-            </div>
-            ${inputHTML}`;
-          grid.appendChild(card);
-        });
-        container.appendChild(section);
+      for (const [catName, fields] of Object.entries(grouped)) {
+        const card = document.createElement('div');
+        card.className = "bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4";
+        card.innerHTML = `
+          <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono border-b border-slate-800 pb-2.5 flex items-center justify-between">
+            <span>${catName}</span>
+            <span class="text-[10px] font-normal text-slate-400 font-sans">${fields.length} parameters</span>
+          </h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            ${fields.map(renderField).join('')}
+          </div>
+        `;
+        container.appendChild(card);
       }
     }
 
-    function updateVal(key, value, type) {
-      if (type === 'number') currentSettings[key] = parseFloat(value) || 0;
-      else currentSettings[key] = value;
+    function renderField(field) {
+      const val = field.value !== undefined ? field.value : '';
+      if (field.type === 'bool') {
+        const isChecked = val === true || val === 'True';
+        return `
+          <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-200">${field.label || field.key}</label>
+              <span class="text-[10px] text-slate-400 font-mono">${field.key}</span>
+            </div>
+            <input type="checkbox" id="field_${field.key}" ${isChecked ? 'checked' : ''} 
+                   class="w-5 h-5 rounded text-brand-600 bg-slate-800 border-slate-700 focus:ring-brand-500">
+          </div>
+        `;
+      } else {
+        return `
+          <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl space-y-1.5">
+            <div class="flex justify-between">
+              <label class="block text-xs font-semibold text-slate-200">${field.label || field.key}</label>
+              <span class="text-[10px] text-slate-400 font-mono">${field.type}</span>
+            </div>
+            <input type="${field.type === 'float' || field.type === 'int' ? 'number' : 'text'}" 
+                   step="${field.type === 'float' ? '0.05' : '1'}"
+                   id="field_${field.key}" value="${val}"
+                   class="w-full px-3 py-1.5 bg-dark-900 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-brand-500">
+          </div>
+        `;
+      }
     }
 
     function filterCards() {
-      const q = document.getElementById('searchInput').value.toLowerCase();
-      document.querySelectorAll('.setting-card').forEach(c => {
-        c.style.display = c.textContent.toLowerCase().includes(q) ? '' : 'none';
-      });
-      document.querySelectorAll('.category-group').forEach(g => {
-        const visible = Array.from(g.querySelectorAll('.setting-card')).some(c => c.style.display !== 'none');
-        g.style.display = visible ? '' : 'none';
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      document.querySelectorAll('#categoriesContainer > div').forEach(catCard => {
+        let hasMatch = false;
+        catCard.querySelectorAll('.grid > div').forEach(item => {
+          const text = item.innerText.toLowerCase();
+          if (text.includes(query)) {
+            item.classList.remove('hidden');
+            hasMatch = true;
+          } else {
+            item.classList.add('hidden');
+          }
+        });
+        catCard.classList.toggle('hidden', !hasMatch);
       });
     }
 
     async function saveSettings() {
       const btn = document.getElementById('saveBtn');
       btn.disabled = true;
-      btn.innerHTML = "<span>⏳</span> Saving...";
+      btn.innerHTML = `<span>⏳</span> Saving...`;
+
+      const payload = {};
+      for (const [key, meta] of Object.entries(settingsMetadata)) {
+        const el = document.getElementById(`field_${key}`);
+        if (!el) continue;
+        if (meta.type === 'bool') payload[key] = el.checked;
+        else if (meta.type === 'float') payload[key] = parseFloat(el.value) || 0.0;
+        else if (meta.type === 'int') payload[key] = parseInt(el.value) || 0;
+        else payload[key] = el.value;
+      }
+
       try {
         const res = await fetch('/api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(currentSettings)
+          body: JSON.stringify(payload)
         });
-        const d = await res.json();
-        if (res.ok) showAlert('Settings committed and saved to disk.', 'success');
-        else showAlert(d.detail || 'Save failed.', 'error');
-      } catch (e) {
-        showAlert('Network communication error.', 'error');
+        const data = await res.json();
+        if (data.status === 'success') {
+          showAlert(`Settings saved! Git snapshot: ${data.commit || 'created'}`);
+        } else {
+          showAlert(data.detail || 'Save failed.', true);
+        }
+      } catch (err) {
+        showAlert('Network error while saving settings.', true);
       } finally {
         btn.disabled = false;
-        btn.innerHTML = "<span>💾</span> Save Changes";
+        btn.innerHTML = `<span>💾</span> Save Changes`;
       }
     }
 
-    async function loadCommits() {
-      const list = document.getElementById('commitsList');
-      list.innerHTML = '<p class="text-xs text-slate-400 font-mono">Loading commit logs...</p>';
-      const res = await fetch('/api/backups/commits');
-      const d = await res.json();
-      
-      if (!d.commits || d.commits.length === 0) {
-        list.innerHTML = '<p class="text-xs text-slate-500 font-mono">No backup snapshots recorded yet.</p>';
-        return;
+    function connectWebSocket() {
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(`${proto}//${window.location.host}/ws/telemetry`);
+
+      socket.onopen = () => {
+        document.getElementById('statusDot').className = "w-2 h-2 rounded-full bg-emerald-400";
+        document.getElementById('statusText').innerText = "Live";
+      };
+
+      socket.onclose = () => {
+        document.getElementById('statusDot').className = "w-2 h-2 rounded-full bg-red-500 animate-pulse";
+        document.getElementById('statusText').innerText = "Disconnected";
+        setTimeout(connectWebSocket, 3000);
+      };
+
+      socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'TELEMETRY') updateTelemetry(msg.data);
+        else if (msg.type === 'LIFECYCLE_UPDATE') updateLifecycle(msg.data);
+      };
+    }
+
+    function updateTelemetry(data) {
+      // 1. Connection Copy Box
+      if (data.server_name) document.getElementById('copyServerName').innerText = data.server_name;
+      liveServerPassword = data.server_password || "";
+      if (liveServerPassword) {
+        document.getElementById('copyPasswordText').innerText = "•••••••• (Set)";
+        document.getElementById('copyPasswordBtn').disabled = false;
+      } else {
+        document.getElementById('copyPasswordText').innerText = "None (Public)";
+        document.getElementById('copyPasswordBtn').disabled = true;
       }
 
-      list.innerHTML = d.commits.map(c => `
-        <div class="flex items-center justify-between p-3 bg-dark-950 rounded-xl border border-slate-800 text-xs font-mono">
-          <div>
-            <div class="font-bold text-brand-500">${c.hash} - <span class="text-slate-300">${c.message}</span></div>
-            <div class="text-[10px] text-slate-500">${c.date}</div>
+      if (data.tracking && data.tracking.network_matrix) {
+        const nm = data.tracking.network_matrix;
+        document.getElementById('copyDirectAddr').innerText = nm.direct_connect_addr || `${nm.public_wan_ip}:8211`;
+        document.getElementById('copyLanAddr').innerText = nm.lan_connect_addr || `${nm.lan_ip}:8211`;
+
+        const alignBadge = document.getElementById('dnsAlignBadge');
+        if (nm.dns_aligned) {
+          alignBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-700";
+          alignBadge.innerText = "DNS: Aligned ✓";
+        } else {
+          alignBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-950 text-amber-300 border border-amber-700";
+          alignBadge.innerText = "DNS: Pending Match";
+        }
+
+        document.getElementById('netWanIp').innerText = nm.public_wan_ip || "Detecting...";
+        document.getElementById('netDnsIp').innerText = nm.duckdns_a_record || "Resolving...";
+        document.getElementById('netDirectConnect').innerText = nm.direct_connect_addr || "8211/UDP";
+        document.getElementById('dnsAlignmentStatus').innerText = nm.dns_aligned ? "ALIGNED" : "MISALIGNED";
+        document.getElementById('dnsAlignmentStatus').className = nm.dns_aligned
+          ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
+          : "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 border border-amber-500/50 text-amber-300";
+      }
+
+      // 2. BattleMetrics & Community Tracker Matrix
+      if (data.tracking) {
+        const tr = data.tracking;
+        document.getElementById('lastProbedText').innerText = `Last Probed: ${tr.last_probed || '--'}`;
+
+        const topBadge = tr.top_badge;
+        if (topBadge) {
+          document.getElementById('commDot').className = `w-2 h-2 rounded-full ${topBadge.dot || 'bg-amber-400'}`;
+          document.getElementById('commText').innerText = topBadge.label || 'Probing...';
+        }
+
+        const bm = tr.source_of_truth_battlemetrics;
+        if (bm) {
+          document.getElementById('bmStatusBadge').innerText = bm.status;
+          document.getElementById('bmStatusBadge').className = bm.indexed
+            ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
+            : (bm.status === "THROTTLED" 
+                ? "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 border border-amber-500/50 text-amber-300"
+                : "px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 border border-blue-500/50 text-blue-300");
+
+          document.getElementById('bmIndexedVal').innerText = bm.indexed ? "Yes (Listed)" : "Scanning";
+          document.getElementById('bmServerId').innerText = bm.server_id || "--";
+          document.getElementById('bmFirstSeen').innerText = bm.first_seen || "--";
+          document.getElementById('bmBackoffSec').innerText = `${bm.backoff_remaining_sec || 0}s`;
+        }
+
+        const ls = tr.backup_log_scraper;
+        if (ls) {
+          document.getElementById('logScraperBadge').innerText = ls.status;
+          document.getElementById('logScraperBadge').className = ls.registered
+            ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
+            : "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-slate-700 text-slate-300";
+
+          document.getElementById('logScraperRegistered').innerText = ls.registered ? "Active (EOS Session)" : "Awaiting Log Line";
+          document.getElementById('logScraperFirstSeen').innerText = ls.first_seen || "--";
+          if (ls.last_line) document.getElementById('logScraperLastLine').innerText = ls.last_line;
+        }
+      }
+
+      // 3. Engine Metrics
+      if (data.metrics && data.metrics.engine) {
+        const eng = data.metrics.engine;
+        document.getElementById('engineFps').innerText = `${eng.server_fps} FPS`;
+        document.getElementById('engineFrameTime').innerText = `${eng.server_frame_time_ms} ms`;
+        document.getElementById('engineDays').innerText = `Day ${eng.days}`;
+        
+        const hrs = Math.floor(eng.uptime_sec / 3600);
+        const mins = Math.floor((eng.uptime_sec % 3600) / 60);
+        document.getElementById('engineUptime').innerText = `${hrs}h ${mins}m`;
+        document.getElementById('playersCountText').innerText = `${eng.current_players} / ${eng.max_players}`;
+      }
+
+      // 4. Hardware Metrics
+      if (data.metrics && data.metrics.hardware) {
+        const hw = data.metrics.hardware;
+        document.getElementById('hwCgroupRam').innerText = `${hw.cgroup_used_gb} / ${hw.cgroup_limit_gb} GB`;
+        document.getElementById('hwCgroupBar').style.width = `${hw.cgroup_pct}%`;
+        document.getElementById('hwHostRam').innerText = `${hw.host_ram_used_gb} / ${hw.host_ram_total_gb} GB`;
+        document.getElementById('hwHostSwap').innerText = `${hw.host_swap_used_gb} / ${hw.host_swap_total_gb} GB`;
+        document.getElementById('hwNetRx').innerText = `${hw.net_bytes_recv_mb} MB`;
+        document.getElementById('hwNetTx').innerText = `${hw.net_bytes_sent_mb} MB`;
+        document.getElementById('hwCpuAvg').innerText = `Avg: ${hw.cpu_avg}%`;
+
+        const coresGrid = document.getElementById('cpuCoresGrid');
+        if (hw.cpu_cores && coresGrid) {
+          coresGrid.innerHTML = hw.cpu_cores.map((c, i) => `
+            <div class="p-1.5 bg-dark-900 border border-slate-800/80 rounded-md text-center">
+              <span class="text-slate-400 block text-[9px]">C${i}</span>
+              <span class="font-bold text-slate-200">${c}%</span>
+            </div>
+          `).join('');
+        }
+      }
+
+      // 5. Disk storage
+      if (data.disk) {
+        document.getElementById('hwDiskText').innerText = `${data.disk.used_gb} / ${data.disk.total_gb} GB`;
+        document.getElementById('hwDiskBar').style.width = `${data.disk.percentage}%`;
+      }
+
+      // 6. Players
+      if (data.players) {
+        document.getElementById('activePlayerCount').innerText = data.players.active_count || 0;
+        document.getElementById('totalKnownPlayers').innerText = `${data.players.total_registered || 0} Registered Tamers`;
+        renderActivePlayers(data.players.active_players || []);
+        renderOfflinePlayers(data.players.offline_players || []);
+      }
+    }
+
+    function renderActivePlayers(players) {
+      const grid = document.getElementById('activePlayersGrid');
+      if (!players.length) {
+        grid.innerHTML = `<div class="p-6 bg-dark-900 border border-slate-800 rounded-2xl text-center text-slate-400 font-mono text-xs col-span-full">No players currently online.</div>`;
+        return;
+      }
+      grid.innerHTML = players.map(p => `
+        <div class="p-4 bg-dark-900 border border-slate-800 rounded-2xl space-y-3 font-mono text-xs shadow-lg">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-emerald-400 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span> ${p.name}
+            </span>
+            <span class="px-2 py-0.5 rounded bg-dark-950 border border-slate-800 text-[10px] text-slate-400">Lv. ${p.level}</span>
           </div>
-          <div class="flex gap-2">
-            <button onclick="viewDiff('${c.hash}')" class="px-2 py-1 bg-slate-800 rounded hover:bg-slate-700">Diff</button>
-            <button onclick="restoreCommit('${c.hash}')" class="px-2 py-1 bg-amber-600 rounded hover:bg-amber-500 text-white font-bold">Restore</button>
+          <div class="text-[11px] text-slate-400 space-y-1">
+            <div class="flex justify-between"><span>Ping:</span><span class="text-slate-200">${p.ping} ms</span></div>
+            <div class="flex justify-between"><span>Coords:</span><span class="text-slate-200">${p.coords}</span></div>
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button onclick="kickPlayer('${p.playerId}')" class="flex-1 px-2 py-1.5 bg-amber-900/40 border border-amber-700/50 hover:bg-amber-800/60 rounded-lg text-amber-300 font-semibold text-[11px] transition">Kick</button>
+            <button onclick="banPlayer('${p.playerId}')" class="flex-1 px-2 py-1.5 bg-red-900/40 border border-red-700/50 hover:bg-red-800/60 rounded-lg text-red-300 font-semibold text-[11px] transition">Ban</button>
           </div>
         </div>
       `).join('');
     }
 
-    async function viewDiff(hash) {
-      const v = document.getElementById('diffView');
-      v.classList.remove('hidden');
-      const res = await fetch(`/api/backups/diff/${hash}`);
-      const d = await res.json();
-      v.textContent = d.diff || 'No diff available.';
+    function renderOfflinePlayers(players) {
+      const tbody = document.getElementById('offlinePlayersTable');
+      if (!players.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No historical records logged yet.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = players.map(p => `
+        <tr class="hover:bg-dark-950/60 transition">
+          <td class="p-2.5 font-bold text-slate-300">${p.name}</td>
+          <td class="p-2.5 text-slate-400">${p.playerId}</td>
+          <td class="p-2.5 text-slate-400">${p.userId}</td>
+          <td class="p-2.5 text-slate-300">${p.level}</td>
+          <td class="p-2.5 text-slate-400">${p.last_seen}</td>
+          <td class="p-2.5 text-right">
+            <button onclick="banPlayer('${p.playerId}')" class="px-2 py-1 bg-red-950 border border-red-800 text-red-400 rounded text-[10px] hover:bg-red-900 transition">Ban</button>
+          </td>
+        </tr>
+      `).join('');
     }
 
-    async function restoreCommit(hash) {
-      if (!confirm(`Revert configuration to snapshot ${hash}?`)) return;
-      await fetch(`/api/backups/restore/${hash}`, { method: 'POST' });
-      await fetchSettings();
-      showAlert(`Configuration restored from ${hash}.`, 'success');
-    }
-
-    function showAlert(msg, type) {
-      const box = document.getElementById('alertBox');
-      const cont = document.getElementById('alertContainer');
-      cont.className = `p-3.5 rounded-xl border text-xs sm:text-sm flex items-center justify-between shadow-lg ${type === 'success' ? 'bg-emerald-950/90 border-emerald-800 text-emerald-200' : 'bg-rose-950/90 border-rose-800 text-rose-200'}`;
-      document.getElementById('alertMsg').textContent = msg;
-      box.classList.remove('hidden');
+    function updateLifecycle(state) {
+      const banner = document.getElementById('countdownBanner');
+      if (state.phase === 'COUNTDOWN') {
+        banner.classList.remove('hidden');
+        const mins = Math.floor(state.remaining_seconds / 60);
+        const secs = state.remaining_seconds % 60;
+        document.getElementById('countdownTimerText').innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        document.getElementById('countdownMsg').innerText = state.current_broadcast || 'Reboot sequence initiated...';
+      } else if (state.phase === 'SAVING' || state.phase === 'MAINTENANCE' || state.phase === 'PROBING') {
+        banner.classList.remove('hidden');
+        document.getElementById('countdownTimerText').innerText = state.phase;
+        document.getElementById('countdownMsg').innerText = state.current_broadcast || 'Processing server restart...';
+      } else {
+        banner.classList.add('hidden');
+      }
     }
 
     function openRebootModal() { document.getElementById('rebootModal').classList.remove('hidden'); }
     function closeRebootModal() { document.getElementById('rebootModal').classList.add('hidden'); }
 
     async function executeReboot() {
-      const countdown = parseInt(document.getElementById('countdownSelect').value);
-      const update = document.getElementById('updateCheck').checked;
       closeRebootModal();
+      const secs = parseInt(document.getElementById('countdownSelect').value) || 600;
+      const update = document.getElementById('updateCheck').checked;
+
       try {
-        await fetch('/api/service/reboot', {
+        const res = await fetch('/api/service/reboot', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ settings: currentSettings, countdown_seconds: countdown, trigger_steam_update: update })
+          body: JSON.stringify({ countdown_seconds: secs, trigger_steam_update: update })
         });
-      } catch (e) {
-        showAlert('Failed triggering reboot.', 'error');
+        const data = await res.json();
+        if (data.status === 'success') {
+          showAlert(data.message);
+        } else {
+          showAlert(data.detail || 'Reboot failed.', true);
+        }
+      } catch (err) {
+        showAlert('Network error while requesting reboot.', true);
       }
     }
 
-    window.onload = init;
+    async function kickPlayer(id) {
+      const reason = prompt('Enter kick reason (visible to player):', 'Kicked by administrator');
+      if (reason === null) return;
+      try {
+        const res = await fetch('/api/players/kick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ player_id: id, message: reason })
+        });
+        const data = await res.json();
+        showAlert(data.message || 'Player kicked.');
+      } catch (err) {
+        showAlert('Failed to kick player.', true);
+      }
+    }
+
+    async function banPlayer(id) {
+      const reason = prompt('Enter permanent ban reason:', 'Banned by administrator');
+      if (reason === null) return;
+      try {
+        const res = await fetch('/api/players/ban', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ player_id: id, message: reason })
+        });
+        const data = await res.json();
+        showAlert(data.message || 'Player banned.');
+      } catch (err) {
+        showAlert('Failed to ban player.', true);
+      }
+    }
+
+    async function promptWarnAll() {
+      const msg = prompt('Enter broadcast notice to display across in-game HUD:');
+      if (!msg) return;
+      try {
+        const res = await fetch('/api/players/warn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ player_id: 'ALL', message: msg })
+        });
+        const data = await res.json();
+        showAlert(data.message || 'Notice broadcast.');
+      } catch (err) {
+        showAlert('Failed to send broadcast notice.', true);
+      }
+    }
+
+    async function loadCommits() {
+      const list = document.getElementById('commitsList');
+      list.innerHTML = '<p class="text-xs text-slate-400 font-mono">Loading commit logs...</p>';
+      try {
+        const res = await fetch('/api/backups/commits');
+        const data = await res.json();
+        if (data.status === 'success') {
+          if (!data.commits.length) {
+            list.innerHTML = '<p class="text-xs text-slate-500 font-mono">No configuration snapshots found.</p>';
+            return;
+          }
+          list.innerHTML = data.commits.map(c => `
+            <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs font-mono">
+              <div>
+                <span class="font-bold text-brand-400">${c.hash}</span>
+                <span class="text-slate-300 ml-2">${c.message}</span>
+                <div class="text-[10px] text-slate-500 mt-0.5">${c.date} • ${c.author}</div>
+              </div>
+              <div class="flex gap-2">
+                <button onclick="viewDiff('${c.hash}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition text-[11px]">Diff</button>
+                <button onclick="restoreCommit('${c.hash}')" class="px-2.5 py-1 bg-amber-900/50 hover:bg-amber-800 text-amber-300 rounded-lg transition text-[11px] font-semibold">Rollback</button>
+              </div>
+            </div>
+          `).join('');
+        }
+      } catch (err) {
+        list.innerHTML = '<p class="text-xs text-red-400 font-mono">Failed to load snapshots.</p>';
+      }
+    }
+
+    async function viewDiff(hash) {
+      const diffEl = document.getElementById('diffView');
+      try {
+        const res = await fetch(`/api/backups/diff/${hash}`);
+        const data = await res.json();
+        diffEl.classList.remove('hidden');
+        diffEl.innerText = data.diff || 'No text differences detected.';
+      } catch (err) {
+        diffEl.classList.remove('hidden');
+        diffEl.innerText = 'Failed to load diff.';
+      }
+    }
+
+    async function restoreCommit(hash) {
+      if (!confirm(`Restore configuration to snapshot ${hash}? This will rollback settings on disk.`)) return;
+      try {
+        const res = await fetch(`/api/backups/restore/${hash}`, { method: 'POST' });
+        const data = await res.json();
+        showAlert(data.message || 'Restored.');
+        loadSettings();
+      } catch (err) {
+        showAlert('Rollback failed.', true);
+      }
+    }
+
+    window.onload = () => {
+      loadSettings();
+      connectWebSocket();
+    };
   </script>
 </body>
 </html>

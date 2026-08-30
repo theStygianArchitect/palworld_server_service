@@ -31,6 +31,16 @@ def test_api_settings_post_route():
     assert response.json()["status"] == "success"
 
 
+def test_api_community_tracker_route():
+    response = client.get("/api/tracker/community")
+    assert response.status_code == 200
+    json_data = response.json()
+    assert json_data["status"] == "success"
+    assert "data" in json_data
+    assert "network_matrix" in json_data["data"]
+    assert "source_of_truth_battlemetrics" in json_data["data"]
+
+
 def test_api_backups_routes():
     # Commits list
     commits_res = client.get("/api/backups/commits")
