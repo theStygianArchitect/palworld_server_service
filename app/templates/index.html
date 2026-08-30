@@ -734,22 +734,52 @@
       };
     }
 
+    async function pollTelemetryFallback() {
+      try {
+        const res = await fetch('/api/tracker/community');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.status === 'success' && json.data) {
+            updateTelemetry(json.data);
+          }
+        }
+      } catch (err) {
+        console.debug('Telemetry fallback polling error:', err);
+      }
+    }
+
     function updateTelemetry(data) {
+      if (!data) return;
+
       // 1. Connection Copy Box
       const sName = data.server_name || (data.security_matrix && data.security_matrix.server_name) || (data.a2s_telemetry && data.a2s_telemetry.server_name);
-      if (sName) document.getElementById('copyServerName').innerText = sName;
+      if (sName && document.getElementById('copyServerName')) document.getElementById('copyServerName').innerText = sName;
       
       liveServerPassword = data.server_password || (data.security_matrix ? data.security_matrix.server_password : "") || "";
       if (liveServerPassword) {
-        document.getElementById('copyPasswordText').innerText = "•••••••• (Set)";
-        document.getElementById('copyPasswordBtn').disabled = false;
+        if (document.getElementById('copyPasswordText')) document.getElementById('copyPasswordText').innerText = "•••••••• (Set)";
+        if (document.getElementById('copyPasswordBtn')) document.getElementById('copyPasswordBtn').disabled = false;
       } else {
-        document.getElementById('copyPasswordText').innerText = "None (Public)";
-        document.getElementById('copyPasswordBtn').disabled = true;
+        if (document.getElementById('copyPasswordText')) document.getElementById('copyPasswordText').innerText = "None (Public)";
+        if (document.getElementById('copyPasswordBtn')) document.getElementById('copyPasswordBtn').disabled = true;
+      }
+
+      // Top Status Bar (Server Readiness & Game State)
+      if (document.getElementById('statusDot') && document.getElementById('statusText')) {
+        if (data.readiness) {
+          document.getElementById('statusDot').className = "w-2 h-2 rounded-full bg-emerald-400";
+          document.getElementById('statusText').innerText = `Online ${data.version ? '(' + data.version + ')' : ''}`;
+        } else if (data.liveness) {
+          document.getElementById('statusDot').className = "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
+          document.getElementById('statusText').innerText = "Booting / Loading World...";
+        } else {
+          document.getElementById('statusDot').className = "w-2 h-2 rounded-full bg-red-500";
+          document.getElementById('statusText').innerText = "Server Offline";
+        }
       }
 
       // Top Badge
-      if (data.top_badge) {
+      if (data.top_badge && document.getElementById('commDot') && document.getElementById('commText')) {
         document.getElementById('commDot').className = `w-2 h-2 rounded-full ${data.top_badge.dot || 'bg-amber-400'}`;
         document.getElementById('commText').innerText = data.top_badge.label || 'Probing...';
       }
@@ -761,134 +791,172 @@
         // Log Scraper / EOS Console
         if (dh.log_scraper) {
           const ls = dh.log_scraper;
-          document.getElementById('logScraperBadge').innerText = ls.status;
-          document.getElementById('logScraperBadge').className = ls.registered
-            ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
-            : "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-slate-700 text-slate-300";
-
-          document.getElementById('logScraperStatusText').innerText = ls.registered ? "Ready for Console Search ✓" : "Awaiting EOS Handshake";
-          document.getElementById('logSessionId').innerText = ls.session_id || "--";
-          document.getElementById('logFirstSeen').innerText = ls.first_seen || "--";
-          document.getElementById('logCrossplayFlags').innerText = ls.crossplay_flags || "Steam, Xbox, PS5";
-          if (ls.last_line) document.getElementById('logLastLine').innerText = ls.last_line;
+          const lsBadge = document.getElementById('logScraperBadge');
+          if (lsBadge) {
+            lsBadge.innerText = ls.status_label || ls.status || "PROBING";
+            lsBadge.className = ls.registered
+              ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
+              : "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-slate-700 text-slate-300";
+          }
+          if (document.getElementById('logScraperStatusText')) {
+            document.getElementById('logScraperStatusText').innerText = ls.registered ? "Ready for Console Search ✓" : "Awaiting EOS Handshake";
+          }
+          if (document.getElementById('logSessionId')) document.getElementById('logSessionId').innerText = ls.session_id || "--";
+          if (document.getElementById('logFirstSeen')) document.getElementById('logFirstSeen').innerText = ls.first_seen || "--";
+          if (document.getElementById('logCrossplayFlags')) document.getElementById('logCrossplayFlags').innerText = ls.crossplay_platforms || ls.crossplay_flags || "Steam, Xbox, PS5";
+          if (ls.last_line && document.getElementById('logLastLine')) document.getElementById('logLastLine').innerText = ls.last_line;
         }
 
         // Pocketpair Master List
         if (dh.pocketpair_master) {
           const pp = dh.pocketpair_master;
-          document.getElementById('ppMasterBadge').innerText = pp.status;
-          document.getElementById('ppMasterBadge').className = pp.listed
-            ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
-            : "px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 border border-blue-500/50 text-blue-300";
-
-          document.getElementById('ppListedVal').innerText = pp.listed ? "Yes (Listed in Master)" : "Scanning Directory";
-          document.getElementById('ppUuid').innerText = pp.server_uuid || "--";
-          document.getElementById('ppSearchKeyword').innerText = pp.search_keyword || "Palworld Server";
-          document.getElementById('ppRegion').innerText = pp.region || "Global";
-          document.getElementById('ppVersion').innerText = pp.version || "Live";
+          const ppBadge = document.getElementById('ppMasterBadge');
+          if (ppBadge) {
+            ppBadge.innerText = pp.status_label || pp.status || "COMMUNITY";
+            ppBadge.className = pp.listed
+              ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
+              : "px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 border border-blue-500/50 text-blue-300";
+          }
+          if (document.getElementById('ppListedVal')) document.getElementById('ppListedVal').innerText = pp.listed ? "Yes (Listed in Master)" : "Scanning Directory";
+          if (document.getElementById('ppUuid')) document.getElementById('ppUuid').innerText = pp.server_id || pp.server_uuid || "--";
+          if (document.getElementById('ppSearchKeyword')) document.getElementById('ppSearchKeyword').innerText = pp.name || pp.search_keyword || "Palworld Server";
+          if (document.getElementById('ppRegion')) document.getElementById('ppRegion').innerText = pp.region || "Global";
+          if (document.getElementById('ppVersion')) document.getElementById('ppVersion').innerText = pp.version || "Live";
         }
 
         // Network Matrix
         if (dh.network_matrix) {
           const nm = dh.network_matrix;
-          document.getElementById('copyDirectAddr').innerText = nm.direct_connect_addr || `${nm.public_wan_ip}:8211`;
-          document.getElementById('copyLanAddr').innerText = nm.lan_connect_addr || `${nm.lan_ip}:8211`;
+          const isAligned = nm.is_aligned || nm.dns_aligned || false;
+          const pubIp = nm.public_ip || nm.public_wan_ip || "Detecting...";
+          const dnsIp = nm.dns_ip || nm.duckdns_a_record || "Resolving...";
+          const lanIp = nm.lan_ip || "127.0.0.1";
+          const gamePort = nm.public_port || 8211;
+
+          if (document.getElementById('copyDirectAddr')) document.getElementById('copyDirectAddr').innerText = nm.direct_connect_addr || `${pubIp}:${gamePort}`;
+          if (document.getElementById('copyLanAddr')) document.getElementById('copyLanAddr').innerText = nm.lan_connect_addr || `${lanIp}:${gamePort}`;
 
           const alignBadge = document.getElementById('dnsAlignBadge');
-          if (nm.dns_aligned) {
-            alignBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-700";
-            alignBadge.innerText = "DNS: Aligned ✓";
-          } else {
-            alignBadge.className = "text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-950 text-amber-300 border border-amber-700";
-            alignBadge.innerText = "DNS: Pending Match";
+          if (alignBadge) {
+            alignBadge.className = isAligned
+              ? "text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-700"
+              : "text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-950 text-amber-300 border border-amber-700";
+            alignBadge.innerText = isAligned ? "DNS: Aligned ✓" : "DNS: Pending Match";
           }
 
-          document.getElementById('netWanIp').innerText = nm.public_wan_ip || "Detecting...";
-          document.getElementById('netDnsIp').innerText = nm.duckdns_a_record || "Resolving...";
-          document.getElementById('netLanIp').innerText = nm.lan_ip || "127.0.0.1";
-          document.getElementById('netGamePort').innerText = `${nm.public_port}/UDP`;
-          document.getElementById('netDirectAddr').innerText = nm.direct_connect_addr || "--:8211";
+          if (document.getElementById('netWanIp')) document.getElementById('netWanIp').innerText = pubIp;
+          if (document.getElementById('netDnsIp')) document.getElementById('netDnsIp').innerText = dnsIp;
+          if (document.getElementById('netLanIp')) document.getElementById('netLanIp').innerText = lanIp;
+          if (document.getElementById('netGamePort')) document.getElementById('netGamePort').innerText = `${gamePort}/UDP`;
+          if (document.getElementById('netDirectAddr')) document.getElementById('netDirectAddr').innerText = nm.direct_connect_addr || `${pubIp}:${gamePort}`;
           
-          document.getElementById('dnsAlignmentStatus').innerText = nm.dns_aligned ? "ALIGNED" : "MISMATCH";
-          document.getElementById('dnsAlignmentStatus').className = nm.dns_aligned
-            ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
-            : "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 border border-amber-500/50 text-amber-300";
+          if (document.getElementById('dnsAlignmentStatus')) {
+            document.getElementById('dnsAlignmentStatus').innerText = isAligned ? "ALIGNED" : "MISMATCH";
+            document.getElementById('dnsAlignmentStatus').className = isAligned
+              ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 border border-emerald-500/50 text-emerald-300"
+              : "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 border border-amber-500/50 text-amber-300";
+          }
         }
       }
 
-      // 3. Section 2: Bare-Metal & Steam A2S Telemetry
+      // 3. Section 2: Steam A2S & Bare-Metal Telemetry
       if (data.a2s_telemetry) {
         const a2s = data.a2s_telemetry;
-        document.getElementById('a2sPingVal').innerText = a2s.ping_ms !== null ? `${a2s.ping_ms} ms` : "-- ms";
-        document.getElementById('a2sStatusBadge').innerText = a2s.responsive ? "LIVE" : "UNREACHABLE";
-        document.getElementById('a2sStatusBadge').className = a2s.responsive
-          ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 text-emerald-300"
-          : "px-2 py-0.5 rounded text-[10px] font-bold bg-red-900/60 text-red-300";
-        document.getElementById('a2sMapVal').innerText = a2s.map_name || "Palworld";
-        document.getElementById('a2sSocketVal').innerText = a2s.responsive ? "Listening 8211/UDP (OK)" : "No UDP Response";
-      }
-
-      if (data.metrics && data.metrics.engine) {
-        const eng = data.metrics.engine;
-        document.getElementById('engineFps').innerText = `${eng.server_fps} FPS`;
-        document.getElementById('engineFrameTime').innerText = `${eng.server_frame_time_ms} ms`;
-        document.getElementById('engineDays').innerText = `Day ${eng.days}`;
-        
-        const hrs = Math.floor(eng.uptime_sec / 3600);
-        const mins = Math.floor((eng.uptime_sec % 3600) / 60);
-        document.getElementById('engineUptime').innerText = `${hrs}h ${mins}m`;
-        document.getElementById('playersCountText').innerText = `${eng.current_players} / ${eng.max_players}`;
-      }
-
-      if (data.metrics && data.metrics.hardware) {
-        const hw = data.metrics.hardware;
-        document.getElementById('hwCgroupRam').innerText = `${hw.cgroup_used_gb} / ${hw.cgroup_limit_gb} GB`;
-        document.getElementById('hwCgroupBar').style.width = `${hw.cgroup_pct}%`;
-        document.getElementById('hwHostRam').innerText = `${hw.host_ram_used_gb} / ${hw.host_ram_total_gb} GB`;
-        document.getElementById('hwHostSwap').innerText = `${hw.host_swap_used_gb} / ${hw.host_swap_total_gb} GB`;
-        document.getElementById('hwNetRx').innerText = `${hw.net_bytes_recv_mb} MB`;
-        document.getElementById('hwNetTx').innerText = `${hw.net_bytes_sent_mb} MB`;
-        document.getElementById('hwCpuAvg').innerText = `Avg: ${hw.cpu_avg}%`;
-
-        const coresGrid = document.getElementById('cpuCoresGrid');
-        if (hw.cpu_cores && coresGrid) {
-          coresGrid.innerHTML = hw.cpu_cores.map((c, i) => `
-            <div class="p-1.5 bg-dark-900 border border-slate-800/80 rounded-md text-center">
-              <span class="text-slate-400 block text-[9px]">C${i}</span>
-              <span class="font-bold text-slate-200">${c}%</span>
-            </div>
-          `).join('');
+        if (document.getElementById('a2sPingVal')) document.getElementById('a2sPingVal').innerText = a2s.ping_ms !== null && a2s.ping_ms !== undefined ? `${a2s.ping_ms} ms` : "-- ms";
+        if (document.getElementById('a2sStatusBadge')) {
+          document.getElementById('a2sStatusBadge').innerText = a2s.responsive ? "LIVE" : "UNREACHABLE";
+          document.getElementById('a2sStatusBadge').className = a2s.responsive
+            ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 text-emerald-300"
+            : "px-2 py-0.5 rounded text-[10px] font-bold bg-red-900/60 text-red-300";
         }
+        if (document.getElementById('a2sMapVal')) document.getElementById('a2sMapVal').innerText = a2s.map_name || "Palworld";
+        if (document.getElementById('a2sSocketVal')) document.getElementById('a2sSocketVal').innerText = a2s.responsive ? "Listening 8211/UDP (OK)" : "No UDP Response";
       }
 
-      if (data.disk) {
-        document.getElementById('hwDiskText').innerText = `${data.disk.used_gb} / ${data.disk.total_gb} GB`;
-        document.getElementById('hwDiskBar').style.width = `${data.disk.percentage}%`;
+      // Engine Metrics
+      const fps = data.server_fps !== undefined ? data.server_fps : (data.metrics && data.metrics.engine ? data.metrics.engine.server_fps : 0);
+      const frameTime = data.server_frame_time_ms !== undefined ? data.server_frame_time_ms : (data.metrics && data.metrics.engine ? data.metrics.engine.server_frame_time_ms : 0.0);
+      const days = data.days !== undefined ? data.days : (data.metrics && data.metrics.engine ? data.metrics.engine.days : 0);
+      const uptimeSec = data.uptime_seconds !== undefined ? data.uptime_seconds : (data.metrics && data.metrics.engine ? (data.metrics.engine.uptime_seconds || data.metrics.engine.uptime_sec) : 0);
+      const curPlayers = data.active_players !== undefined ? data.active_players : (data.current_players || (data.metrics && data.metrics.engine ? data.metrics.engine.current_players : 0));
+      const maxPlayers = data.max_players || (data.metrics && data.metrics.engine ? data.metrics.engine.max_players : 32);
+
+      if (document.getElementById('engineFps')) document.getElementById('engineFps').innerText = `${fps} FPS`;
+      if (document.getElementById('engineFrameTime')) document.getElementById('engineFrameTime').innerText = `${frameTime} ms`;
+      if (document.getElementById('engineDays')) document.getElementById('engineDays').innerText = `Day ${days}`;
+      
+      const hrs = Math.floor(uptimeSec / 3600);
+      const mins = Math.floor((uptimeSec % 3600) / 60);
+      if (document.getElementById('engineUptime')) document.getElementById('engineUptime').innerText = `${hrs}h ${mins}m`;
+      if (document.getElementById('playersCountText')) document.getElementById('playersCountText').innerText = `${curPlayers} / ${maxPlayers}`;
+
+      // Hardware Telemetry
+      const hw = data.hardware || (data.metrics && data.metrics.hardware) || {};
+      const cgroupUsed = hw.cgroup_ram_used_gb !== undefined ? hw.cgroup_ram_used_gb : (hw.cgroup_used_gb || 0);
+      const cgroupLimit = hw.cgroup_limit_gb || 14.0;
+      const cgroupPct = hw.cgroup_ram_pct !== undefined ? hw.cgroup_ram_pct : (hw.cgroup_pct || 0);
+      const hostRamUsed = hw.host_ram_used_gb || 0;
+      const hostRamTotal = hw.host_ram_total_gb || 0;
+      const hostSwapUsed = hw.swap_used_gb !== undefined ? hw.swap_used_gb : (hw.host_swap_used_gb || 0);
+      const hostSwapTotal = hw.swap_total_gb !== undefined ? hw.swap_total_gb : (hw.host_swap_total_gb || 0);
+      const netRxMb = hw.net_bytes_recv !== undefined ? Math.round(hw.net_bytes_recv / (1024 * 1024)) : (hw.net_bytes_recv_mb || 0);
+      const netTxMb = hw.net_bytes_sent !== undefined ? Math.round(hw.net_bytes_sent / (1024 * 1024)) : (hw.net_bytes_sent_mb || 0);
+      const cpuAvg = hw.cpu_avg_pct !== undefined ? hw.cpu_avg_pct : (hw.cpu_avg || 0);
+      const cpuCores = hw.cpu_cores || [];
+      const diskUsed = hw.disk_used_gb !== undefined ? hw.disk_used_gb : (data.disk ? data.disk.used_gb : 0);
+      const diskTotal = hw.disk_total_gb !== undefined ? hw.disk_total_gb : (data.disk ? data.disk.total_gb : 0);
+      const diskPct = hw.disk_pct !== undefined ? hw.disk_pct : (data.disk ? data.disk.percentage : 0);
+
+      if (document.getElementById('hwCgroupRam')) document.getElementById('hwCgroupRam').innerText = `${cgroupUsed} / ${cgroupLimit} GB`;
+      if (document.getElementById('hwCgroupBar')) document.getElementById('hwCgroupBar').style.width = `${Math.min(cgroupPct, 100)}%`;
+      if (document.getElementById('hwHostRam')) document.getElementById('hwHostRam').innerText = `${hostRamUsed} / ${hostRamTotal} GB`;
+      if (document.getElementById('hwHostSwap')) document.getElementById('hwHostSwap').innerText = `${hostSwapUsed} / ${hostSwapTotal} GB`;
+      if (document.getElementById('hwNetRx')) document.getElementById('hwNetRx').innerText = `${netRxMb} MB`;
+      if (document.getElementById('hwNetTx')) document.getElementById('hwNetTx').innerText = `${netTxMb} MB`;
+      if (document.getElementById('hwCpuAvg')) document.getElementById('hwCpuAvg').innerText = `Avg: ${cpuAvg}%`;
+
+      const coresGrid = document.getElementById('cpuCoresGrid');
+      if (cpuCores.length && coresGrid) {
+        coresGrid.innerHTML = cpuCores.map((c, i) => `
+          <div class="p-1.5 bg-dark-900 border border-slate-800/80 rounded-md text-center">
+            <span class="text-slate-400 block text-[9px]">C${i}</span>
+            <span class="font-bold text-slate-200">${c}%</span>
+          </div>
+        `).join('');
       }
+
+      if (document.getElementById('hwDiskText')) document.getElementById('hwDiskText').innerText = `${diskUsed} / ${diskTotal} GB`;
+      if (document.getElementById('hwDiskBar')) document.getElementById('hwDiskBar').style.width = `${diskPct}%`;
 
       // 4. Section 3: Access Control & Security Matrix
       if (data.security_matrix) {
         const sec = data.security_matrix;
-        document.getElementById('secPassBadge').innerText = sec.is_password_protected ? "PROTECTED" : "PUBLIC";
-        document.getElementById('secPassBadge').className = sec.is_password_protected
-          ? "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 text-amber-300"
-          : "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300";
+        const isPass = sec.is_password_protected !== undefined ? sec.is_password_protected : Boolean(sec.server_password);
+        if (document.getElementById('secPassBadge')) {
+          document.getElementById('secPassBadge').innerText = isPass ? "PROTECTED" : "PUBLIC";
+          document.getElementById('secPassBadge').className = isPass
+            ? "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 text-amber-300"
+            : "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300";
+        }
 
-        document.getElementById('secPassState').innerText = sec.is_password_protected ? "•••••••• (Password Set)" : "None (Open / Public)";
-        document.getElementById('secCopyPassBtn').disabled = !sec.is_password_protected;
-        document.getElementById('secRestPort').innerText = `${sec.rest_port || 8212}/TCP`;
-        document.getElementById('secRconPort').innerText = `${sec.rcon_port || 25575}/TCP`;
-        document.getElementById('secCurPlayers').innerText = `${sec.current_players || 0} Connected`;
-        document.getElementById('secMaxPlayers').innerText = `${sec.max_players || 32} Max Slots`;
+        if (document.getElementById('secPassState')) document.getElementById('secPassState').innerText = isPass ? "•••••••• (Password Set)" : "None (Open / Public)";
+        if (document.getElementById('secCopyPassBtn')) document.getElementById('secCopyPassBtn').disabled = !isPass;
+        if (document.getElementById('secRestPort')) document.getElementById('secRestPort').innerText = `${sec.rest_port || 8212}/TCP`;
+        if (document.getElementById('secRconPort')) document.getElementById('secRconPort').innerText = `${sec.rcon_port || 25575}/TCP`;
+        if (document.getElementById('secCurPlayers')) document.getElementById('secCurPlayers').innerText = `${sec.current_players !== undefined ? sec.current_players : curPlayers} Connected`;
+        if (document.getElementById('secMaxPlayers')) document.getElementById('secMaxPlayers').innerText = `${sec.max_players || maxPlayers} Max Slots`;
       }
 
-      // 5. Players
-      if (data.players) {
-        document.getElementById('activePlayerCount').innerText = data.players.active_count || 0;
-        document.getElementById('totalKnownPlayers').innerText = `${data.players.total_registered || 0} Registered Tamers`;
-        renderActivePlayers(data.players.active_players || []);
-        renderOfflinePlayers(data.players.offline_players || []);
-      }
+      // 5. Players Roster
+      const activeList = data.players_list || (data.players ? data.players.active_players : []);
+      const offlineList = data.offline_players || (data.players ? data.players.offline_players : []);
+      const activeCount = data.active_players !== undefined ? data.active_players : (data.players ? data.players.active_count : activeList.length);
+      const totalReg = data.total_registered !== undefined ? data.total_registered : (data.players ? data.players.total_registered : (activeList.length + offlineList.length));
+
+      if (document.getElementById('activePlayerCount')) document.getElementById('activePlayerCount').innerText = activeCount;
+      if (document.getElementById('totalKnownPlayers')) document.getElementById('totalKnownPlayers').innerText = `${totalReg} Registered Tamers`;
+      renderActivePlayers(activeList);
+      renderOfflinePlayers(offlineList);
     }
 
     function renderActivePlayers(players) {
@@ -1090,6 +1158,12 @@
     window.onload = () => {
       loadSettings();
       connectWebSocket();
+      pollTelemetryFallback();
+      setInterval(() => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          pollTelemetryFallback();
+        }
+      }, 4000);
     };
   </script>
 </body>

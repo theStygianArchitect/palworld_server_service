@@ -59,10 +59,9 @@ async def telemetry_streamer() -> None:
             liveness = False
             if os.name != "nt":
                 try:
-                    sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
                     systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"
                     proc = subprocess.run(
-                        [sudo_bin, systemctl_bin, "is-active", settings.service_name],
+                        [systemctl_bin, "is-active", settings.service_name],
                         capture_output=True,
                         text=True,
                         timeout=5,
