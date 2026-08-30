@@ -146,10 +146,12 @@ class CommunityTracker:
         return {}
 
     def _save_player_ledger(self) -> None:
-        """Persists current player roster to disk."""
+        """Persists current player roster to disk using an atomic file swap pattern."""
         try:
             self.player_ledger_path.parent.mkdir(parents=True, exist_ok=True)
-            self.player_ledger_path.write_text(json.dumps(self.players_history, indent=2), encoding="utf-8")
+            temp_path = self.player_ledger_path.with_suffix(".tmp")
+            temp_path.write_text(json.dumps(self.players_history, indent=2), encoding="utf-8")
+            temp_path.replace(self.player_ledger_path)
         except PermissionError as err:
             log.warning("Permission denied writing player ledger to %s: %s", self.player_ledger_path, err)
         except OSError as err:

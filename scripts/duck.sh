@@ -1,4 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# Palworld Unified Operations Suite - DuckDNS Dynamic IP Updater
+# ==============================================================================
+
 SCHEMA="https://"
 BASE_URL="www.duckdns.org"
 ENDPOINT="/update"

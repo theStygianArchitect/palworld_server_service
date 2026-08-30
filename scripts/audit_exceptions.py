@@ -25,7 +25,8 @@ def audit_exceptions_in_file(py_file: Path) -> list[str]:
     try:
         content = py_file.read_text(encoding="utf-8")
         tree = ast.parse(content, filename=str(py_file))
-    except Exception as err:
+    except (OSError, SyntaxError, UnicodeDecodeError) as err:
+        sys.stderr.write(f"Failed to parse AST for {py_file}: {err}\n")
         return [f"{py_file}: Failed to parse AST: {err}"]
 
     for node in ast.walk(tree):

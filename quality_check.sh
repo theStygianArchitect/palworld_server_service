@@ -5,11 +5,12 @@
 
 app_directory_list=(
   app/*.py
+  scripts/*.py
   tests/*.py
 )
 run_ast_exception_audit() {
   echo ">>> Starting AST exception and diagnostic logging audit..."
-  uv run python scripts/audit_exceptions.py app
+  uv run python scripts/audit_exceptions.py app scripts tests
   exit_code=$?
   if [ ${exit_code} -ne 0 ]; then
     echo "[-] AST exception audit failed: unlogged or empty exceptions detected."

@@ -1,4 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# Palworld Dedicated Server - Pre-Restart Maintenance & SteamCMD Updater
+# ==============================================================================
+
 LOG_FILE="/home/steam/palserver_maintenance.log"
 SAVED_DIR="/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved"
 BACKUP_DIR="/home/steam/Palworld_backups"

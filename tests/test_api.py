@@ -7,6 +7,33 @@ from app.main import app
 client = TestClient(app)
 
 
+def test_api_health_and_ready_routes():
+    # 1. Test /health liveness endpoint
+    res_health = client.get("/health")
+    assert res_health.status_code == 200
+    assert res_health.json()["status"] == "healthy"
+    assert res_health.json()["service"] == "palworld-web-manager"
+    assert "timestamp" in res_health.json()
+
+    # 2. Test /ready when engine is offline (503)
+    with patch(
+        "app.main.engine.check_readiness",
+        AsyncMock(return_value={"ready": False, "version": None, "server_name": "PalServer"}),
+    ):
+        res_not_ready = client.get("/ready")
+        assert res_not_ready.status_code == 503
+
+    # 3. Test /ready when engine is online (200)
+    with patch(
+        "app.main.engine.check_readiness",
+        AsyncMock(return_value={"ready": True, "version": "v0.3.5", "server_name": "Live Server"}),
+    ):
+        res_ready = client.get("/ready")
+        assert res_ready.status_code == 200
+        assert res_ready.json()["status"] == "ready"
+        assert res_ready.json()["version"] == "v0.3.5"
+
+
 def test_api_index_html_route():
     response = client.get("/")
     assert response.status_code == 200

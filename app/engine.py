@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -407,7 +408,21 @@ class PalEngine:
             RuntimeError: If a reboot countdown sequence is already active.
         """
         if self.lock_file.exists():
-            raise RuntimeError("Reboot countdown sequence is already active.")
+            try:
+                stale_age = time.time() - self.lock_file.stat().st_mtime
+                if stale_age > 900:  # 15 minutes TTL
+                    log.warning(
+                        "Found stale reboot lock file (%s) older than 15m (age: %.1fs). Auto-reclaiming lock.",
+                        self.lock_file,
+                        stale_age,
+                    )
+                    self.lock_file.unlink(missing_ok=True)
+                else:
+                    raise RuntimeError("Reboot countdown sequence is already active.")
+            except (OSError, PermissionError) as err:
+                log.warning("Error inspecting reboot lock file %s: %s", self.lock_file, err)
+                if self.lock_file.exists():
+                    raise RuntimeError("Reboot countdown sequence is already active.") from err
 
         async with self._lifecycle_lock:
             self.lock_file.parent.mkdir(parents=True, exist_ok=True)

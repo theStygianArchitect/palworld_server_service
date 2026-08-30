@@ -7,10 +7,13 @@ and server reboot orchestration in compliance with Google Style Guide and 3 AM s
 from __future__ import annotations
 
 import asyncio
+import datetime
+import logging
 import os
 import re
 import shutil
 import subprocess
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -126,6 +129,21 @@ async def lifespan(_: FastAPI):
         None: Control back to the FastAPI runtime while application is serving.
     """
     log.info("Palworld Operations Suite starting on port %s", settings.web_port)
+
+    # 12-Factor Resilience: Purge stale orphaned reboot lock file on startup
+    if engine.lock_file.exists():
+        try:
+            stale_age = time.time() - engine.lock_file.stat().st_mtime
+            if stale_age > 900:  # 15 minutes
+                log.warning(
+                    "Purging stale reboot lock file on startup (%s, age: %.1fs)",
+                    engine.lock_file,
+                    stale_age,
+                )
+                engine.lock_file.unlink(missing_ok=True)
+        except (OSError, PermissionError) as err:
+            log.debug("Error checking lock file on startup: %s", err)
+
     stream_task = asyncio.create_task(telemetry_streamer())
 
     async def _send_startup_notice() -> None:
@@ -141,11 +159,21 @@ async def lifespan(_: FastAPI):
 
     asyncio.create_task(_send_startup_notice())
     yield
+
+    # Shutdown sequence
     stream_task.cancel()
     try:
         await stream_task
     except asyncio.CancelledError as err:
         log.debug("Telemetry background task cancelled during shutdown: %s", err)
+
+    # 12-Factor Resilience: Drain and flush in-flight Discord log queue before process exit
+    for handler in logging.getLogger().handlers:
+        if hasattr(handler, "flush"):
+            try:
+                handler.flush()
+            except (OSError, RuntimeError) as err:
+                log.debug("Handler flush error during shutdown: %s", err)
 
 
 app = FastAPI(
@@ -158,6 +186,40 @@ app = FastAPI(
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+
+@app.get("/health")
+async def health_check() -> dict[str, Any]:
+    """Liveness probe returning daemon status and current UTC timestamp.
+
+    Returns:
+        dict[str, Any]: Liveness dictionary with status, service name, and timestamp.
+    """
+    return {
+        "status": "healthy",
+        "service": "palworld-web-manager",
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+
+
+@app.get("/ready")
+async def readiness_check() -> dict[str, Any]:
+    """Readiness probe returning Palworld game server connectivity and build version.
+
+    Returns:
+        dict[str, Any]: Readiness dictionary indicating if Palworld REST API is responding.
+
+    Raises:
+        HTTPException: 503 Service Unavailable if Palworld server is starting or unreachable.
+    """
+    readiness = await engine.check_readiness()
+    if not readiness["ready"]:
+        raise HTTPException(status_code=503, detail="Palworld server engine is starting or unreachable.")
+    return {
+        "status": "ready",
+        "server_name": readiness["server_name"],
+        "version": readiness["version"],
+    }
 
 
 @app.get("/", response_class=HTMLResponse)

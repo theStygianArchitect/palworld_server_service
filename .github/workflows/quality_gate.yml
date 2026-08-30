@@ -1,0 +1,56 @@
+name: Master Quality & Security Gate
+
+on:
+  push:
+    branches: [main, test, dev, "feature/**"]
+  pull_request:
+    branches: [main, test, dev]
+
+jobs:
+  quality-gate:
+    name: Quality, Security & Multi-Python Matrix (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install uv Package Manager
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync Dependencies with uv
+        run: uv sync --all-groups --python ${{ matrix.python-version }}
+
+      - name: Run Zero-Leak Secret Scanner
+        run: uv run --python ${{ matrix.python-version }} python scripts/scan_secrets.py
+
+      - name: Run AST Exception & Logging Audit
+        run: uv run --python ${{ matrix.python-version }} python scripts/audit_exceptions.py app scripts tests
+
+      - name: Run Dependency Vulnerability Audit (pip-audit)
+        run: uv run --python ${{ matrix.python-version }} pip-audit
+
+      - name: Run Static Application Security Testing (Bandit)
+        run: uv run --python ${{ matrix.python-version }} bandit -c pyproject.toml -r app scripts tests
+
+      - name: Run Ruff Linter & Formatter Check
+        run: uv run --python ${{ matrix.python-version }} ruff check .
+
+      - name: Run Strict Mypy Type Analysis
+        run: uv run --python ${{ matrix.python-version }} mypy app scripts tests
+
+      - name: Run Google Docstring Validation (pydocstyle)
+        run: uv run --python ${{ matrix.python-version }} pydocstyle app scripts
+
+      - name: Run Parallel Unit Tests & Code Coverage (pytest-xdist)
+        run: uv run --python ${{ matrix.python-version }} pytest -n auto --cov=app --cov-report=term-missing tests

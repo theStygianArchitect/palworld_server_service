@@ -6,6 +6,7 @@ reboot countdown warnings, administrative in-game broadcasts, and player moderat
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 from typing import Any
 
@@ -76,6 +77,17 @@ class DiscordNotifier:
                 res = await client.post(self.webhook_url, json=payload)
                 if res.status_code in {200, 204}:
                     return True
+                if res.status_code == 429:
+                    try:
+                        retry_data = res.json()
+                        retry_after = float(retry_data.get("retry_after", 1.5))
+                    except (ValueError, KeyError) as err:
+                        log.debug("Could not parse Discord rate limit body: %s", err)
+                        retry_after = 2.0
+                    log.warning("Discord webhook rate-limited (HTTP 429). Retrying after %.1fs...", retry_after)
+                    await asyncio.sleep(retry_after)
+                    res_retry = await client.post(self.webhook_url, json=payload)
+                    return res_retry.status_code in {200, 204}
                 log.warning("Discord webhook responded with status %s: %s", res.status_code, res.text)
         except httpx.TimeoutException as err:
             log.warning("Discord webhook request timed out: %s", err)

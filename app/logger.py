@@ -13,6 +13,7 @@ import queue
 import re
 import sys
 import threading
+import time
 import traceback
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -82,19 +83,29 @@ class DiscordLogHandler(logging.Handler):
         super().__init__(level=level)
         self.webhook_url = webhook_url
         self.critical_ping = critical_ping
-        self._queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=200)
+        self._queue: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=200)
         self._worker_thread = threading.Thread(target=self._worker, daemon=True, name="DiscordLogWorker")
         self._worker_thread.start()
 
     def _worker(self) -> None:
-        """Background thread consumer that dispatches queued log payloads to Discord."""
+        """Background thread consumer that dispatches queued log payloads to Discord with 429 backoff."""
         while True:
             try:
                 payload = self._queue.get()
                 if payload is None:
                     break
                 with httpx.Client(timeout=4.0) as client:
-                    client.post(self.webhook_url, json=payload)
+                    res = client.post(self.webhook_url, json=payload)
+                    if res.status_code == 429:
+                        try:
+                            retry_data = res.json()
+                            retry_after = float(retry_data.get("retry_after", 1.5))
+                        except (ValueError, KeyError) as err:
+                            sys.stderr.write(f"Discord retry_after parse error: {err}\n")
+                            retry_after = 2.0
+                        sys.stderr.write(f"Discord rate limit (HTTP 429) hit. Backing off for {retry_after:.1f}s...\n")
+                        time.sleep(retry_after)
+                        client.post(self.webhook_url, json=payload)
             except Exception as err:
                 sys.stderr.write(f"DiscordLogHandler worker dispatch error: {err}\n")
             finally:
@@ -162,6 +173,22 @@ class DiscordLogHandler(logging.Handler):
                 sys.stderr.write(f"DiscordLogHandler queue full: {err}\n")
         except Exception:
             self.handleError(record)
+
+    def flush(self) -> None:
+        """Flushes all queued log events, waiting for pending dispatches to complete."""
+        try:
+            self._queue.join()
+        except (RuntimeError, ValueError) as err:
+            sys.stderr.write(f"DiscordLogHandler flush error: {err}\n")
+
+    def close(self) -> None:
+        """Closes the handler, stops the background worker, and cleans up resources."""
+        try:
+            self._queue.put_nowait(None)
+            self._worker_thread.join(timeout=2.0)
+        except (queue.Full, RuntimeError) as err:
+            sys.stderr.write(f"DiscordLogHandler close error: {err}\n")
+        super().close()
 
 
 def setup_logger(
