@@ -1,7 +1,7 @@
 """Palworld Operations Suite & Web Management Plane API Entrypoint.
 
 Provides FastAPI REST endpoints, WebSocket telemetry streaming, configuration management,
-and server reboot orchestration in compliance with 3 AM standards.
+and server reboot orchestration in compliance with Google Style Guide and 3 AM standards.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import os
 import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -52,14 +53,19 @@ async def telemetry_streamer() -> None:
         try:
             liveness = False
             if os.name != "nt":
-                proc = subprocess.run(
-                    ["sudo", "/bin/systemctl", "is-active", settings.service_name],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False,
-                )
-                liveness = proc.stdout.strip() == "active"
+                try:
+                    proc = subprocess.run(
+                        ["sudo", "/bin/systemctl", "is-active", settings.service_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    )
+                    liveness = proc.stdout.strip() == "active"
+                except subprocess.SubprocessError as err:
+                    log.debug("Systemctl liveness probe error: %s", err)
+                except OSError as err:
+                    log.debug("Systemctl OS execution error: %s", err)
 
             readiness_data = await engine.check_readiness()
             raw_players = await engine.get_raw_players()
@@ -77,7 +83,7 @@ async def telemetry_streamer() -> None:
                 current_players=metrics.get("current_players", 0),
             )
 
-            payload = {
+            payload: dict[str, Any] = {
                 "type": "TELEMETRY",
                 "data": {
                     "liveness": liveness,
@@ -107,7 +113,14 @@ async def telemetry_streamer() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """FastAPI application lifespan managing background loops and readiness notification."""
+    """Manage application lifespan and background telemetry streaming loops.
+
+    Args:
+        _: Parent FastAPI application instance.
+
+    Yields:
+        None: Control back to the FastAPI runtime while application is serving.
+    """
     log.info("Palworld Operations Suite starting on port %s", settings.web_port)
     stream_task = asyncio.create_task(telemetry_streamer())
 
@@ -138,24 +151,34 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
-async def serve_dashboard():
-    """Serves the reactive Tailwind Web management dashboard."""
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
-    if os.path.exists(template_path):
-        with open(template_path, encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+async def serve_dashboard() -> HTMLResponse:
+    """Serves the reactive Tailwind Web management dashboard.
+
+    Returns:
+        HTMLResponse: Rendered dashboard HTML content.
+    """
+    template_path = Path(__file__).parent / "templates" / "index.html"
+    if template_path.exists():
+        try:
+            return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
+        except OSError as err:
+            log.warning("Error reading template file at %s: %s", template_path, err)
     return HTMLResponse("<h2>Palworld Operations Suite Dashboard</h2><p>Template loading...</p>")
 
 
 @app.websocket("/ws/telemetry")
-async def websocket_telemetry_endpoint(websocket: WebSocket):
-    """WebSocket connection point for real-time telemetry streaming."""
+async def websocket_telemetry_endpoint(websocket: WebSocket) -> None:
+    """Websocket connection endpoint for real-time telemetry streaming.
+
+    Args:
+        websocket (WebSocket): Inbound client WebSocket connection.
+    """
     await engine.register_socket(websocket)
     try:
         while True:
@@ -165,8 +188,15 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
 
 
 @app.get("/api/settings")
-async def get_settings_data():
-    """Returns safe, public-facing server configuration and field metadata."""
+async def get_settings_data() -> dict[str, Any]:
+    """Returns safe, public-facing server configuration and field metadata.
+
+    Returns:
+        dict[str, Any]: Mapping with status, field metadata, and public settings dictionary.
+
+    Raises:
+        HTTPException: If reading configuration fails.
+    """
     try:
         public_view = pipeline.get_public_view()
         return {"status": "success", "metadata": SETTING_METADATA, "data": public_view}
@@ -176,14 +206,24 @@ async def get_settings_data():
 
 
 @app.post("/api/settings")
-async def save_sanitized_settings(payload: GameplaySettingsSchema):
-    """Sanitizes, persists, and Git-commits updated gameplay settings."""
+async def save_sanitized_settings(payload: GameplaySettingsSchema) -> dict[str, Any]:
+    """Sanitizes, persists, and Git-commits updated gameplay settings.
+
+    Args:
+        payload (GameplaySettingsSchema): Validated gameplay settings input.
+
+    Returns:
+        dict[str, Any]: Success status, message, and Git snapshot commit hash.
+
+    Raises:
+        HTTPException: If persisting settings fails.
+    """
     try:
         sanitized_dict = payload.model_dump(exclude_unset=True)
         serialized_ini = pipeline.merge_and_serialize(sanitized_dict)
-        Path(settings.ini_path).parent.mkdir(parents=True, exist_ok=True)
-        with open(settings.ini_path, "w", encoding="utf-8") as f:
-            f.write(serialized_ini)
+        ini_file = Path(settings.ini_path)
+        ini_file.parent.mkdir(parents=True, exist_ok=True)
+        ini_file.write_text(serialized_ini, encoding="utf-8")
         commit = git_mgr.create_commit("SAVE", "Web UI sanitized update")
         reload_settings()
         log.info("Saved settings cleanly to disk. Git snapshot: %s", commit)
@@ -194,31 +234,44 @@ async def save_sanitized_settings(payload: GameplaySettingsSchema):
 
 
 @app.get("/api/tracker/community")
-async def get_community_tracker_data():
-    """Returns combined 3-section discovery hub, Steam A2S ping, and security matrix."""
-    return {
-        "status": "success",
-        "data": await engine.tracker.get_combined_telemetry(
-            host_ip=settings.host_ip,
-            public_port=settings.PublicPort,
-            server_password=settings.ServerPassword,
-            rcon_port=settings.RCONPort,
-            rest_port=settings.RESTAPIPort,
-        ),
-    }
+async def get_community_tracker_data() -> dict[str, Any]:
+    """Returns combined 3-section discovery hub, Steam A2S ping, and security matrix.
+
+    Returns:
+        dict[str, Any]: Combined discovery, A2S telemetry, and security matrix payload.
+    """
+    data = await engine.tracker.get_combined_telemetry(
+        host_ip=settings.host_ip,
+        public_port=settings.PublicPort,
+        server_password=settings.ServerPassword,
+        rcon_port=settings.RCONPort,
+        rest_port=settings.RESTAPIPort,
+    )
+    return {"status": "success", "data": data}
 
 
 @app.post("/api/service/reboot")
-async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks):
-    """Schedules a graceful server restart with in-game and Discord notifications."""
-    if os.path.exists(LOCK_FILE):
+async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks) -> dict[str, Any]:
+    """Schedules a graceful server restart with in-game and Discord notifications.
+
+    Args:
+        payload (RebootRequest): Reboot configuration including countdown and custom message.
+        bg (BackgroundTasks): FastAPI background task manager.
+
+    Returns:
+        dict[str, Any]: Success response acknowledging countdown initiation.
+
+    Raises:
+        HTTPException: If another reboot sequence is already in progress.
+    """
+    if LOCK_FILE.exists():
         raise HTTPException(status_code=409, detail="Reboot sequence already in progress.")
 
     if payload.settings:
         serialized_ini = pipeline.merge_and_serialize(payload.settings)
-        Path(settings.ini_path).parent.mkdir(parents=True, exist_ok=True)
-        with open(settings.ini_path, "w", encoding="utf-8") as f:
-            f.write(serialized_ini)
+        ini_file = Path(settings.ini_path)
+        ini_file.parent.mkdir(parents=True, exist_ok=True)
+        ini_file.write_text(serialized_ini, encoding="utf-8")
         commit = git_mgr.create_commit("RESTART", f"Prior to reboot ({payload.countdown_seconds}s countdown)")
         reload_settings()
         log.info("Saved configuration snapshot before reboot: %s", commit)
@@ -240,8 +293,18 @@ async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks):
 
 
 @app.post("/api/players/kick")
-async def handle_kick(req: PlayerKickRequest):
-    """Admin endpoint to kick an online player."""
+async def handle_kick(req: PlayerKickRequest) -> dict[str, Any]:
+    """Admin endpoint to kick an online player.
+
+    Args:
+        req (PlayerKickRequest): Target player ID and moderation reason.
+
+    Returns:
+        dict[str, Any]: Success response.
+
+    Raises:
+        HTTPException: If the in-engine kick command fails.
+    """
     log.info("Admin request: Kick player %s", req.player_id)
     ok = await engine.kick_player(req.player_id, req.message or "Kicked by administrator")
     if not ok:
@@ -250,8 +313,18 @@ async def handle_kick(req: PlayerKickRequest):
 
 
 @app.post("/api/players/ban")
-async def handle_ban(req: PlayerBanRequest):
-    """Admin endpoint to ban a player."""
+async def handle_ban(req: PlayerBanRequest) -> dict[str, Any]:
+    """Admin endpoint to ban a player.
+
+    Args:
+        req (PlayerBanRequest): Target player ID and moderation reason.
+
+    Returns:
+        dict[str, Any]: Success response.
+
+    Raises:
+        HTTPException: If the in-engine ban command fails.
+    """
     log.info("Admin request: Ban player %s", req.player_id)
     ok = await engine.ban_player(req.player_id, req.message or "Banned by administrator")
     if not ok:
@@ -260,8 +333,18 @@ async def handle_ban(req: PlayerBanRequest):
 
 
 @app.post("/api/players/warn")
-async def handle_warn(req: PlayerWarnRequest):
-    """Admin endpoint to send an announcement across in-game HUD and Discord room."""
+async def handle_warn(req: PlayerWarnRequest) -> dict[str, Any]:
+    """Admin endpoint to send an announcement across in-game HUD and Discord room.
+
+    Args:
+        req (PlayerWarnRequest): Broadcast announcement message string.
+
+    Returns:
+        dict[str, Any]: Success response.
+
+    Raises:
+        HTTPException: If broadcasting the announcement fails.
+    """
     log.info("Admin broadcast notice: %s", req.message)
     ok = await engine.send_broadcast(f"[ADMIN NOTICE] {req.message}", mirror_discord=True)
     if not ok:
@@ -270,20 +353,38 @@ async def handle_warn(req: PlayerWarnRequest):
 
 
 @app.get("/api/backups/commits")
-async def get_commits():
-    """Returns list of historical Git configuration snapshots."""
+async def get_commits() -> dict[str, Any]:
+    """Returns list of historical Git configuration snapshots.
+
+    Returns:
+        dict[str, Any]: Dictionary containing list of snapshot commit summaries.
+    """
     return {"status": "success", "commits": git_mgr.get_history()}
 
 
 @app.get("/api/backups/diff/{commit_hash}")
-async def get_diff(commit_hash: str):
-    """Returns unified diff between current config and a snapshot commit."""
+async def get_diff(commit_hash: str) -> dict[str, Any]:
+    """Returns unified diff between current config and a snapshot commit.
+
+    Args:
+        commit_hash (str): Target Git snapshot commit hash.
+
+    Returns:
+        dict[str, Any]: Dictionary containing unified diff text.
+    """
     return {"status": "success", "diff": git_mgr.get_diff(commit_hash)}
 
 
 @app.post("/api/backups/restore/{commit_hash}")
-async def restore_commit(commit_hash: str):
-    """Rolls back the server configuration to a historical Git commit snapshot."""
+async def restore_commit(commit_hash: str) -> dict[str, Any]:
+    """Rolls back the server configuration to a historical Git commit snapshot.
+
+    Args:
+        commit_hash (str): Target Git snapshot commit hash to restore.
+
+    Returns:
+        dict[str, Any]: Success response.
+    """
     log.info("Restoring configuration from snapshot %s", commit_hash)
     git_mgr.restore_commit(commit_hash)
     reload_settings()

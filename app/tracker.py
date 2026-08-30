@@ -1,8 +1,8 @@
-"""Community Discovery Hub & Bare-Metal Telemetry Engine.
+"""Community Discovery Hub, Steam A2S UDP Probe, and Bare-Metal Telemetry Engine.
 
 Provides multi-layer discovery tracking, Valve Steam A2S UDP packet queries,
 Pocketpair Master Server directory probes, EOS Session ID journal scraping,
-and bare-metal resource monitoring in accordance with 3 AM standards.
+and bare-metal resource monitoring in accordance with Google Style Guide and 3 AM standards.
 """
 
 from __future__ import annotations
@@ -15,30 +15,81 @@ import re
 import socket
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
 import psutil
 
 from .logger import log
+from .types import (
+    CombinedTelemetryPayload,
+    DiscoveryHubPayload,
+    HardwareTelemetryInfo,
+    LogScraperInfo,
+    NetworkMatrixInfo,
+    PlayerLedgerMatrix,
+    PlayerRecord,
+    PocketpairMasterInfo,
+    SecurityMatrixInfo,
+    SteamA2SInfo,
+    TopBadgeInfo,
+)
 
-DEFAULT_LEDGER_PATH = (
-    "/var/lib/palmanager/players.json" if os.name != "nt" else os.path.expanduser("~/.palmanager/players.json")
+DEFAULT_LEDGER_PATH: Path = (
+    Path("/var/lib/palmanager/players.json") if os.name != "nt" else Path.home() / ".palmanager" / "players.json"
 )
 
 
 class CommunityTracker:
-    """Probes Palworld community listings, A2S UDP sockets, and bare-metal resource telemetry."""
+    """Probes Palworld community listings, A2S UDP sockets, and bare-metal resource telemetry.
+
+    Attributes:
+        server_name (str): Configured dedicated server name.
+        domain (str): Public DuckDNS domain name.
+        player_ledger_path (Path): Filesystem path to the persistent player roster JSON file.
+        log_registered (bool): True if an active EOS lobby registration was found in journal logs.
+        log_first_seen (str | None): Timestamp string when EOS registration was first scraped.
+        log_session_id (str | None): Active EOS lobby session identifier string.
+        log_last_matched_line (str): Last matched journal line text.
+        pocketpair_listed (bool): True if server is indexed in Pocketpair's public master directory.
+        pocketpair_server_id (str): Unique Pocketpair directory server ID or 'Unlisted'.
+        pocketpair_name (str): Server name indexed in Pocketpair's directory.
+        pocketpair_version (str): Game build version reported by Pocketpair's directory.
+        last_pocketpair_check (float): Epoch timestamp of last directory check.
+        a2s_ping_ms (float | None): Measured round-trip latency in ms to Valve A2S UDP socket.
+        a2s_responsive (bool): True if UDP socket responded to A2S_INFO packet query.
+        a2s_server_name (str | None): Server name parsed from Valve A2S binary packet.
+        a2s_map_name (str | None): Map name parsed from Valve A2S binary packet.
+        a2s_players (int): Current player count from A2S query.
+        a2s_max_players (int): Max player count from A2S query.
+        cached_public_ip (str): Cached WAN public IP string.
+        cached_dns_ip (str): Cached DuckDNS resolved IP string.
+        last_ip_check (float): Epoch timestamp of last WAN/DNS probe.
+        players_history (dict[str, PlayerRecord]): Mapping of player IDs to historical records.
+    """
 
     def __init__(
         self,
         server_name: str | None = None,
         domain: str | None = None,
-        player_ledger_path: str | None = None,
+        player_ledger_path: str | Path | None = None,
     ) -> None:
+        """Initializes the CommunityTracker with server identity and storage paths.
+
+        Args:
+            server_name (str | None): Server name for directory matching.
+            domain (str | None): DuckDNS domain for DNS resolution.
+            player_ledger_path (str | Path | None): Filepath for persistent player ledger.
+        """
         self.server_name: str = server_name or os.getenv("PALWORLD_SERVER_NAME") or "Palworld Dedicated Server"
         self.domain: str = domain or os.getenv("PALWORLD_SERVER_DOMAIN") or "yourdomain.duckdns.org"
-        self.player_ledger_path: str = player_ledger_path or os.getenv("PLAYER_LEDGER_PATH") or DEFAULT_LEDGER_PATH
+
+        if player_ledger_path is not None:
+            self.player_ledger_path: Path = Path(player_ledger_path)
+        else:
+            env_ledger = os.getenv("PLAYER_LEDGER_PATH")
+            self.player_ledger_path = Path(env_ledger) if env_ledger else DEFAULT_LEDGER_PATH
 
         # 1. Local Log Scraper State (EOS Public Session ID)
         self.log_registered: bool = False
@@ -67,30 +118,55 @@ class CommunityTracker:
         self.last_ip_check: float = 0.0
 
         # 5. Persistent Player Ledger
-        self.players_history: dict[str, Any] = self._load_player_ledger()
+        self.players_history: dict[str, PlayerRecord] = self._load_player_ledger()
 
-    def _load_player_ledger(self) -> dict[str, Any]:
-        """Loads historical player roster from persistent JSON storage."""
-        if os.path.exists(self.player_ledger_path):
-            try:
-                with open(self.player_ledger_path, encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError) as e:
-                log.warning("Failed to parse player ledger from %s: %s", self.player_ledger_path, e)
+    def _load_player_ledger(self) -> dict[str, PlayerRecord]:
+        """Loads historical player roster from persistent JSON storage.
+
+        Returns:
+            dict[str, PlayerRecord]: Mapping of player IDs to player history records.
+        """
+        if not self.player_ledger_path.exists():
+            return {}
+
+        try:
+            content = self.player_ledger_path.read_text(encoding="utf-8")
+            data = json.loads(content)
+            if isinstance(data, dict):
+                return data
+        except FileNotFoundError as err:
+            log.debug("Player ledger file disappeared during read: %s", err)
+        except PermissionError as err:
+            log.warning("Permission denied reading player ledger at %s: %s", self.player_ledger_path, err)
+        except json.JSONDecodeError as err:
+            log.warning("Malformed JSON in player ledger at %s: %s", self.player_ledger_path, err)
+        except OSError as err:
+            log.warning("I/O error reading player ledger at %s: %s", self.player_ledger_path, err)
         return {}
 
     def _save_player_ledger(self) -> None:
         """Persists current player roster to disk."""
         try:
-            os.makedirs(os.path.dirname(self.player_ledger_path), exist_ok=True)
-            with open(self.player_ledger_path, "w", encoding="utf-8") as f:
-                json.dump(self.players_history, f, indent=2)
-        except OSError as e:
-            log.warning("Failed to write player ledger to %s: %s", self.player_ledger_path, e)
+            self.player_ledger_path.parent.mkdir(parents=True, exist_ok=True)
+            self.player_ledger_path.write_text(json.dumps(self.players_history, indent=2), encoding="utf-8")
+        except PermissionError as err:
+            log.warning("Permission denied writing player ledger to %s: %s", self.player_ledger_path, err)
+        except OSError as err:
+            log.warning("Failed to write player ledger to %s: %s", self.player_ledger_path, err)
 
     @staticmethod
-    def parse_a2s_packet(data: bytes, latency_ms: float | None = None) -> dict[str, Any]:
-        """Parses a Valve A2S_INFO binary UDP response packet."""
+    def parse_a2s_packet(data: bytes, latency_ms: float | None = None) -> SteamA2SInfo:
+        """Parses a Valve A2S_INFO binary UDP response packet.
+
+        Extracts header byte (0x49), protocol version, and null-terminated strings.
+
+        Args:
+            data (bytes): Raw binary UDP payload received from game socket.
+            latency_ms (float | None): Measured round-trip latency in milliseconds.
+
+        Returns:
+            SteamA2SInfo: Parsed packet fields including server name and map name.
+        """
         if len(data) > 6 and data[:4] == b"\xff\xff\xff\xff" and data[4] == 0x49:
             body = data[6:]
             parts = body.split(b"\x00")
@@ -107,14 +183,29 @@ class CommunityTracker:
                 "folder": folder,
                 "game": game,
             }
-        return {"responsive": bool(data), "ping_ms": latency_ms}
+        return {
+            "responsive": bool(data),
+            "ping_ms": latency_ms,
+            "server_name": "",
+            "map_name": "",
+            "folder": "",
+            "game": "",
+        }
 
-    async def probe_steam_a2s_info(self, host: str = "127.0.0.1", port: int = 8211) -> dict[str, Any]:
-        """Direct UDP A2S_INFO packet query to the server socket (measures raw latency in ms)."""
+    async def probe_steam_a2s_info(self, host: str = "127.0.0.1", port: int = 8211) -> SteamA2SInfo:
+        """Direct UDP A2S_INFO packet query to the server socket (measures raw latency in ms).
+
+        Args:
+            host (str): IP address of the target Palworld server.
+            port (int): UDP game port to query.
+
+        Returns:
+            SteamA2SInfo: Latency metrics and server name parsed from socket.
+        """
         query_packet = b"\xff\xff\xff\xffTSource Engine Query\x00"
         loop = asyncio.get_running_loop()
 
-        def _sync_a2s_query() -> dict[str, Any]:
+        def _sync_a2s_query() -> SteamA2SInfo:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.settimeout(1.5)
             t_start = time.perf_counter()
@@ -124,9 +215,25 @@ class CommunityTracker:
                 t_end = time.perf_counter()
                 latency_ms = round((t_end - t_start) * 1000, 1)
                 return self.parse_a2s_packet(data, latency_ms)
-            except (TimeoutError, OSError) as e:
-                log.debug("A2S socket query failed on %s:%s: %s", host, port, e)
-                return {"responsive": False, "ping_ms": None}
+            except TimeoutError:
+                return {
+                    "responsive": False,
+                    "ping_ms": None,
+                    "server_name": "",
+                    "map_name": "",
+                    "folder": "",
+                    "game": "",
+                }
+            except OSError as err:
+                log.debug("A2S socket query failed on %s:%s: %s", host, port, err)
+                return {
+                    "responsive": False,
+                    "ping_ms": None,
+                    "server_name": "",
+                    "map_name": "",
+                    "folder": "",
+                    "game": "",
+                }
             finally:
                 sock.close()
 
@@ -139,11 +246,18 @@ class CommunityTracker:
             if res.get("map_name"):
                 self.a2s_map_name = res["map_name"]
             return res
-        except Exception as e:
-            log.debug("A2S async executor exception: %s", e)
+        except Exception as err:
+            log.debug("A2S async executor exception: %s", err)
             self.a2s_responsive = False
             self.a2s_ping_ms = None
-            return {"responsive": False, "ping_ms": None}
+            return {
+                "responsive": False,
+                "ping_ms": None,
+                "server_name": "",
+                "map_name": "",
+                "folder": "",
+                "game": "",
+            }
 
     async def probe_pocketpair_master_list(self) -> None:
         """Probes Pocketpair's public master server directory API to verify official server listing."""
@@ -166,19 +280,30 @@ class CommunityTracker:
                             self.pocketpair_version = s.get("version", "Live")
                             self.last_pocketpair_check = time.time()
                             return
-        except httpx.HTTPError as e:
-            log.debug("Pocketpair directory probe exception: %s", e)
+        except httpx.TimeoutException as err:
+            log.debug("Pocketpair directory probe timed out: %s", err)
+        except httpx.ConnectError as err:
+            log.debug("Pocketpair directory connection failed: %s", err)
+        except httpx.HTTPError as err:
+            log.debug("Pocketpair directory probe HTTP error: %s", err)
 
         self.last_pocketpair_check = time.time()
 
-    def probe_local_logs(self) -> dict[str, Any]:
-        """Scrapes systemd journalctl for Palworld EOS session & lobby initialization lines."""
+    def probe_local_logs(self) -> LogScraperInfo:
+        """Scrapes systemd journalctl for Palworld EOS session & lobby initialization lines.
+
+        Returns:
+            LogScraperInfo: Scraped session information and status metadata.
+        """
         if self.log_registered and self.log_session_id:
             return {
                 "registered": True,
-                "first_seen": self.log_first_seen,
                 "session_id": self.log_session_id,
+                "first_seen": self.log_first_seen,
                 "last_line": self.log_last_matched_line,
+                "status_label": "CONSOLE SEARCH READY",
+                "status_color": "emerald",
+                "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
             }
 
         if os.name != "nt":
@@ -200,59 +325,101 @@ class CommunityTracker:
                                 self.log_session_id = match.group(1)
 
                             if not self.log_first_seen:
-                                self.log_first_seen = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                self.log_first_seen = datetime.datetime.now(datetime.timezone.utc).strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                )
 
                             return {
                                 "registered": True,
                                 "session_id": self.log_session_id,
                                 "first_seen": self.log_first_seen,
                                 "last_line": self.log_last_matched_line,
+                                "status_label": "CONSOLE SEARCH READY",
+                                "status_color": "emerald",
+                                "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
                             }
-            except (subprocess.SubprocessError, OSError) as e:
-                log.debug("Journalctl probe failed: %s", e)
+            except subprocess.TimeoutExpired as err:
+                log.debug("Journalctl probe timed out: %s", err)
+            except subprocess.SubprocessError as err:
+                log.debug("Journalctl subprocess error: %s", err)
+            except OSError as err:
+                log.debug("Journalctl execution OS error: %s", err)
 
         return {
             "registered": self.log_registered,
             "session_id": self.log_session_id,
             "first_seen": self.log_first_seen,
             "last_line": self.log_last_matched_line,
+            "status_label": "CONSOLE SEARCH READY" if self.log_registered else "AWAITING EOS HANDSHAKE",
+            "status_color": "emerald" if self.log_registered else "amber",
+            "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
         }
 
-    def probe_network_alignment(self) -> dict[str, Any]:
-        """Probes WAN public IP and DuckDNS resolution to verify network alignment."""
+    def probe_network_alignment(self) -> NetworkMatrixInfo:
+        """Probes WAN public IP and DuckDNS resolution to verify network alignment.
+
+        Returns:
+            NetworkMatrixInfo: Public IP, resolved DNS IP, and alignment boolean status.
+        """
         try:
             with httpx.Client(timeout=2.0) as client:
                 res = client.get("https://api.ipify.org?format=json")
                 if res.status_code == 200:
                     self.cached_public_ip = res.json().get("ip", "Unknown")
-        except httpx.HTTPError as e:
-            log.debug("WAN IP detection failed: %s", e)
+        except httpx.TimeoutException as err:
+            log.debug("WAN IP detection timed out: %s", err)
+        except httpx.ConnectError as err:
+            log.debug("WAN IP connection failed: %s", err)
+        except httpx.HTTPError as err:
+            log.debug("WAN IP HTTP error: %s", err)
 
         try:
             if self.domain:
                 self.cached_dns_ip = socket.gethostbyname(str(self.domain))
             else:
                 self.cached_dns_ip = "Unresolved"
-        except (socket.gaierror, OSError) as e:
-            log.debug("DNS resolution failed for %s: %s", self.domain, e)
+        except socket.gaierror as err:
+            log.debug("DNS address resolution failed for %s: %s", self.domain, err)
+            self.cached_dns_ip = "Unresolved"
+        except OSError as err:
+            log.debug("Socket OS error resolving %s: %s", self.domain, err)
             self.cached_dns_ip = "Unresolved"
 
         is_aligned = bool(
-            self.cached_public_ip and self.cached_dns_ip != "Unresolved" and self.cached_public_ip == self.cached_dns_ip
+            self.cached_public_ip
+            and self.cached_public_ip != "Detecting..."
+            and self.cached_public_ip != "Unknown"
+            and self.cached_dns_ip != "Unresolved"
+            and self.cached_public_ip == self.cached_dns_ip
         )
+
+        lan_ip = os.getenv("PALWORLD_HOST_IP", "127.0.0.1")
+        public_port = 8211
+        direct_host = self.domain if (self.domain and "yourdomain" not in self.domain) else self.cached_public_ip
 
         return {
             "public_ip": self.cached_public_ip or "Unknown",
             "dns_ip": self.cached_dns_ip or "Unresolved",
             "domain": self.domain,
             "is_aligned": is_aligned,
+            "lan_ip": lan_ip,
+            "public_port": public_port,
+            "direct_connect_addr": f"{direct_host}:{public_port}",
+            "lan_connect_addr": f"{lan_ip}:{public_port}",
         }
 
-    def update_and_get_players(self, live_players_raw: list[dict[str, Any]]) -> dict[str, Any]:
-        """Merges live player telemetry into persistent roster ledger."""
-        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        active_list = []
-        active_ids = set()
+    def update_and_get_players(self, live_players_raw: list[dict[str, Any]]) -> PlayerLedgerMatrix:
+        """Merges live player telemetry into persistent roster ledger.
+
+        Args:
+            live_players_raw (list[dict[str, Any]]): Raw player dictionaries from REST API.
+
+        Returns:
+            PlayerLedgerMatrix: Active players, offline history, and roster totals.
+        """
+        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        active_list: list[PlayerRecord] = []
+        active_ids: set[str] = set()
 
         for p in live_players_raw:
             pid = str(p.get("playerId", ""))
@@ -260,15 +427,15 @@ class CommunityTracker:
                 continue
             active_ids.add(pid)
 
-            player_record = {
+            player_record: PlayerRecord = {
                 "playerId": pid,
-                "userId": p.get("userId", ""),
-                "name": p.get("name", "Unknown Tamer"),
-                "level": p.get("level", 1),
-                "ping": p.get("ping", 0.0),
+                "userId": str(p.get("userId", "")),
+                "name": str(p.get("name", "Unknown Tamer")),
+                "level": int(p.get("level", 1)),
+                "ping": float(p.get("ping", 0.0)),
                 "location": {
-                    "x": p.get("location_x", 0.0),
-                    "y": p.get("location_y", 0.0),
+                    "x": float(p.get("location_x", 0.0)),
+                    "y": float(p.get("location_y", 0.0)),
                 },
                 "status": "ONLINE",
                 "last_seen": now_str,
@@ -277,7 +444,7 @@ class CommunityTracker:
             self.players_history[pid] = player_record
             active_list.append(player_record)
 
-        offline_list = []
+        offline_list: list[PlayerRecord] = []
         for pid, record in self.players_history.items():
             if pid not in active_ids:
                 record["status"] = "OFFLINE"
@@ -292,16 +459,26 @@ class CommunityTracker:
             "offline_players": offline_list,
         }
 
-    def get_hardware_telemetry(self) -> dict[str, Any]:
-        """Collects bare-metal hardware and systemd cgroup 14GB allocation metrics."""
+    def get_hardware_telemetry(self) -> HardwareTelemetryInfo:
+        """Collects bare-metal hardware and systemd cgroup 14GB allocation metrics.
+
+        Returns:
+            HardwareTelemetryInfo: System RAM, cgroup usage, swap, CPU, disk, and network stats.
+        """
         cgroup_ram_bytes = 0
-        cgroup_path = "/sys/fs/cgroup/system.slice/palworld.service/memory.current"
-        if os.name != "nt" and os.path.exists(cgroup_path):
+        cgroup_path = Path("/sys/fs/cgroup/system.slice/palworld.service/memory.current")
+        if os.name != "nt" and cgroup_path.exists():
             try:
-                with open(cgroup_path, encoding="utf-8") as f:
-                    cgroup_ram_bytes = int(f.read().strip())
-            except (OSError, ValueError) as e:
-                log.debug("Failed reading cgroup memory.current: %s", e)
+                content = cgroup_path.read_text(encoding="utf-8").strip()
+                cgroup_ram_bytes = int(content)
+            except FileNotFoundError:
+                pass
+            except PermissionError as err:
+                log.debug("Permission denied reading %s: %s", cgroup_path, err)
+            except ValueError as err:
+                log.debug("Invalid integer in %s: %s", cgroup_path, err)
+            except OSError as err:
+                log.debug("OS error reading %s: %s", cgroup_path, err)
 
         vm = psutil.virtual_memory()
         swap = psutil.swap_memory()
@@ -351,14 +528,28 @@ class CommunityTracker:
         rest_port: int = 8212,
         max_players: int = 32,
         current_players: int = 0,
-    ) -> dict[str, Any]:
-        """Assembles full 3-section telemetry matrix for the reactive UI dashboard."""
+    ) -> CombinedTelemetryPayload:
+        """Assembles full 3-section telemetry matrix for the reactive UI dashboard.
+
+        Args:
+            is_multiplay (bool): Whether multiplayer join mode is active.
+            host_ip (str | None): Host LAN IP address.
+            public_port (int): UDP game port (default: 8211).
+            server_password (str): Current plaintext join password.
+            rcon_port (int): Admin RCON port (default: 25575).
+            rest_port (int): Internal REST port (default: 8212).
+            max_players (int): Maximum server slot capacity.
+            current_players (int): Count of connected tamers.
+
+        Returns:
+            CombinedTelemetryPayload: Complete telemetry schema consumed by dashboard UI.
+        """
         self.probe_network_alignment()
         await self.probe_pocketpair_master_list()
         await self.probe_steam_a2s_info(host=host_ip or "127.0.0.1", port=public_port)
         log_res = self.probe_local_logs()
 
-        lan_ip = host_ip or os.getenv("PALWORLD_HOST_IP", "127.0.0.1")
+        lan_ip: str = host_ip or os.getenv("PALWORLD_HOST_IP") or "127.0.0.1"
 
         direct_connect_host = (
             self.domain
@@ -384,59 +575,61 @@ class CommunityTracker:
             badge_style = "bg-amber-900/60 border border-amber-500/50 text-amber-300"
             badge_dot = "bg-amber-400"
 
+        top_badge: TopBadgeInfo = {
+            "label": badge_label,
+            "style": badge_style,
+            "dot": badge_dot,
+        }
+
+        pocketpair_master: PocketpairMasterInfo = {
+            "listed": self.pocketpair_listed,
+            "server_id": self.pocketpair_server_id,
+            "name": self.pocketpair_name,
+            "version": self.pocketpair_version,
+            "status_label": "OFFICIALLY LISTED" if self.pocketpair_listed else "COMMUNITY / DIRECT MODE",
+            "status_color": "emerald" if self.pocketpair_listed else "amber",
+        }
+
+        network_matrix: NetworkMatrixInfo = {
+            "public_ip": self.cached_public_ip,
+            "dns_ip": self.cached_dns_ip,
+            "domain": self.domain,
+            "is_aligned": bool(self.cached_public_ip == self.cached_dns_ip),
+            "lan_ip": lan_ip,
+            "public_port": public_port,
+            "direct_connect_addr": f"{direct_connect_host}:{public_port}",
+            "lan_connect_addr": f"{lan_ip}:{public_port}",
+        }
+
+        discovery_hub: DiscoveryHubPayload = {
+            "log_scraper": log_res,
+            "pocketpair_master": pocketpair_master,
+            "network_matrix": network_matrix,
+        }
+
+        a2s_telemetry: SteamA2SInfo = {
+            "responsive": self.a2s_responsive,
+            "ping_ms": self.a2s_ping_ms,
+            "server_name": self.a2s_server_name or self.server_name,
+            "map_name": self.a2s_map_name or "Pal/Maps/World",
+            "folder": "Pal",
+            "game": "Palworld",
+        }
+
+        security_matrix: SecurityMatrixInfo = {
+            "is_password_protected": bool(server_password),
+            "password_status_label": "🔒 Password Protected" if server_password else "🔓 Public Access (No Password)",
+            "server_password": server_password,
+            "rcon_port": rcon_port,
+            "rest_port": rest_port,
+            "max_players": max_players,
+            "current_players": current_players,
+            "slot_capacity_label": f"{current_players} / {max_players} Tamers",
+        }
+
         return {
-            "top_badge": {
-                "label": badge_label,
-                "style": badge_style,
-                "dot": badge_dot,
-            },
-            "discovery_hub": {
-                "log_scraper": {
-                    "registered": log_res.get("registered", False),
-                    "session_id": log_res.get("session_id"),
-                    "first_seen": log_res.get("first_seen"),
-                    "last_line": log_res.get("last_line", ""),
-                    "status_label": "CONSOLE SEARCH READY" if log_res.get("registered") else "AWAITING EOS HANDSHAKE",
-                    "status_color": "emerald" if log_res.get("registered") else "amber",
-                    "crossplay_platforms": "(Steam, Xbox, PS5, Mac)",
-                },
-                "pocketpair_master": {
-                    "listed": self.pocketpair_listed,
-                    "server_id": self.pocketpair_server_id,
-                    "name": self.pocketpair_name,
-                    "version": self.pocketpair_version,
-                    "status_label": "OFFICIALLY LISTED" if self.pocketpair_listed else "COMMUNITY / DIRECT MODE",
-                    "status_color": "emerald" if self.pocketpair_listed else "amber",
-                },
-                "network_matrix": {
-                    "public_ip": self.cached_public_ip,
-                    "dns_ip": self.cached_dns_ip,
-                    "domain": self.domain,
-                    "is_aligned": bool(self.cached_public_ip == self.cached_dns_ip),
-                    "lan_ip": lan_ip,
-                    "public_port": public_port,
-                    "direct_connect_addr": f"{direct_connect_host}:{public_port}",
-                    "lan_connect_addr": f"{lan_ip}:{public_port}",
-                },
-            },
-            "a2s_telemetry": {
-                "responsive": self.a2s_responsive,
-                "ping_ms": self.a2s_ping_ms,
-                "server_name": self.a2s_server_name or self.server_name,
-                "map_name": self.a2s_map_name or "Pal/Maps/World",
-                "folder": "Pal",
-                "game": "Palworld",
-            },
-            "security_matrix": {
-                "is_password_protected": bool(server_password),
-                "password_status_label": "🔒 Password Protected"
-                if server_password
-                else "🔓 Public Access (No Password)",
-                "server_password": server_password,
-                "rcon_port": rcon_port,
-                "rest_port": rest_port,
-                "max_players": max_players,
-                "current_players": current_players,
-                "slot_capacity_label": f"{current_players} / {max_players} Tamers",
-            },
+            "top_badge": top_badge,
+            "discovery_hub": discovery_hub,
+            "a2s_telemetry": a2s_telemetry,
+            "security_matrix": security_matrix,
         }

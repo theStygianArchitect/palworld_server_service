@@ -1,7 +1,16 @@
+"""Palworld INI Configuration Parser, Serializer, and Field Metadata Registry.
+
+Provides robust parsing of Unreal Engine OptionSettings formatted INI files,
+type coercion, serialization, and UI field presentation metadata.
+"""
+
+from __future__ import annotations
+
 import re
+from pathlib import Path
 from typing import Any
 
-SETTING_METADATA = {
+SETTING_METADATA: dict[str, dict[str, Any]] = {
     "CrossplayPlatforms": {
         "category": "🌐 Crossplay & Community Matchmaking",
         "type": "string",
@@ -277,11 +286,26 @@ SETTING_METADATA = {
 }
 
 
-def parse_ini_file(path: str) -> dict[str, Any]:
+def parse_ini_file(path: str | Path) -> dict[str, Any]:
+    """Parses a Palworld PalGameWorldSettings INI file into a Python dictionary.
+
+    Reads the OptionSettings payload, extracts key-value pairs, and converts values
+    to appropriate Python types (bool, int, float, str).
+
+    Args:
+        path (str | Path): Path to the PalWorldSettings.ini file on disk.
+
+    Returns:
+        dict[str, Any]: Extracted dictionary of key-value gameplay settings.
+    """
+    file_path = Path(path)
     try:
-        with open(path, encoding="utf-8") as f:
-            content = f.read()
+        content = file_path.read_text(encoding="utf-8")
     except FileNotFoundError:
+        return {}
+    except PermissionError:
+        return {}
+    except OSError:
         return {}
 
     match = re.search(r"OptionSettings=\((.*)\)", content, re.DOTALL)
@@ -289,7 +313,7 @@ def parse_ini_file(path: str) -> dict[str, Any]:
         return {}
 
     raw_str = match.group(1).strip()
-    tokens = {}
+    tokens: dict[str, Any] = {}
     pattern = re.compile(r'(\w+)=(?:"([^"]*)"|(\([^)]*\))|([^,]+))')
     for m in pattern.finditer(raw_str):
         k = m.group(1)
@@ -312,7 +336,15 @@ def parse_ini_file(path: str) -> dict[str, Any]:
 
 
 def serialize_ini_settings(settings: dict[str, Any]) -> str:
-    pairs = []
+    """Serializes a dictionary of gameplay settings into PalWorldSettings.ini format.
+
+    Args:
+        settings (dict[str, Any]): Dictionary of configuration keys and values.
+
+    Returns:
+        str: Fully formatted INI file content with [/Script/Pal.PalGameWorldSettings] header.
+    """
+    pairs: list[str] = []
     for k, v in settings.items():
         if isinstance(v, bool):
             pairs.append(f"{k}={'True' if v else 'False'}")

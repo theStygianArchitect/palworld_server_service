@@ -1,3 +1,11 @@
+"""Discord webhook notification dispatcher and embed formatter.
+
+Provides asynchronous, rich-embed status dispatching for server readiness,
+reboot countdown warnings, administrative in-game broadcasts, and player moderation events.
+"""
+
+from __future__ import annotations
+
 import datetime
 from typing import Any
 
@@ -7,16 +15,24 @@ from .logger import log
 
 
 class DiscordNotifier:
-    """Dispatches formatted notifications to Discord via incoming webhooks."""
+    """Dispatches formatted notifications to Discord via incoming webhooks.
 
-    # Embed Colors
-    COLOR_INFO = 0x3B82F6  # Blue
-    COLOR_SUCCESS = 0x10B981  # Emerald Green
-    COLOR_WARNING = 0xF59E0B  # Amber / Orange
-    COLOR_ALERT = 0xEF4444  # Red
-    COLOR_BROADCAST = 0x8B5CF6  # Purple
+    Attributes:
+        webhook_url (str | None): Configured Discord incoming webhook endpoint URL.
+    """
 
-    def __init__(self, webhook_url: str | None = None):
+    COLOR_INFO: int = 0x3B82F6  # Blue
+    COLOR_SUCCESS: int = 0x10B981  # Emerald Green
+    COLOR_WARNING: int = 0xF59E0B  # Amber / Orange
+    COLOR_ALERT: int = 0xEF4444  # Red
+    COLOR_BROADCAST: int = 0x8B5CF6  # Purple
+
+    def __init__(self, webhook_url: str | None = None) -> None:
+        """Initializes the Discord notifier.
+
+        Args:
+            webhook_url (str | None): Target Discord incoming webhook URL.
+        """
         self.webhook_url = webhook_url
 
     async def send_embed(
@@ -27,6 +43,18 @@ class DiscordNotifier:
         fields: list[dict[str, Any]] | None = None,
         footer: str = "Palworld Operations Suite",
     ) -> bool:
+        """Dispatches an asynchronous rich embed payload to the configured webhook.
+
+        Args:
+            title (str): Title header of the Discord embed.
+            description (str): Main body markdown text of the embed.
+            color (int): Hexadecimal RGB color integer (default: COLOR_INFO).
+            fields (list[dict[str, Any]] | None): Optional list of field objects with name/value/inline.
+            footer (str): Footer text displayed at the bottom of the embed.
+
+        Returns:
+            bool: True if Discord returned HTTP 200 or 204 status, False otherwise.
+        """
         if not self.webhook_url or not self.webhook_url.strip().startswith("https://discord.com/api/webhooks/"):
             return False
 
@@ -48,13 +76,25 @@ class DiscordNotifier:
                 res = await client.post(self.webhook_url, json=payload)
                 if res.status_code in {200, 204}:
                     return True
-                log.warning(f"Discord webhook responded with status {res.status_code}: {res.text}")
-        except Exception as e:
-            log.warning(f"Failed to deliver Discord notification: {e}")
+                log.warning("Discord webhook responded with status %s: %s", res.status_code, res.text)
+        except httpx.TimeoutException as err:
+            log.warning("Discord webhook request timed out: %s", err)
+        except httpx.ConnectError as err:
+            log.warning("Discord webhook connection error: %s", err)
+        except httpx.HTTPError as err:
+            log.warning("Discord webhook HTTP failure: %s", err)
         return False
 
     async def notify_admin_broadcast(self, server_name: str, message: str) -> bool:
-        """Mirrors in-game admin broadcast notices directly to Discord chat."""
+        """Mirrors in-game admin broadcast notices directly to Discord chat.
+
+        Args:
+            server_name (str): Server display name for embed footer.
+            message (str): Raw broadcast message string.
+
+        Returns:
+            bool: True if successfully delivered to Discord.
+        """
         clean_msg = message.replace("[ADMIN NOTICE]", "").strip()
         return await self.send_embed(
             title="📢 In-Game Admin Announcement",
@@ -64,6 +104,17 @@ class DiscordNotifier:
         )
 
     async def notify_server_ready(self, server_name: str, version: str, public_ip: str, port: int = 8211) -> bool:
+        """Sends an online status announcement when the dedicated server finishes booting.
+
+        Args:
+            server_name (str): Dedicated server display name.
+            version (str): Reported game engine build version string.
+            public_ip (str): Public WAN IP or domain name for direct connecting.
+            port (int): UDP game connection port (default: 8211).
+
+        Returns:
+            bool: True if successfully delivered to Discord.
+        """
         fields = [
             {"name": "Server Name", "value": server_name or "Palworld Dedicated Server", "inline": True},
             {"name": "Engine Version", "value": version or "Live", "inline": True},
@@ -87,6 +138,17 @@ class DiscordNotifier:
         update_tag: str = "",
         custom_message: str = "",
     ) -> bool:
+        """Dispatches progressive reboot countdown warnings to the Discord channel.
+
+        Args:
+            time_remaining_str (str): Human-readable duration string (e.g. '10 minutes').
+            is_updating (bool): Whether a SteamCMD update will occur during restart.
+            update_tag (str): Target version string if updating.
+            custom_message (str): Optional custom announcement note from administrator.
+
+        Returns:
+            bool: True if successfully delivered to Discord.
+        """
         update_text = (
             f" (Updating to {update_tag})"
             if (is_updating and update_tag)
@@ -106,6 +168,14 @@ class DiscordNotifier:
         )
 
     async def notify_reboot_complete(self, server_name: str) -> bool:
+        """Sends a recovery notice after a server reboot cycle finishes successfully.
+
+        Args:
+            server_name (str): Dedicated server display name.
+
+        Returns:
+            bool: True if successfully delivered to Discord.
+        """
         return await self.send_embed(
             title="🔄 Server Maintenance Complete",
             description=f"**{server_name or 'Palworld Server'}** has completed its restart cycle and is back online.",
@@ -113,6 +183,16 @@ class DiscordNotifier:
         )
 
     async def notify_player_action(self, action: str, player_id: str, reason: str = "") -> bool:
+        """Logs an administrative player moderation action (kick/ban) to Discord.
+
+        Args:
+            action (str): Moderation action name ('kick' or 'ban').
+            player_id (str): Target player ID or platform identifier.
+            reason (str): Optional administrator reason string.
+
+        Returns:
+            bool: True if successfully delivered to Discord.
+        """
         fields = [
             {"name": "Action", "value": action.upper(), "inline": True},
             {"name": "Player ID / SteamID", "value": f"`{player_id}`", "inline": True},

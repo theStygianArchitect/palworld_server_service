@@ -68,3 +68,65 @@ def test_isolated_request_schemas():
 
     restore = SettingsRestoreRequest(commit_hash="a1b2c3d")
     assert restore.commit_hash == "a1b2c3d"
+
+
+def test_domain_types_instantiation():
+    from app.types import DiscoveryHubPayload, HardwareTelemetryInfo, TopBadgeInfo
+
+    badge: TopBadgeInfo = {
+        "label": "Community Listed",
+        "style": "bg-emerald-900",
+        "dot": "bg-emerald-400",
+    }
+    assert badge["label"] == "Community Listed"
+
+    hub: DiscoveryHubPayload = {
+        "log_scraper": {
+            "registered": True,
+            "session_id": "test_sess",
+            "first_seen": "2026-08-30",
+            "last_line": "Created public lobby session",
+            "status_label": "READY",
+            "status_color": "emerald",
+            "crossplay_platforms": "Steam",
+        },
+        "pocketpair_master": {
+            "listed": True,
+            "server_id": "pp_123",
+            "name": "Test Server",
+            "version": "v0.3.0",
+            "status_label": "LISTED",
+            "status_color": "emerald",
+        },
+        "network_matrix": {
+            "public_ip": "1.2.3.4",
+            "dns_ip": "1.2.3.4",
+            "domain": "test.duckdns.org",
+            "is_aligned": True,
+            "lan_ip": "192.168.1.100",
+            "public_port": 8211,
+            "direct_connect_addr": "test.duckdns.org:8211",
+            "lan_connect_addr": "192.168.1.100:8211",
+        },
+    }
+    assert hub["network_matrix"]["is_aligned"] is True
+
+    hw: HardwareTelemetryInfo = {
+        "host_ram_used_gb": 8.0,
+        "host_ram_total_gb": 32.0,
+        "host_ram_pct": 25.0,
+        "cgroup_ram_used_gb": 4.0,
+        "cgroup_limit_gb": 14.0,
+        "cgroup_ram_pct": 28.5,
+        "swap_used_gb": 0.0,
+        "swap_total_gb": 8.0,
+        "swap_pct": 0.0,
+        "cpu_cores": [10.0, 15.0],
+        "cpu_avg_pct": 12.5,
+        "disk_used_gb": 50.0,
+        "disk_total_gb": 500.0,
+        "disk_pct": 10.0,
+        "net_bytes_sent": 1000,
+        "net_bytes_recv": 2000,
+    }
+    assert hw["host_ram_pct"] == 25.0
