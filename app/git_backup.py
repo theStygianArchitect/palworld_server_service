@@ -54,7 +54,8 @@ class IsolatedGitBackupManager:
             try:
                 default_dir.mkdir(parents=True, exist_ok=True)
                 self.backup_repo_dir = default_dir
-            except (PermissionError, OSError):
+            except (PermissionError, OSError) as err:
+                log.debug("System backup repo dir %s unwritable (%s), using home dir fallback.", default_dir, err)
                 self.backup_repo_dir = (Path.home() / ".palmanager" / "backups").resolve()
 
         self.backup_branch: str = backup_branch
