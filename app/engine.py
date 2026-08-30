@@ -137,7 +137,8 @@ class PalEngine:
         for ws in self.active_sockets:
             try:
                 await ws.send_json(message)
-            except Exception:
+            except Exception as err:
+                log.debug("WebSocket client disconnected or send failed: %s", err)
                 dead_sockets.add(ws)
         self.active_sockets -= dead_sockets
 
@@ -157,12 +158,12 @@ class PalEngine:
                         "version": info.get("version"),
                         "server_name": info.get("servername", self.server_name),
                     }
-        except httpx.TimeoutException:
-            pass
-        except httpx.ConnectError:
-            pass
-        except httpx.HTTPError:
-            pass
+        except httpx.TimeoutException as err:
+            log.debug("Engine readiness probe timed out: %s", err)
+        except httpx.ConnectError as err:
+            log.debug("Engine readiness probe connection refused (server likely offline/booting): %s", err)
+        except httpx.HTTPError as err:
+            log.debug("Engine readiness probe HTTP error: %s", err)
         return {"ready": False, "version": None, "server_name": self.server_name}
 
     async def get_engine_metrics(self) -> EngineMetrics:
@@ -190,12 +191,12 @@ class PalEngine:
                     metrics["days"] = data.get("days", 0)
                     metrics["current_players"] = data.get("currentplayernum", 0)
                     metrics["max_players"] = data.get("maxplayernum", 32)
-        except httpx.TimeoutException:
-            pass
-        except httpx.ConnectError:
-            pass
-        except httpx.HTTPError:
-            pass
+        except httpx.TimeoutException as err:
+            log.debug("Engine metrics request timed out: %s", err)
+        except httpx.ConnectError as err:
+            log.debug("Engine metrics request connection refused: %s", err)
+        except httpx.HTTPError as err:
+            log.debug("Engine metrics request HTTP error: %s", err)
         return metrics
 
     async def get_raw_players(self) -> list[dict[str, Any]]:
@@ -211,12 +212,12 @@ class PalEngine:
                     players = res.json().get("players", [])
                     if isinstance(players, list):
                         return players
-        except httpx.TimeoutException:
-            pass
-        except httpx.ConnectError:
-            pass
-        except httpx.HTTPError:
-            pass
+        except httpx.TimeoutException as err:
+            log.debug("Player list request timed out: %s", err)
+        except httpx.ConnectError as err:
+            log.debug("Player list request connection refused: %s", err)
+        except httpx.HTTPError as err:
+            log.debug("Player list request HTTP error: %s", err)
         return []
 
     async def send_broadcast(self, message: str, mirror_discord: bool = True) -> bool:

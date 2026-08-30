@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .logger import log
+
 SETTING_METADATA: dict[str, dict[str, Any]] = {
     "CrossplayPlatforms": {
         "category": "🌐 Crossplay & Community Matchmaking",
@@ -301,11 +303,14 @@ def parse_ini_file(path: str | Path) -> dict[str, Any]:
     file_path = Path(path)
     try:
         content = file_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
+    except FileNotFoundError as err:
+        log.debug("INI file not found at %s: %s", file_path, err)
         return {}
-    except PermissionError:
+    except PermissionError as err:
+        log.warning("Permission denied reading INI file at %s: %s", file_path, err)
         return {}
-    except OSError:
+    except OSError as err:
+        log.warning("OS error reading INI file at %s: %s", file_path, err)
         return {}
 
     match = re.search(r"OptionSettings=\((.*)\)", content, re.DOTALL)
@@ -330,7 +335,8 @@ def parse_ini_file(path: str | Path) -> dict[str, Any]:
             else:
                 try:
                     tokens[k] = int(raw_v) if "." not in raw_v else float(raw_v)
-                except ValueError:
+                except ValueError as err:
+                    log.debug("Token %s='%s' not numeric (%s); keeping as raw string", k, raw_v, err)
                     tokens[k] = raw_v
     return tokens
 

@@ -18,6 +18,7 @@ from pydantic_settings import (
 )
 
 from .config_parser import parse_ini_file
+from .logger import log
 
 
 class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
@@ -71,16 +72,19 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             return {}
 
         try:
-            ini_data = parse_ini_file(str(self.ini_path))
+            ini_data = parse_ini_file(self.ini_path)
             mapped: dict[str, Any] = {}
             for k, v in ini_data.items():
                 mapped[k] = v
             return mapped
-        except FileNotFoundError:
+        except FileNotFoundError as err:
+            log.debug("PalWorldSettings.ini not found during settings load at %s: %s", self.ini_path, err)
             return {}
-        except PermissionError:
+        except PermissionError as err:
+            log.warning("Permission denied reading PalWorldSettings.ini at %s: %s", self.ini_path, err)
             return {}
-        except OSError:
+        except OSError as err:
+            log.warning("OS error reading PalWorldSettings.ini at %s: %s", self.ini_path, err)
             return {}
 
 
@@ -111,6 +115,8 @@ class AppSettings(BaseSettings):
         duckdns_token (str): Configured DuckDNS authentication token.
         host_ip (str): Host local/LAN IP address.
         discord_webhook_url (str | None): Discord incoming webhook URL for notifications.
+        discord_log_level (str): Log level threshold for Discord mirroring (default: ERROR).
+        discord_critical_ping (str): User/role mention for CRITICAL alerts (default: @thestygianarchitect).
     """
 
     model_config = SettingsConfigDict(
@@ -164,6 +170,14 @@ class AppSettings(BaseSettings):
     discord_webhook_url: str | None = Field(
         default=None,
         validation_alias="PALWORLD_DISCORD_WEBHOOK_URL",
+    )
+    discord_log_level: str = Field(
+        default="ERROR",
+        validation_alias="PALWORLD_DISCORD_LOG_LEVEL",
+    )
+    discord_critical_ping: str = Field(
+        default="@thestygianarchitect",
+        validation_alias="PALWORLD_DISCORD_CRITICAL_PING",
     )
 
     @classmethod

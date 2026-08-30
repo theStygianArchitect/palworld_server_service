@@ -140,8 +140,8 @@ async def lifespan(_: FastAPI):
     stream_task.cancel()
     try:
         await stream_task
-    except asyncio.CancelledError:
-        pass
+    except asyncio.CancelledError as err:
+        log.debug("Telemetry background task cancelled during shutdown: %s", err)
 
 
 app = FastAPI(
@@ -183,7 +183,8 @@ async def websocket_telemetry_endpoint(websocket: WebSocket) -> None:
     try:
         while True:
             await websocket.receive_text()
-    except WebSocketDisconnect:
+    except WebSocketDisconnect as err:
+        log.debug("WebSocket client disconnected: %s", err)
         engine.unregister_socket(websocket)
 
 

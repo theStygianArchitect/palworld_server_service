@@ -215,7 +215,8 @@ class CommunityTracker:
                 t_end = time.perf_counter()
                 latency_ms = round((t_end - t_start) * 1000, 1)
                 return self.parse_a2s_packet(data, latency_ms)
-            except TimeoutError:
+            except TimeoutError as err:
+                log.debug("A2S socket query timed out on %s:%s: %s", host, port, err)
                 return {
                     "responsive": False,
                     "ping_ms": None,
@@ -471,8 +472,8 @@ class CommunityTracker:
             try:
                 content = cgroup_path.read_text(encoding="utf-8").strip()
                 cgroup_ram_bytes = int(content)
-            except FileNotFoundError:
-                pass
+            except FileNotFoundError as err:
+                log.debug("Cgroup memory file not found at %s: %s", cgroup_path, err)
             except PermissionError as err:
                 log.debug("Permission denied reading %s: %s", cgroup_path, err)
             except ValueError as err:
@@ -496,7 +497,8 @@ class CommunityTracker:
             disk_used_gb = round(disk.used / (1024**3), 1)
             disk_total_gb = round(disk.total / (1024**3), 1)
             disk_pct = round(disk.percent, 1)
-        except OSError:
+        except OSError as err:
+            log.debug("Disk usage telemetry failed for %s: %s", disk_path, err)
             disk_used_gb, disk_total_gb, disk_pct = 0.0, 0.0, 0.0
 
         return {

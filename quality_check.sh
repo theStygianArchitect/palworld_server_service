@@ -7,7 +7,16 @@ app_directory_list=(
   app/*.py
   tests/*.py
 )
-test_directory="tests"
+run_ast_exception_audit() {
+  echo ">>> Starting AST exception and diagnostic logging audit..."
+  uv run python scripts/audit_exceptions.py app
+  exit_code=$?
+  if [ ${exit_code} -ne 0 ]; then
+    echo "[-] AST exception audit failed: unlogged or empty exceptions detected."
+    exit ${exit_code}
+  fi
+  echo "[+] Passed AST exception audit."
+}
 
 run_bandit_check() {
   echo ">>> [1/7] Starting bandit security check..."
@@ -190,10 +199,12 @@ quality_check() {
   echo "========================================================================="
   echo " Running Master Quality Suite"
   echo "========================================================================="
+  run_ast_exception_audit
   run_dependency_check
   run_bandit_check
   run_ruff_check
   run_mypy_check
+  run_pydocstyle_check
   run_coverage
   run_multi_python_matrix
   echo "========================================================================="
