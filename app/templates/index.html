@@ -654,7 +654,12 @@
       </span>
       <span id="countdownTimerText" class="text-base font-black text-amber-400">00:00</span>
     </div>
-    <p id="countdownMsg" class="text-[11px] text-amber-300 leading-snug">Notice broadcast sent...</p>
+    <p id="countdownMsg" class="text-[11px] text-amber-300 leading-snug mb-3">Notice broadcast sent...</p>
+    <div id="countdownActions" class="flex justify-end pt-2 border-t border-amber-500/30">
+      <button id="cancelRebootBtn" onclick="cancelReboot()" class="px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-lg shadow-rose-950/50">
+        🛑 Cancel Reboot
+      </button>
+    </div>
   </div>
 
   <!-- Mobile / Quick Copy Modal -->
@@ -1517,14 +1522,17 @@
 
     function updateLifecycle(state) {
       const banner = document.getElementById('countdownBanner');
+      const cancelBtn = document.getElementById('cancelRebootBtn');
       if (state.phase === 'COUNTDOWN') {
         banner.classList.remove('hidden');
+        if (cancelBtn) cancelBtn.classList.remove('hidden');
         const mins = Math.floor(state.remaining_seconds / 60);
         const secs = state.remaining_seconds % 60;
         document.getElementById('countdownTimerText').innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
         document.getElementById('countdownMsg').innerText = state.current_broadcast || 'Reboot sequence initiated...';
       } else if (state.phase === 'SAVING' || state.phase === 'MAINTENANCE' || state.phase === 'PROBING') {
         banner.classList.remove('hidden');
+        if (cancelBtn) cancelBtn.classList.add('hidden');
         document.getElementById('countdownTimerText').innerText = state.phase;
         document.getElementById('countdownMsg').innerText = state.current_broadcast || 'Processing server restart...';
       } else {
@@ -1559,6 +1567,26 @@
         }
       } catch (err) {
         showAlert('Network error while requesting reboot.', true);
+      }
+    }
+
+    async function cancelReboot() {
+      const reason = prompt('Enter cancellation reason (optional announcement to players & Discord):', '');
+      if (reason === null) return;
+      try {
+        const res = await fetch('/api/service/reboot/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: reason })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          showAlert(data.message || 'Server reboot countdown cancelled successfully.');
+        } else {
+          showAlert(data.detail || 'Could not cancel reboot.', true);
+        }
+      } catch (err) {
+        showAlert('Network error while cancelling reboot.', true);
       }
     }
 

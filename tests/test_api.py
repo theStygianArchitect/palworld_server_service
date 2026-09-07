@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, engine
 
 
 @pytest.fixture
@@ -181,3 +181,30 @@ def test_api_network_diagnostics_route(client: TestClient):
         assert data["status"] == "success"
         assert data["data"]["verdict"] == "CLEAN"
         assert data["data"]["gateway_ping_avg_ms"] == 0.45
+
+
+def test_api_reboot_cancel_endpoint(client: TestClient):
+    # 1. 409 Conflict when engine is IDLE
+    with patch.object(engine, "lifecycle_state", {"phase": "IDLE"}):
+        res = client.post("/api/service/reboot/cancel", json={"reason": "Not needed"})
+        assert res.status_code == 409
+        assert "Cannot cancel reboot during phase 'IDLE'" in res.json()["detail"]
+
+    # 2. 200 OK when engine is in COUNTDOWN phase
+    with patch.object(engine, "lifecycle_state", {"phase": "COUNTDOWN"}), patch.object(
+        engine, "cancel_countdown", new_callable=AsyncMock, return_value=True
+    ) as mock_cancel:
+        res = client.post("/api/service/reboot/cancel", json={"reason": "Boss fight underway"})
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+        assert "Server reboot countdown cancelled successfully." in res.json()["message"]
+        mock_cancel.assert_awaited_once_with(reason="Boss fight underway")
+
+    # 3. 200 OK via alias /api/reboot/cancel with empty payload
+    with patch.object(engine, "lifecycle_state", {"phase": "COUNTDOWN"}), patch.object(
+        engine, "cancel_countdown", new_callable=AsyncMock, return_value=True
+    ) as mock_cancel:
+        res = client.post("/api/reboot/cancel")
+        assert res.status_code == 200
+        assert res.json()["status"] == "success"
+        mock_cancel.assert_awaited_once_with(reason="")

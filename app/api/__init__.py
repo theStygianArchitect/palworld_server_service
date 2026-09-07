@@ -7,6 +7,7 @@ from .schemas import (
     PlayerBanRequest,
     PlayerKickRequest,
     PlayerWarnRequest,
+    RebootCancelRequest,
     RebootRequest,
     SettingsRestoreRequest,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "PlayerBanRequest",
     "PlayerKickRequest",
     "PlayerWarnRequest",
+    "RebootCancelRequest",
     "RebootRequest",
     "SettingsRestoreRequest",
 ]

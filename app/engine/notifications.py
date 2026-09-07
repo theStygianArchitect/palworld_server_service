@@ -189,6 +189,30 @@ class DiscordNotifier:
             color=self.COLOR_SUCCESS,
         )
 
+    async def notify_reboot_cancelled(self, server_name: str = "", reason: str = "") -> bool:
+        """Sends an announcement when a scheduled server reboot countdown is cancelled.
+
+        Args:
+            server_name (str): Dedicated server display name.
+            reason (str): Optional cancellation reason or note.
+
+        Returns:
+            bool: True if successfully delivered to Discord.
+        """
+        desc = (
+            "The scheduled server restart has been **CANCELLED** by an administrator."
+            " Gameplay may continue uninterrupted."
+        )
+        if reason:
+            desc = f"**Reason:** {reason}\n\n{desc}"
+
+        return await self.send_embed(
+            title="🛑 Server Reboot Cancelled",
+            description=desc,
+            color=self.COLOR_INFO,
+            footer=f"Server: {server_name or 'Palworld Dedicated Server'}",
+        )
+
     async def notify_player_action(self, action: str, player_id: str, reason: str = "") -> bool:
         """Logs an administrative player moderation action (kick/ban) to Discord.
 

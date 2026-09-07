@@ -74,6 +74,14 @@ class EngineConfig:
     paths: EnginePaths = field(default_factory=EnginePaths)
 
 
+@dataclass
+class CancellationControl:
+    """Encapsulates cancellation signaling and administrative reason for countdowns."""
+
+    event: asyncio.Event = field(default_factory=asyncio.Event)
+    reason: str = ""
+
+
 class PalEngine:
     """Core orchestrator for Palworld REST API, systemd operations, and reboot lifecycle.
 
@@ -130,6 +138,7 @@ class PalEngine:
         self.tracker: CommunityTracker = CommunityTracker(self.server_name, self.domain)
         self.notifier: DiscordNotifier = DiscordNotifier(self.config.discord_webhook_url)
         self._lifecycle_lock: asyncio.Lock = asyncio.Lock()
+        self._cancel_state: CancellationControl = CancellationControl()
 
         self.lifecycle_state: LifecycleState = {
             "phase": "IDLE",
@@ -478,16 +487,41 @@ class PalEngine:
         if not touched_any:
             log.error("Could not write SteamCMD update flag to any candidate location!")
 
+    def _clear_update_flags(self) -> None:
+        """Removes candidate SteamCMD update flag files across host locations upon cancellation."""
+        candidate_flags = [
+            self.update_flag,
+            Path("/var/lib/palmanager/update_requested"),
+            Path("/home/steam/.update_requested"),
+        ]
+        for flag_path in candidate_flags:
+            if flag_path.exists():
+                try:
+                    flag_path.unlink()
+                    log.info("Cleared SteamCMD update flag at: %s", flag_path)
+                except PermissionError as err:
+                    log.warning("Permission denied removing update flag at %s: %s", flag_path, err)
+                except OSError as err:
+                    log.warning("OS error removing update flag at %s: %s", flag_path, err)
+
     async def _run_countdown_loop(
         self,
         countdown_seconds: int,
         trigger_update: bool,
         update_version_tag: str,
         custom_message: str,
-    ) -> None:
-        """Runs the tick-by-tick countdown broadcast loop."""
+    ) -> bool:
+        """Runs the tick-by-tick countdown broadcast loop.
+
+        Returns:
+            bool: True if countdown completed naturally, False if cancelled.
+        """
         remaining = countdown_seconds
         while remaining > 0:
+            if self._cancel_state.event.is_set():
+                log.info("Reboot countdown loop detected cancellation signal at %d seconds remaining.", remaining)
+                return False
+
             self.lifecycle_state["remaining_seconds"] = remaining
             if remaining in COUNTDOWN_ALL_INTERVALS or remaining == countdown_seconds:
                 time_str = self.format_countdown_string(remaining)
@@ -509,8 +543,15 @@ class PalEngine:
                     )
 
             await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
-            await asyncio.sleep(1)
+            try:
+                await asyncio.wait_for(self._cancel_state.event.wait(), timeout=1.0)
+                log.info("Reboot countdown loop awakened by cancellation event.")
+                return False
+            except TimeoutError:
+                log.debug("Countdown tick elapsed; remaining=%d", remaining - 1)
             remaining -= 1
+
+        return True
 
     async def _restart_and_await_readiness(self) -> None:
         """Saves world state, issues systemctl restart, and probes engine readiness."""
@@ -588,6 +629,8 @@ class PalEngine:
         self._check_and_acquire_lock()
         async with self._lifecycle_lock:
             try:
+                self._cancel_state.event.clear()
+                self._cancel_state.reason = ""
                 if trigger_update:
                     self._set_update_flags()
 
@@ -600,10 +643,43 @@ class PalEngine:
                 }
                 await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
 
-                await self._run_countdown_loop(
+                completed = await self._run_countdown_loop(
                     countdown_seconds, trigger_update, update_version_tag, custom_message
                 )
-                await self._restart_and_await_readiness()
+                if completed:
+                    await self._restart_and_await_readiness()
+                else:
+                    log.info("Reboot countdown was cancelled by administrator. Aborting reboot procedure.")
+                    cancel_msg = "Server restart CANCELLED."
+                    if self._cancel_state.reason:
+                        cancel_msg = f"Server restart CANCELLED: {self._cancel_state.reason}"
+                    await self.send_broadcast(cancel_msg, mirror_discord=False)
+                    await self.notifier.notify_reboot_cancelled(
+                        server_name=self.server_name or "Palworld Dedicated Server",
+                        reason=self._cancel_state.reason,
+                    )
+                    self._clear_update_flags()
             finally:
                 self._release_reboot_lock()
                 await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+
+    async def cancel_countdown(self, reason: str = "") -> bool:
+        """Signals cancellation of an active reboot countdown sequence.
+
+        Args:
+            reason (str): Optional administrative explanation for the cancellation.
+
+        Returns:
+            bool: True if cancellation signal was successfully dispatched; False if not in COUNTDOWN phase.
+        """
+        if self.lifecycle_state.get("phase") != "COUNTDOWN":
+            log.warning(
+                "Attempted to cancel reboot while not in COUNTDOWN phase (current phase: %s).",
+                self.lifecycle_state.get("phase"),
+            )
+            return False
+
+        self._cancel_state.reason = reason
+        self._cancel_state.event.set()
+        log.info("Dispatched reboot countdown cancellation signal (reason: %r).", reason)
+        return True

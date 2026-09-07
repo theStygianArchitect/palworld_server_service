@@ -4,6 +4,8 @@
 # pylint: disable=unused-argument
 # Rationale: Mock coroutines and monkeypatch fixtures must accept standard signature arguments.
 
+import asyncio
+
 import httpx
 import pytest
 
@@ -114,3 +116,68 @@ async def test_pal_engine_execute_countdown_and_reboot_fast(monkeypatch, tmp_pat
     assert engine.lifecycle_state["phase"] == "IDLE"
     assert not lock_file.exists()
     assert update_flag.exists()
+
+
+@pytest.mark.asyncio
+async def test_pal_engine_cancel_countdown(monkeypatch, tmp_path):
+    lock_file = tmp_path / "palworld_reboot.lock"
+    update_flag = tmp_path / ".update_requested"
+
+    engine = PalEngine(
+        admin_password="test_password",  # nosec B105,B106
+        rest_port=8212,
+        lock_file=lock_file,
+        update_flag=update_flag,
+    )
+
+    # 1. Cancelling when IDLE returns False
+    assert await engine.cancel_countdown(reason="Not running") is False
+
+    broadcasts: list[str] = []
+
+    async def mock_broadcast(msg, mirror_discord=False):
+        broadcasts.append(msg)
+        return True
+
+    cancelled_notifs: list[tuple[str, str]] = []
+
+    async def mock_notify_cancelled(server_name="", reason=""):
+        cancelled_notifs.append((server_name, reason))
+        return True
+
+    monkeypatch.setattr(engine, "send_broadcast", mock_broadcast)
+    monkeypatch.setattr(engine.notifier, "notify_reboot_cancelled", mock_notify_cancelled)
+
+    # Start countdown in background task
+    countdown_task = asyncio.create_task(
+        engine.execute_countdown_and_reboot(
+            countdown_seconds=10,
+            trigger_update=True,
+            custom_message="Maintenance test",
+        )
+    )
+
+    # Yield control until engine enters COUNTDOWN phase
+    for _ in range(50):
+        if engine.lifecycle_state.get("phase") == "COUNTDOWN":
+            break
+        await asyncio.sleep(0.01)
+
+    assert engine.lifecycle_state.get("phase") == "COUNTDOWN"
+    assert lock_file.exists()
+    assert update_flag.exists()
+
+    # Cancel countdown
+    cancelled = await engine.cancel_countdown(reason="Boss raid active")
+    assert cancelled is True
+
+    # Await completion of countdown task
+    await countdown_task
+
+    # Verify post-cancellation cleanup
+    assert engine.lifecycle_state.get("phase") == "IDLE"
+    assert not lock_file.exists()
+    assert not update_flag.exists()
+    assert any("CANCELLED: Boss raid active" in b for b in broadcasts)
+    assert len(cancelled_notifs) == 1
+    assert cancelled_notifs[0][1] == "Boss raid active"

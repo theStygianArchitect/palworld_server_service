@@ -12,6 +12,7 @@ from app.api.schemas import (
     PlayerBanRequest,
     PlayerKickRequest,
     PlayerWarnRequest,
+    RebootCancelRequest,
     RebootRequest,
     SettingsRestoreRequest,
 )
@@ -74,6 +75,9 @@ def test_isolated_request_schemas():
 
     restore = SettingsRestoreRequest(commit_hash="a1b2c3d")
     assert restore.commit_hash == "a1b2c3d"
+
+    cancel = RebootCancelRequest(reason="  Raid event in progress \n\t ")
+    assert cancel.reason == "Raid event in progress"
 
 
 def test_domain_types_instantiation():

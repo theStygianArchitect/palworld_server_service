@@ -27,6 +27,7 @@ from app.api.schemas import (
     PlayerBanRequest,
     PlayerKickRequest,
     PlayerWarnRequest,
+    RebootCancelRequest,
     RebootRequest,
 )
 from app.config_manager.parser import SETTING_METADATA
@@ -431,6 +432,41 @@ async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks) -> dict[st
         payload.custom_message,
     )
     return {"status": "success", "message": f"Countdown sequence ({payload.countdown_seconds}s) initiated."}
+
+
+@app.post("/api/service/reboot/cancel")
+@app.post("/api/reboot/cancel")
+async def cancel_reboot(payload: RebootCancelRequest | None = None) -> dict[str, Any]:
+    """Cancels an active reboot countdown sequence.
+
+    Args:
+        payload (RebootCancelRequest | None): Optional payload with cancellation reason.
+
+    Returns:
+        dict[str, Any]: Success response acknowledging cancellation.
+
+    Raises:
+        HTTPException: If the server is not currently in the COUNTDOWN phase.
+    """
+    phase = engine.lifecycle_state.get("phase", "IDLE")
+    if phase != "COUNTDOWN":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot cancel reboot during phase '{phase}'. Cancellation is only permitted during 'COUNTDOWN'.",
+        )
+
+    reason = payload.reason if payload else ""
+    success = await engine.cancel_countdown(reason=reason)
+    if not success:
+        raise HTTPException(
+            status_code=409,
+            detail="Failed to cancel reboot. Server is no longer in 'COUNTDOWN' phase.",
+        )
+
+    return {
+        "status": "success",
+        "message": "Server reboot countdown cancelled successfully.",
+    }
 
 
 @app.post("/api/players/kick")

@@ -203,6 +203,26 @@ class RebootRequest(BaseModel):
     )
 
 
+class RebootCancelRequest(BaseModel):
+    """Payload for cancelling an active server reboot countdown sequence.
+
+    Attributes:
+        reason (str): Optional administrative explanation for cancelling the restart.
+    """
+
+    reason: str = Field(
+        default="",
+        max_length=200,
+        description="Optional administrative explanation for cancelling the reboot",
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def sanitize_reason(cls, value: str) -> str:
+        """Strips control characters and normalizes whitespace in the cancellation reason."""
+        return re.sub(r"[\r\n\t]+", " ", value).strip()
+
+
 class PlayerKickRequest(BaseModel):
     """Payload for administrative player kick action.
 
