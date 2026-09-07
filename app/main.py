@@ -551,3 +551,27 @@ async def download_logs() -> PlainTextResponse:
         content=content,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@app.post("/api/diagnostics/network-test")
+async def run_network_diagnostics_test() -> dict[str, Any]:
+    """Executes active network, NAT, and rubberbanding diagnostics.
+
+    Evaluates gateway ping/jitter, internet ping/jitter, engine frame rate,
+    and kernel UDP drops to isolate causes of player rubberbanding.
+
+    Returns:
+        dict[str, Any]: Diagnostic results, verdict, and recommendations.
+    """
+    engine_metrics = await engine.get_engine_metrics()
+    fps = float(engine_metrics.get("server_fps", 60.0))
+    frame_time = float(engine_metrics.get("server_frame_time_ms", 16.6))
+
+    diag_result = await engine.tracker.run_network_diagnostics(
+        server_fps=fps,
+        server_frame_time_ms=frame_time,
+    )
+    return {
+        "status": "success",
+        "data": diag_result,
+    }

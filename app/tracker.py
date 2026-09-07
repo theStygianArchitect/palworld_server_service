@@ -28,6 +28,7 @@ from .types import (
     DiscoveryHubPayload,
     HardwareTelemetryInfo,
     LogScraperInfo,
+    NetworkDiagnosticsResult,
     NetworkMatrixInfo,
     PlayerLedgerMatrix,
     PlayerRecord,
@@ -212,6 +213,13 @@ class CommunityTracker:
 
         # 5. Persistent Player Ledger
         self.players_history: dict[str, PlayerRecord] = self._load_player_ledger()
+
+        # 6. Real-time Network Throughput & Saturation State
+        self._last_net_time: float = time.time()
+        self._last_net_bytes_recv: int = 0
+        self._last_net_bytes_sent: int = 0
+        self._cached_rx_kbps: float = 0.0
+        self._cached_tx_kbps: float = 0.0
 
     def _load_session_cache(self) -> None:
         """Loads cached EOS session metadata from disk across service restarts."""
@@ -818,6 +826,39 @@ class CommunityTracker:
             log.debug("Disk usage telemetry failed for %s: %s", disk_path, err)
             disk_used_gb, disk_total_gb, disk_pct = 0.0, 0.0, 0.0
 
+        now = time.time()
+        dt = now - self._last_net_time
+        if dt >= 0.8 and self._last_net_bytes_recv > 0:
+            rx_delta = max(0, net.bytes_recv - self._last_net_bytes_recv)
+            tx_delta = max(0, net.bytes_sent - self._last_net_bytes_sent)
+            self._cached_rx_kbps = round(rx_delta / (1024 * dt), 2)
+            self._cached_tx_kbps = round(tx_delta / (1024 * dt), 2)
+            self._last_net_bytes_recv = net.bytes_recv
+            self._last_net_bytes_sent = net.bytes_sent
+            self._last_net_time = now
+        elif self._last_net_bytes_recv == 0:
+            self._last_net_bytes_recv = net.bytes_recv
+            self._last_net_bytes_sent = net.bytes_sent
+            self._last_net_time = now
+
+        rx_rate_kbps = self._cached_rx_kbps
+        tx_rate_kbps = self._cached_tx_kbps
+        rx_rate_mbps = round((rx_rate_kbps * 8) / 1000, 3)
+        tx_rate_mbps = round((tx_rate_kbps * 8) / 1000, 3)
+
+        combined_mbps = rx_rate_mbps + tx_rate_mbps
+        if combined_mbps >= 50.0:
+            net_traffic_status = "SATURATED"
+        elif combined_mbps >= 15.0:
+            net_traffic_status = "ELEVATED"
+        else:
+            net_traffic_status = "HEALTHY"
+
+        net_dropin = int(getattr(net, "dropin", 0))
+        net_dropout = int(getattr(net, "dropout", 0))
+        net_errin = int(getattr(net, "errin", 0))
+        net_errout = int(getattr(net, "errout", 0))
+
         return {
             "host_ram_used_gb": round(vm.used / (1024**3), 2),
             "host_ram_total_gb": round(vm.total / (1024**3), 2),
@@ -835,6 +876,15 @@ class CommunityTracker:
             "disk_pct": disk_pct,
             "net_bytes_sent": net.bytes_sent,
             "net_bytes_recv": net.bytes_recv,
+            "net_rx_rate_kbps": rx_rate_kbps,
+            "net_tx_rate_kbps": tx_rate_kbps,
+            "net_rx_rate_mbps": rx_rate_mbps,
+            "net_tx_rate_mbps": tx_rate_mbps,
+            "net_dropin": net_dropin,
+            "net_dropout": net_dropout,
+            "net_errin": net_errin,
+            "net_errout": net_errout,
+            "net_traffic_status": net_traffic_status,
         }
 
     async def get_combined_telemetry(
@@ -952,3 +1002,213 @@ class CommunityTracker:
             "a2s_telemetry": a2s_telemetry,
             "security_matrix": security_matrix,
         }
+
+    async def run_network_diagnostics(
+        self,
+        server_fps: float = 60.0,
+        server_frame_time_ms: float = 16.6,
+    ) -> NetworkDiagnosticsResult:
+        """Executes active network, NAT, and game engine diagnostics to pinpoint rubberbanding root causes.
+
+        Tests:
+            1. Router Gateway RTT latency, jitter, and packet loss (5 low-latency probes).
+            2. Public Internet DNS RTT latency, jitter, and packet loss.
+            3. Server FPS / tick starvation cross-referencing.
+            4. Kernel socket buffer drops.
+            5. NAT / DuckDNS alignment.
+
+        Args:
+            server_fps (float): Current game engine frame rate.
+            server_frame_time_ms (float): Current game engine frame time in milliseconds.
+
+        Returns:
+            NetworkDiagnosticsResult: Full diagnostic telemetry, verdict code, and fix recommendations.
+        """
+        gateway_ip = "192.168.1.1"
+        if os.name != "nt":
+            try:
+                route_proc = subprocess.run(
+                    ["ip", "route", "show", "default"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    check=False,
+                )
+                if route_proc.returncode == 0:
+                    match = re.search(r"default via ([\d\.]+)", route_proc.stdout)
+                    if match:
+                        gateway_ip = match.group(1)
+            except OSError as err:
+                log.debug("Could not resolve default gateway via ip route: %s", err)
+
+        # Run gateway probe in thread pool to avoid blocking asyncio event loop
+        gw_avg, gw_jitter, gw_loss = await asyncio.to_thread(_execute_ping_probes, gateway_ip, 5)
+
+        # Run public internet probe (1.1.1.1 Cloudflare DNS)
+        net_avg, net_jitter, net_loss = await asyncio.to_thread(_execute_ping_probes, "1.1.1.1", 5)
+
+        # Inspect kernel UDP drops
+        udp_drops_detected = False
+        try:
+            net_all = psutil.net_io_counters(pernic=True)
+            net_eth = net_all.get("eth0", psutil.net_io_counters())
+            if getattr(net_eth, "dropin", 0) > 0 or getattr(net_eth, "errin", 0) > 0:
+                udp_drops_detected = True
+        except OSError as err:
+            log.debug("Error checking UDP socket counters: %s", err)
+
+        nat_aligned = bool(
+            self.cached_public_ip
+            and self.cached_public_ip != "Detecting..."
+            and self.cached_public_ip != "Unknown"
+            and self.cached_dns_ip != "Unresolved"
+            and self.cached_public_ip == self.cached_dns_ip
+        )
+
+        if server_fps < 25.0 or server_frame_time_ms > 40.0:
+            verdict = "SERVER_TICK_STARVATION"
+            title = "⚠️ Server Engine Tick Lag (Low FPS)"
+            details = (
+                f"The server is ticking at {server_fps:.1f} FPS ({server_frame_time_ms:.1f}ms frame time). "
+                "Palworld movement reconciliation assumes >= 30 FPS. When engine ticks drop below this threshold, "
+                "player positions desynchronize and snap back (rubberbanding), even with zero network latency."
+            )
+            recommendation = (
+                "Lower Pal/Item spawn multipliers (PalSpawnNumRate, DropItemMaxNum), restart the server to clear "
+                "memory fragmentation, or allocate more CPU threads."
+            )
+        elif gw_jitter > 20.0 or gw_loss > 0.0:
+            verdict = "NETWORK_JITTER"
+            title = "⚠️ Local LAN / Router Jitter Detected"
+            details = (
+                f"Local router gateway latency variance is high (Jitter: {gw_jitter:.1f}ms, Loss: {gw_loss:.1f}%). "
+                "This indicates local Wi-Fi interference, powerline ethernet instability, or router CPU saturation."
+            )
+            recommendation = "Connect the server directly via Cat6 Ethernet cable, bypass Wi-Fi repeaters, and check router CPU load."
+        elif net_loss > 2.0 or udp_drops_detected:
+            verdict = "NAT_PACKET_LOSS"
+            title = "⚠️ UDP Packet Drops / NAT State Saturation"
+            details = (
+                f"Detected {net_loss:.1f}% public internet packet loss or kernel UDP drops. Router NAT state tables "
+                "may be overflowing or UDP socket queues are dropping packets."
+            )
+            recommendation = (
+                "Verify router port forwarding for UDP 8211. Increase Linux UDP socket buffer limits "
+                "(sysctl -w net.core.rmem_max=26214400)."
+            )
+        elif net_jitter > 35.0:
+            verdict = "NETWORK_JITTER"
+            title = "⚠️ ISP WAN Bufferbloat / Jitter"
+            details = (
+                f"Local LAN is clean, but public internet ping spikes significantly (Jitter: {net_jitter:.1f}ms). "
+                "Bufferbloat or ISP WAN congestion is causing erratic packet arrival times."
+            )
+            recommendation = (
+                "Enable SQM / Smart Queue Management on your router to eliminate WAN bufferbloat under load."
+            )
+        else:
+            verdict = "CLEAN"
+            title = "🟢 Network & NAT Healthy (No Bottlenecks Detected)"
+            details = (
+                f"Local gateway latency is steady ({gw_avg:.1f}ms, jitter: {gw_jitter:.1f}ms, 0% loss). "
+                f"Internet latency is steady ({net_avg:.1f}ms, jitter: {net_jitter:.1f}ms). "
+                f"Server tickrate is optimal ({server_fps:.1f} FPS, {server_frame_time_ms:.1f}ms). "
+                f"NAT alignment is {'VERIFIED' if nat_aligned else 'PENDING'}."
+            )
+            recommendation = (
+                "Host network, NAT, and engine tick rate are running smoothly. If individual tamers report rubberbanding, "
+                "the bottleneck is on their local ISP, high-latency Wi-Fi, or remote connection."
+            )
+
+        return {
+            "gateway_ip": gateway_ip,
+            "gateway_ping_avg_ms": gw_avg,
+            "gateway_jitter_ms": gw_jitter,
+            "gateway_packet_loss_pct": gw_loss,
+            "internet_ping_avg_ms": net_avg,
+            "internet_jitter_ms": net_jitter,
+            "internet_packet_loss_pct": net_loss,
+            "server_fps": server_fps,
+            "server_frame_time_ms": server_frame_time_ms,
+            "udp_drops_detected": udp_drops_detected,
+            "nat_aligned": nat_aligned,
+            "verdict": verdict,
+            "verdict_title": title,
+            "verdict_details": details,
+            "recommendation": recommendation,
+        }
+
+
+def _execute_ping_probes(target: str, count: int = 5) -> tuple[float, float, float]:
+    """Executes ICMP ping probes returning (avg_rtt_ms, jitter_ms, packet_loss_pct).
+
+    Falls back to TCP socket latency if ICMP ping execution is restricted.
+
+    Args:
+        target (str): Target IP or hostname to ping.
+        count (int): Number of probe samples to send.
+
+    Returns:
+        tuple[float, float, float]: (avg_ms, jitter_ms, loss_pct).
+    """
+    if os.name != "nt":
+        ping_bin = shutil.which("ping") or "/bin/ping"
+        cmd = [ping_bin, "-c", str(count), "-W", "1", target]
+    else:
+        cmd = ["ping", "-n", str(count), "-w", "1000", target]
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=8, check=False)
+        output = proc.stdout
+        loss_match = re.search(r"(\d+(?:\.\d+)?)%\s*(?:packet\s*)?loss", output, re.IGNORECASE)
+        loss_pct = float(loss_match.group(1)) if loss_match else 0.0
+
+        rtt_match = re.search(
+            r"(?:rtt|round-trip)\s+min/avg/max/(?:mdev|stddev)\s*=\s*([\d\.]+)/([\d\.]+)/([\d\.]+)/([\d\.]+)",
+            output,
+            re.IGNORECASE,
+        )
+        if rtt_match:
+            avg_ms = float(rtt_match.group(2))
+            jitter_ms = float(rtt_match.group(4))
+            return (round(avg_ms, 2), round(jitter_ms, 2), round(loss_pct, 1))
+
+        win_match = re.search(
+            r"Minimum\s*=\s*(\d+)ms,\s*Maximum\s*=\s*(\d+)ms,\s*Average\s*=\s*(\d+)ms",
+            output,
+            re.IGNORECASE,
+        )
+        if win_match:
+            min_ms = float(win_match.group(1))
+            max_ms = float(win_match.group(2))
+            avg_ms = float(win_match.group(3))
+            jitter_ms = max(0.0, max_ms - min_ms)
+            return (round(avg_ms, 2), round(jitter_ms, 2), round(loss_pct, 1))
+    except subprocess.TimeoutExpired:
+        log.warning("Ping probe timed out against %s", target)
+        return (999.0, 99.0, 100.0)
+    except OSError as err:
+        log.debug("ICMP ping execution failed against %s: %s", target, err)
+
+    latencies: list[float] = []
+    dropped = 0
+    for _ in range(count):
+        t0 = time.perf_counter()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1.0)
+        try:
+            sock.connect((target, 53 if target in {"1.1.1.1", "8.8.8.8"} else 80))
+            latencies.append((time.perf_counter() - t0) * 1000.0)
+        except OSError:
+            dropped += 1
+        finally:
+            sock.close()
+        time.sleep(0.05)
+
+    if not latencies:
+        return (999.0, 99.0, 100.0)
+
+    avg_ms = sum(latencies) / len(latencies)
+    jitter_ms = max(latencies) - min(latencies)
+    loss_pct = (dropped / count) * 100.0
+    return (round(avg_ms, 2), round(jitter_ms, 2), round(loss_pct, 1))

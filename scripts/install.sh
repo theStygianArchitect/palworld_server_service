@@ -84,7 +84,13 @@ if [ -d "${PAL_CONFIG_DIR}" ]; then
 fi
 
 touch "${STEAM_HOME}/.update_requested" 2>/dev/null || true
-setfacl -m u:"${APP_USER}":rw "${STEAM_HOME}/.update_requested" || true
+chmod 0664 "${STEAM_HOME}/.update_requested" 2>/dev/null || true
+setfacl -m u:"${APP_USER}":rw "${STEAM_HOME}/.update_requested" 2>/dev/null || true
+
+touch /var/lib/palmanager/update_requested 2>/dev/null || true
+chown "${APP_USER}:${APP_USER}" /var/lib/palmanager/update_requested 2>/dev/null || true
+chmod 0664 /var/lib/palmanager/update_requested 2>/dev/null || true
+setfacl -m u:steam:rw /var/lib/palmanager/update_requested 2>/dev/null || true
 echo "[ OK ]"
 
 # 4. Scoped Sudoers Privileges

@@ -229,6 +229,15 @@ class HardwareTelemetryInfo(TypedDict):
         disk_pct (float): Percentage of disk capacity used.
         net_bytes_sent (int): Total network bytes transmitted.
         net_bytes_recv (int): Total network bytes received.
+        net_rx_rate_kbps (float): Real-time incoming throughput in kilobits per second.
+        net_tx_rate_kbps (float): Real-time outgoing throughput in kilobits per second.
+        net_rx_rate_mbps (float): Real-time incoming throughput in megabits per second.
+        net_tx_rate_mbps (float): Real-time outgoing throughput in megabits per second.
+        net_dropin (int): Total incoming packets dropped by network stack.
+        net_dropout (int): Total outgoing packets dropped by network stack.
+        net_errin (int): Total incoming packet errors.
+        net_errout (int): Total outgoing packet errors.
+        net_traffic_status (str): Bandwidth load classification ('HEALTHY', 'ELEVATED', 'SATURATED').
     """
 
     host_ram_used_gb: float
@@ -247,6 +256,53 @@ class HardwareTelemetryInfo(TypedDict):
     disk_pct: float
     net_bytes_sent: int
     net_bytes_recv: int
+    net_rx_rate_kbps: float
+    net_tx_rate_kbps: float
+    net_rx_rate_mbps: float
+    net_tx_rate_mbps: float
+    net_dropin: int
+    net_dropout: int
+    net_errin: int
+    net_errout: int
+    net_traffic_status: str
+
+
+class NetworkDiagnosticsResult(TypedDict):
+    """Authoritative network health, NAT status, and rubberbanding root-cause diagnosis.
+
+    Attributes:
+        gateway_ip (str): Local LAN router gateway IP.
+        gateway_ping_avg_ms (float): Average RTT latency to router gateway.
+        gateway_jitter_ms (float): Latency variance (jitter) to router gateway.
+        gateway_packet_loss_pct (float): Percentage of packet loss to router.
+        internet_ping_avg_ms (float): Average RTT latency to public DNS target.
+        internet_jitter_ms (float): Latency variance to public internet target.
+        internet_packet_loss_pct (float): Percentage of packet loss to internet.
+        server_fps (float): Current game engine tick rate in frames per second.
+        server_frame_time_ms (float): Engine tick duration in milliseconds.
+        udp_drops_detected (bool): Whether OS or network interface is dropping UDP packets.
+        nat_aligned (bool): Whether WAN IP matches public DuckDNS resolution.
+        verdict (str): Root-cause diagnosis code ('CLEAN', 'NETWORK_JITTER', 'NAT_PACKET_LOSS', 'SERVER_TICK_STARVATION').
+        verdict_title (str): Human-readable verdict headline.
+        verdict_details (str): Detailed technical root cause explanation.
+        recommendation (str): Recommended action to eliminate rubberbanding.
+    """
+
+    gateway_ip: str
+    gateway_ping_avg_ms: float
+    gateway_jitter_ms: float
+    gateway_packet_loss_pct: float
+    internet_ping_avg_ms: float
+    internet_jitter_ms: float
+    internet_packet_loss_pct: float
+    server_fps: float
+    server_frame_time_ms: float
+    udp_drops_detected: bool
+    nat_aligned: bool
+    verdict: str
+    verdict_title: str
+    verdict_details: str
+    recommendation: str
 
 
 class CombinedTelemetryPayload(TypedDict):

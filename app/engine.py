@@ -59,10 +59,14 @@ def _resolve_default_ini_path() -> Path:
 
 
 def _resolve_default_update_flag() -> Path:
-    """Returns the production steam update flag path if accessible, else falls back to ~/.palmanager."""
-    steam_flag = Path("/home/steam/.update_requested")
-    if os.name != "nt" and Path("/home/steam").exists():
-        return steam_flag
+    """Returns the production steam update flag path, prioritizing /var/lib/palmanager then /home/steam."""
+    if os.name != "nt":
+        palmanager_flag = Path("/var/lib/palmanager/update_requested")
+        if palmanager_flag.parent.exists():
+            return palmanager_flag
+        steam_flag = Path("/home/steam/.update_requested")
+        if steam_flag.parent.exists():
+            return steam_flag
     return Path.home() / ".palmanager" / ".update_requested"
 
 
@@ -467,8 +471,24 @@ class PalEngine:
 
             try:
                 if trigger_update:
-                    self.update_flag.parent.mkdir(parents=True, exist_ok=True)
-                    self.update_flag.touch()
+                    candidate_flags = [
+                        self.update_flag,
+                        Path("/var/lib/palmanager/update_requested"),
+                        Path("/home/steam/.update_requested"),
+                    ]
+                    touched_any = False
+                    for flag_path in candidate_flags:
+                        try:
+                            flag_path.parent.mkdir(parents=True, exist_ok=True)
+                            flag_path.touch()
+                            touched_any = True
+                            log.info("Set SteamCMD update flag at: %s", flag_path)
+                        except PermissionError as err:
+                            log.warning("Permission denied writing update flag at %s: %s", flag_path, err)
+                        except OSError as err:
+                            log.warning("OS error writing update flag at %s: %s", flag_path, err)
+                    if not touched_any:
+                        log.error("Could not write SteamCMD update flag to any candidate location!")
 
                 self.lifecycle_state = {
                     "phase": "COUNTDOWN",

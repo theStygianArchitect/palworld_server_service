@@ -173,3 +173,33 @@ def test_api_logs_routes(client: TestClient):
         assert download_res.status_code == 200
         assert "attachment" in download_res.headers.get("content-disposition", "")
         assert "Engine ready" in download_res.text
+
+
+def test_api_network_diagnostics_route(client: TestClient):
+    with patch(
+        "app.main.engine.tracker.run_network_diagnostics",
+        new_callable=AsyncMock,
+        return_value={
+            "gateway_ip": "192.168.1.1",
+            "gateway_ping_avg_ms": 0.45,
+            "gateway_jitter_ms": 0.12,
+            "gateway_packet_loss_pct": 0.0,
+            "internet_ping_avg_ms": 11.2,
+            "internet_jitter_ms": 1.4,
+            "internet_packet_loss_pct": 0.0,
+            "server_fps": 60.0,
+            "server_frame_time_ms": 16.6,
+            "udp_drops_detected": False,
+            "nat_aligned": True,
+            "verdict": "CLEAN",
+            "verdict_title": "🟢 Network & NAT Healthy",
+            "verdict_details": "Optimal network stack.",
+            "recommendation": "None needed.",
+        },
+    ):
+        res = client.post("/api/diagnostics/network-test")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "success"
+        assert data["data"]["verdict"] == "CLEAN"
+        assert data["data"]["gateway_ping_avg_ms"] == 0.45

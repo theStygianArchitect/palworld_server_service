@@ -347,14 +347,14 @@
           </div>
         </div>
 
-        <!-- Hardware & Steam A2S Row -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
+        <!-- Hardware & Network Telemetry Row -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-mono">
           
-          <!-- Steam A2S UDP Latency (Option B) -->
+          <!-- Steam A2S UDP Latency -->
           <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
             <div class="flex justify-between items-center">
               <span class="text-slate-300 font-bold flex items-center gap-1">
-                <span>⚡</span> Steam A2S UDP Ping
+                <span>⚡</span> Steam A2S Latency
               </span>
               <span id="a2sStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 text-emerald-300">LIVE</span>
             </div>
@@ -368,7 +368,7 @@
           <!-- Cgroup 14GB RAM Cap -->
           <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
             <div class="flex justify-between items-center">
-              <span class="text-slate-300 font-bold">Cgroup Game RAM Cap</span>
+              <span class="text-slate-300 font-bold">Cgroup Game RAM</span>
               <span id="hwCgroupRam" class="text-indigo-400 font-bold">0.0 / 14.0 GB</span>
             </div>
             <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -390,8 +390,34 @@
               <div id="hwDiskBar" class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
             </div>
             <div class="flex justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-              <span>Network RX: <strong id="hwNetRx" class="text-slate-200">-- MB</strong></span>
-              <span>Network TX: <strong id="hwNetTx" class="text-slate-200">-- MB</strong></span>
+              <span>Backups: <strong class="text-slate-200">10-day retention</strong></span>
+              <span>FS Status: <strong class="text-emerald-400">Healthy</strong></span>
+            </div>
+          </div>
+
+          <!-- Network Traffic & NAT Health -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-slate-300 font-bold">Network Traffic & NAT</span>
+              <span id="hwNetStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700">HEALTHY</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-[11px] font-mono">
+              <div class="bg-dark-900 p-2 rounded-lg border border-slate-800/80">
+                <span class="text-slate-400 block text-[10px]">IN (RX)</span>
+                <strong id="hwNetRxRate" class="text-emerald-400 text-sm">0.0 KB/s</strong>
+                <span id="hwNetRxTotal" class="text-[10px] text-slate-500 block">-- MB total</span>
+              </div>
+              <div class="bg-dark-900 p-2 rounded-lg border border-slate-800/80">
+                <span class="text-slate-400 block text-[10px]">OUT (TX)</span>
+                <strong id="hwNetTxRate" class="text-indigo-400 text-sm">0.0 KB/s</strong>
+                <span id="hwNetTxTotal" class="text-[10px] text-slate-500 block">-- MB total</span>
+              </div>
+            </div>
+            <div class="flex justify-between items-center text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+              <span>Drops: <strong id="hwNetDropsErrors" class="text-slate-200">0 in / 0 out</strong></span>
+              <button onclick="openNetworkDiagModal()" class="px-2 py-0.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-[10px] font-bold transition flex items-center gap-1">
+                <span>⚡</span> Test NAT / Lag
+              </button>
             </div>
           </div>
 
@@ -594,19 +620,21 @@
         <div>
           <label class="block text-[11px] font-mono uppercase text-slate-400 mb-1">In-Game Notice Duration</label>
           <select id="countdownSelect" class="w-full bg-dark-950 border border-slate-700 rounded-lg p-2.5 text-xs sm:text-sm">
-            <option value="600" selected>10 Minutes (Recommended)</option>
-            <option value="300">5 Minutes</option>
-            <option value="180">3 Minutes</option>
-            <option value="60">1 Minute</option>
+            <option value="0">Immediate (0 Seconds - Instant Restart & Update)</option>
+            <option value="10">10 Seconds (Quick Restart)</option>
             <option value="30">30 Seconds</option>
+            <option value="60">1 Minute</option>
+            <option value="180">3 Minutes</option>
+            <option value="300">5 Minutes</option>
+            <option value="600" selected>10 Minutes (Recommended)</option>
           </select>
         </div>
 
-        <div class="flex items-center gap-3 p-3 bg-dark-950 border border-slate-800 rounded-lg">
-          <input type="checkbox" id="updateCheck" class="w-4 h-4 rounded text-brand-600 bg-slate-800 border-slate-700">
+        <div class="flex items-start gap-3 p-3 bg-dark-950 border border-slate-800 rounded-lg">
+          <input type="checkbox" id="updateCheck" class="w-4 h-4 mt-0.5 rounded text-brand-600 bg-slate-800 border-slate-700">
           <label for="updateCheck" class="text-xs text-slate-300">
-            <span class="font-semibold block">Execute SteamCMD Update</span>
-            Hold off if console client patches are still pending cert.
+            <span class="font-semibold block text-emerald-400">Execute SteamCMD Update (+force_install_dir)</span>
+            Downloads and verifies latest Palworld server build from Steam.
           </label>
         </div>
       </div>
@@ -649,6 +677,86 @@
         </button>
         <button onclick="closeCopyModal()" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">
           Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NAT & Rubberband Diagnostics Modal -->
+  <div id="netDiagModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-dark-900 border border-slate-800 rounded-2xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold flex items-center gap-2 text-slate-200">
+          <span>⚡</span> NAT & Rubberband Root-Cause Analyzer
+        </h3>
+        <button onclick="closeNetworkDiagModal()" class="text-slate-400 hover:text-white text-sm font-bold p-1">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-400">
+        Active 5-probe test evaluating router gateway RTT, public WAN jitter, kernel UDP drops, and server tickrate to diagnose player rubberbanding.
+      </p>
+
+      <!-- Loading State -->
+      <div id="diagLoading" class="py-8 text-center space-y-3">
+        <div class="inline-block animate-spin text-2xl">🔄</div>
+        <p class="text-xs font-mono text-amber-400 animate-pulse">Running 5-probe ICMP/UDP latency sweeps & inspecting socket queues...</p>
+      </div>
+
+      <!-- Results Container -->
+      <div id="diagResults" class="hidden space-y-4 font-mono text-xs">
+        <!-- Verdict Banner -->
+        <div id="diagVerdictBox" class="p-3.5 rounded-xl border">
+          <div class="flex items-center justify-between mb-1">
+            <span id="diagVerdictTitle" class="font-bold text-sm">--</span>
+            <span id="diagVerdictBadge" class="px-2 py-0.5 rounded text-[10px] font-bold">--</span>
+          </div>
+          <p id="diagVerdictDetails" class="text-[11px] leading-relaxed mt-1 text-slate-300">--</p>
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          <div class="p-2.5 bg-dark-950 border border-slate-800 rounded-lg">
+            <span class="text-[10px] text-slate-400 block uppercase">Router Gateway</span>
+            <span id="diagGwPing" class="font-bold text-slate-200 text-sm">-- ms</span>
+            <span id="diagGwJitter" class="text-[10px] text-slate-500 block truncate">Jitter: -- ms</span>
+          </div>
+
+          <div class="p-2.5 bg-dark-950 border border-slate-800 rounded-lg">
+            <span class="text-[10px] text-slate-400 block uppercase">Internet (1.1.1.1)</span>
+            <span id="diagNetPing" class="font-bold text-slate-200 text-sm">-- ms</span>
+            <span id="diagNetJitter" class="text-[10px] text-slate-500 block truncate">Jitter: -- ms</span>
+          </div>
+
+          <div class="p-2.5 bg-dark-950 border border-slate-800 rounded-lg">
+            <span class="text-[10px] text-slate-400 block uppercase">Server Tickrate</span>
+            <span id="diagFps" class="font-bold text-emerald-400 text-sm">-- FPS</span>
+            <span id="diagFrameTime" class="text-[10px] text-slate-500 block truncate">Tick: -- ms</span>
+          </div>
+        </div>
+
+        <!-- Secondary Metrics -->
+        <div class="p-2.5 bg-dark-950 border border-slate-800 rounded-lg space-y-1 text-[11px]">
+          <div class="flex justify-between"><span class="text-slate-400">Gateway Packet Loss:</span><strong id="diagGwLoss" class="text-slate-200">0.0%</strong></div>
+          <div class="flex justify-between"><span class="text-slate-400">Internet Packet Loss:</span><strong id="diagNetLoss" class="text-slate-200">0.0%</strong></div>
+          <div class="flex justify-between"><span class="text-slate-400">Kernel UDP Drops:</span><strong id="diagUdpDrops" class="text-emerald-400">None Detected</strong></div>
+          <div class="flex justify-between"><span class="text-slate-400">DuckDNS A-Record NAT:</span><strong id="diagNatAlign" class="text-emerald-400">Aligned</strong></div>
+        </div>
+
+        <!-- Actionable Recommendation -->
+        <div class="p-3 bg-dark-950 border border-indigo-900/50 rounded-xl space-y-1">
+          <span class="text-[10px] uppercase font-bold text-indigo-400 flex items-center gap-1">
+            <span>💡</span> Recommended Action
+          </span>
+          <p id="diagRecommendation" class="text-[11px] text-slate-300 leading-snug">--</p>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+        <button onclick="executeNetworkDiagTest()" id="diagRetestBtn" class="px-3.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition flex items-center gap-1.5">
+          <span>🔄</span> Retest Now
+        </button>
+        <button onclick="closeNetworkDiagModal()" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition">
+          Close
         </button>
       </div>
     </div>
@@ -1273,6 +1381,11 @@
       const hostSwapTotal = hw.swap_total_gb !== undefined ? hw.swap_total_gb : (hw.host_swap_total_gb || 0);
       const netRxMb = hw.net_bytes_recv !== undefined ? Math.round(hw.net_bytes_recv / (1024 * 1024)) : (hw.net_bytes_recv_mb || 0);
       const netTxMb = hw.net_bytes_sent !== undefined ? Math.round(hw.net_bytes_sent / (1024 * 1024)) : (hw.net_bytes_sent_mb || 0);
+      const rxKbps = hw.net_rx_rate_kbps !== undefined ? hw.net_rx_rate_kbps : 0.0;
+      const txKbps = hw.net_tx_rate_kbps !== undefined ? hw.net_tx_rate_kbps : 0.0;
+      const netStatus = hw.net_traffic_status || "HEALTHY";
+      const netDropin = hw.net_dropin || 0;
+      const netDropout = hw.net_dropout || 0;
       const cpuAvg = hw.cpu_avg_pct !== undefined ? hw.cpu_avg_pct : (hw.cpu_avg || 0);
       const cpuCores = hw.cpu_cores || [];
       const diskUsed = hw.disk_used_gb !== undefined ? hw.disk_used_gb : (data.disk ? data.disk.used_gb : 0);
@@ -1283,8 +1396,30 @@
       if (document.getElementById('hwCgroupBar')) document.getElementById('hwCgroupBar').style.width = `${Math.min(cgroupPct, 100)}%`;
       if (document.getElementById('hwHostRam')) document.getElementById('hwHostRam').innerText = `${hostRamUsed} / ${hostRamTotal} GB`;
       if (document.getElementById('hwHostSwap')) document.getElementById('hwHostSwap').innerText = `${hostSwapUsed} / ${hostSwapTotal} GB`;
-      if (document.getElementById('hwNetRx')) document.getElementById('hwNetRx').innerText = `${netRxMb} MB`;
-      if (document.getElementById('hwNetTx')) document.getElementById('hwNetTx').innerText = `${netTxMb} MB`;
+      
+      // Network Traffic Card Updates
+      if (document.getElementById('hwNetRxRate')) {
+        document.getElementById('hwNetRxRate').innerText = rxKbps >= 1024 ? `${(rxKbps / 1024).toFixed(2)} MB/s` : `${rxKbps.toFixed(1)} KB/s`;
+      }
+      if (document.getElementById('hwNetTxRate')) {
+        document.getElementById('hwNetTxRate').innerText = txKbps >= 1024 ? `${(txKbps / 1024).toFixed(2)} MB/s` : `${txKbps.toFixed(1)} KB/s`;
+      }
+      if (document.getElementById('hwNetRxTotal')) document.getElementById('hwNetRxTotal').innerText = `${netRxMb} MB total`;
+      if (document.getElementById('hwNetTxTotal')) document.getElementById('hwNetTxTotal').innerText = `${netTxMb} MB total`;
+      if (document.getElementById('hwNetDropsErrors')) document.getElementById('hwNetDropsErrors').innerText = `${netDropin} in / ${netDropout} out`;
+      
+      if (document.getElementById('hwNetStatusBadge')) {
+        const badge = document.getElementById('hwNetStatusBadge');
+        badge.innerText = netStatus;
+        if (netStatus === 'SATURATED') {
+          badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-red-950 text-red-300 border border-red-700 animate-pulse";
+        } else if (netStatus === 'ELEVATED') {
+          badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-700";
+        } else {
+          badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700";
+        }
+      }
+
       if (document.getElementById('hwCpuAvg')) document.getElementById('hwCpuAvg').innerText = `Avg: ${cpuAvg}%`;
 
       const coresGrid = document.getElementById('cpuCoresGrid');
@@ -1524,6 +1659,82 @@
         loadSettings();
       } catch (err) {
         showAlert('Rollback failed.', true);
+      }
+    }
+
+    function openNetworkDiagModal() {
+      document.getElementById('netDiagModal').classList.remove('hidden');
+      executeNetworkDiagTest();
+    }
+
+    function closeNetworkDiagModal() {
+      document.getElementById('netDiagModal').classList.add('hidden');
+    }
+
+    async function executeNetworkDiagTest() {
+      const loading = document.getElementById('diagLoading');
+      const results = document.getElementById('diagResults');
+      const retestBtn = document.getElementById('diagRetestBtn');
+      if (loading) loading.classList.remove('hidden');
+      if (results) results.classList.add('hidden');
+      if (retestBtn) retestBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/diagnostics/network-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const json = await res.json();
+        if (json.status === 'success' && json.data) {
+          const d = json.data;
+          document.getElementById('diagVerdictTitle').innerText = d.verdict_title;
+          document.getElementById('diagVerdictDetails').innerText = d.verdict_details;
+          document.getElementById('diagRecommendation').innerText = d.recommendation;
+          
+          document.getElementById('diagGwPing').innerText = `${d.gateway_ping_avg_ms} ms`;
+          document.getElementById('diagGwJitter').innerText = `Jitter: ${d.gateway_jitter_ms} ms (${d.gateway_ip})`;
+          document.getElementById('diagGwLoss').innerText = `${d.gateway_packet_loss_pct}%`;
+
+          document.getElementById('diagNetPing').innerText = `${d.internet_ping_avg_ms} ms`;
+          document.getElementById('diagNetJitter').innerText = `Jitter: ${d.internet_jitter_ms} ms`;
+          document.getElementById('diagNetLoss').innerText = `${d.internet_packet_loss_pct}%`;
+
+          document.getElementById('diagFps').innerText = `${d.server_fps} FPS`;
+          document.getElementById('diagFrameTime').innerText = `Tick: ${d.server_frame_time_ms} ms`;
+
+          const udpEl = document.getElementById('diagUdpDrops');
+          udpEl.innerText = d.udp_drops_detected ? "DROPS DETECTED" : "None Detected";
+          udpEl.className = d.udp_drops_detected ? "text-red-400 font-bold" : "text-emerald-400";
+
+          const natEl = document.getElementById('diagNatAlign');
+          natEl.innerText = d.nat_aligned ? "Aligned (WAN Match)" : "Pending Match";
+          natEl.className = d.nat_aligned ? "text-emerald-400 font-bold" : "text-amber-400";
+
+          const box = document.getElementById('diagVerdictBox');
+          const badge = document.getElementById('diagVerdictBadge');
+          badge.innerText = d.verdict;
+
+          if (d.verdict === 'CLEAN') {
+            box.className = "p-3.5 rounded-xl border bg-emerald-950/40 border-emerald-700/60";
+            badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900 text-emerald-300";
+          } else if (d.verdict === 'SERVER_TICK_STARVATION') {
+            box.className = "p-3.5 rounded-xl border bg-amber-950/40 border-amber-700/60";
+            badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900 text-amber-300";
+          } else {
+            box.className = "p-3.5 rounded-xl border bg-red-950/40 border-red-700/60";
+            badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-red-900 text-red-300";
+          }
+
+          if (loading) loading.classList.add('hidden');
+          if (results) results.classList.remove('hidden');
+        } else {
+          showAlert("Network diagnostics test failed to complete.", true);
+        }
+      } catch (err) {
+        console.debug("Network test error:", err);
+        showAlert("Failed to contact network diagnostics endpoint.", true);
+      } finally {
+        if (retestBtn) retestBtn.disabled = false;
       }
     }
 

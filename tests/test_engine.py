@@ -103,3 +103,4 @@ async def test_pal_engine_execute_countdown_and_reboot_fast(monkeypatch, tmp_pat
 
     assert engine.lifecycle_state["phase"] == "IDLE"
     assert not lock_file.exists()
+    assert update_flag.exists()

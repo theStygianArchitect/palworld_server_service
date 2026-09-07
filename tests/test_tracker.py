@@ -48,6 +48,34 @@ def test_tracker_hardware_telemetry():
     assert "host_ram_total_gb" in hw
     assert "cpu_cores" in hw
     assert "cgroup_limit_gb" in hw
+    assert "net_rx_rate_kbps" in hw
+    assert "net_tx_rate_kbps" in hw
+    assert "net_traffic_status" in hw
+    assert "net_dropin" in hw
+    assert "net_dropout" in hw
+
+
+@pytest.mark.asyncio
+async def test_tracker_network_diagnostics():
+    tracker = CommunityTracker("TestServer", "test.duckdns.org")
+
+    with patch("app.tracker._execute_ping_probes", side_effect=[(0.5, 0.2, 0.0), (12.0, 1.5, 0.0)]):
+        diag = await tracker.run_network_diagnostics(server_fps=60.0, server_frame_time_ms=16.6)
+        assert diag["verdict"] == "CLEAN"
+        assert "Healthy" in diag["verdict_title"]
+        assert diag["gateway_ping_avg_ms"] == 0.5
+        assert diag["internet_ping_avg_ms"] == 12.0
+
+    # Test tick starvation verdict
+    with patch("app.tracker._execute_ping_probes", side_effect=[(0.5, 0.2, 0.0), (12.0, 1.5, 0.0)]):
+        diag_starve = await tracker.run_network_diagnostics(server_fps=18.0, server_frame_time_ms=55.0)
+        assert diag_starve["verdict"] == "SERVER_TICK_STARVATION"
+        assert "Low FPS" in diag_starve["verdict_title"]
+
+    # Test high jitter verdict
+    with patch("app.tracker._execute_ping_probes", side_effect=[(0.5, 30.0, 0.0), (12.0, 1.5, 0.0)]):
+        diag_jitter = await tracker.run_network_diagnostics(server_fps=60.0, server_frame_time_ms=16.6)
+        assert diag_jitter["verdict"] == "NETWORK_JITTER"
 
 
 @pytest.mark.asyncio

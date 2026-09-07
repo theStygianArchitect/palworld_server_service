@@ -42,6 +42,11 @@ fi
 if [ -f "${REPO_ROOT}/scripts/palworld-manager.service" ]; then
     cp "${REPO_ROOT}/scripts/palworld-manager.service" /etc/systemd/system/palworld-manager.service
 fi
+if [ -f "${REPO_ROOT}/scripts/palworld-maintenance.sh" ]; then
+    cp "${REPO_ROOT}/scripts/palworld-maintenance.sh" /home/steam/palworld-maintenance.sh
+    chmod 0755 /home/steam/palworld-maintenance.sh
+    chown steam:steam /home/steam/palworld-maintenance.sh 2>/dev/null || true
+fi
 systemctl daemon-reload
 if [ -f "${REPO_ROOT}/scripts/duck.sh" ] && [ -d "/home/steam/duckdns" ]; then
     cp "${REPO_ROOT}/scripts/duck.sh" /home/steam/duckdns/duck.sh
@@ -83,6 +88,20 @@ fi
 mkdir -p /var/lib/palmanager/backups
 chown -R "${APP_USER}:${APP_USER}" /var/lib/palmanager
 chmod -R 0775 /var/lib/palmanager
+
+# Multi-path update flags provisioning
+touch /home/steam/.update_requested 2>/dev/null || true
+chown steam:steam /home/steam/.update_requested 2>/dev/null || true
+chmod 0664 /home/steam/.update_requested 2>/dev/null || true
+
+touch /var/lib/palmanager/update_requested 2>/dev/null || true
+chown "${APP_USER}:${APP_USER}" /var/lib/palmanager/update_requested 2>/dev/null || true
+chmod 0664 /var/lib/palmanager/update_requested 2>/dev/null || true
+
+if command -v setfacl >/dev/null 2>&1; then
+    setfacl -m u:"${APP_USER}":rw /home/steam/.update_requested 2>/dev/null || true
+    setfacl -m u:steam:rw /var/lib/palmanager/update_requested 2>/dev/null || true
+fi
 echo "[ OK ]"
 
 echo -n "[4/5] Updating Python dependencies via uv... "

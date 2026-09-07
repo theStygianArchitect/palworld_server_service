@@ -6,31 +6,70 @@ set -euo pipefail
 # ==============================================================================
 
 LOG_FILE="/home/steam/palserver_maintenance.log"
-SAVED_DIR="/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved"
 BACKUP_DIR="/home/steam/Palworld_backups"
 APP_ID="2394010"
 RETENTION_DAYS="10"
-UPDATE_FLAG_FILE="/home/steam/.update_requested"
+
+# Multi-path update flags (web manager POSIX ACL + steam home fallback)
+UPDATE_FLAG_1="/var/lib/palmanager/update_requested"
+UPDATE_FLAG_2="/home/steam/.update_requested"
+
+# Locate steamcmd binary dynamically
+STEAMCMD_BIN=""
+for candidate in "/usr/games/steamcmd" "/usr/bin/steamcmd" "/home/steam/steamcmd/steamcmd.sh" "/home/steam/.steam/steamcmd/steamcmd.sh"; do
+    if [ -x "$candidate" ]; then
+        STEAMCMD_BIN="$candidate"
+        break
+    fi
+done
+if [ -z "$STEAMCMD_BIN" ]; then
+    STEAMCMD_BIN=$(command -v steamcmd 2>/dev/null || true)
+fi
+
+# Locate PalServer installation directory
+INSTALL_DIR="/home/steam/.steam/steam/steamapps/common/PalServer"
+if [ ! -d "$INSTALL_DIR" ]; then
+    for candidate in "/home/steam/Steam/steamapps/common/PalServer" "/home/steam/PalServer" "/opt/palworld"; do
+        if [ -d "$candidate" ]; then
+            INSTALL_DIR="$candidate"
+            break
+        fi
+    done
+fi
+SAVED_DIR="${INSTALL_DIR}/Pal/Saved"
 
 {
     echo "========================================================="
     echo "Maintenance started on: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Install Directory:      ${INSTALL_DIR}"
+    echo "SteamCMD Binary:        ${STEAMCMD_BIN:-NOT FOUND}"
     echo "========================================================="
 
-    FREE_KB=$(df -k --output=avail "$SAVED_DIR" 2>/dev/null | tail -n1 || echo 99999999)
+    FREE_KB=$(df -k --output=avail "${INSTALL_DIR}" 2>/dev/null | tail -n1 || echo 99999999)
     if [ "$FREE_KB" -lt 5242880 ]; then
         echo "CRITICAL: Less than 5GB disk space available. Aborting maintenance."
         exit 1
     fi
 
-    if [ -f "$UPDATE_FLAG_FILE" ]; then
-        echo "[1/3] Update flag present. Executing SteamCMD update for AppID: $APP_ID..."
-        /usr/games/steamcmd +login anonymous +app_update "$APP_ID" validate +quit
-        if [ $? -eq 0 ]; then
+    UPDATE_REQUESTED=0
+    if [ -f "$UPDATE_FLAG_1" ] || [ -f "$UPDATE_FLAG_2" ]; then
+        UPDATE_REQUESTED=1
+    fi
+
+    if [ "$UPDATE_REQUESTED" -eq 1 ]; then
+        echo "[1/3] Update flag present. Executing SteamCMD update for AppID: ${APP_ID} into ${INSTALL_DIR}..."
+        if [ -z "$STEAMCMD_BIN" ]; then
+            echo "ERROR: steamcmd executable not found in system or home paths. Halting update."
+            exit 1
+        fi
+
+        "$STEAMCMD_BIN" +login anonymous +force_install_dir "${INSTALL_DIR}" +app_update "${APP_ID}" validate +quit
+        STEAM_EXIT=$?
+        if [ $STEAM_EXIT -eq 0 ]; then
             echo "--> SteamCMD update finished successfully."
-            rm -f "$UPDATE_FLAG_FILE"
+            rm -f "$UPDATE_FLAG_1" "$UPDATE_FLAG_2" 2>/dev/null || true
         else
-            echo "ERROR: SteamCMD update failed. Halting."
+            echo "ERROR: SteamCMD update returned exit code: ${STEAM_EXIT}. Halting."
             exit 1
         fi
     else
@@ -41,12 +80,12 @@ UPDATE_FLAG_FILE="/home/steam/.update_requested"
     mkdir -p "$BACKUP_DIR"
     BACKUP_NAME="Palworld_$(date '+%Y-%m-%d_%H-%M-%S').tar.gz"
     if [ -d "$SAVED_DIR" ]; then
-        tar -czvf "${BACKUP_DIR}/${BACKUP_NAME}" "$SAVED_DIR"
+        tar -czvf "${BACKUP_DIR}/${BACKUP_NAME}" -C "${INSTALL_DIR}/Pal" Saved
         echo "--> Backup generated: $BACKUP_NAME"
     fi
 
     echo "[3/3] Pruning backups older than $RETENTION_DAYS days..."
-    find "$BACKUP_DIR" -mtime "+$RETENTION_DAYS" -type f -name "*.tar.gz" -delete -print
+    find "$BACKUP_DIR" -mtime "+$RETENTION_DAYS" -type f -name "*.tar.gz" -delete -print 2>/dev/null || true
     echo "========================================================="
     echo "Maintenance completed on: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "========================================================="
