@@ -10,7 +10,6 @@ import asyncio
 import datetime
 import logging
 import os
-import re
 import shutil
 import subprocess
 import time
@@ -18,28 +17,27 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import httpx
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import get_settings, reload_settings
-from .config_parser import SETTING_METADATA
-from .config_pipeline import ConfigPipeline
-from .engine import LOCK_FILE, PalEngine
-from .git_backup import IsolatedGitBackupManager
-from .logger import log
-from .notifications import DiscordNotifier
-from .schemas import (
+from app.api.schemas import (
     GameplaySettingsSchema,
     PlayerBanRequest,
     PlayerKickRequest,
     PlayerWarnRequest,
     RebootRequest,
 )
+from app.config_manager.parser import SETTING_METADATA
+from app.config_manager.pipeline import ConfigPipeline
+from app.core.config import get_settings, reload_settings
+from app.core.logger import log
+from app.engine.notifications import DiscordNotifier
+from app.engine.service import LOCK_FILE, PalEngine
 
 settings = get_settings()
 pipeline = ConfigPipeline(settings.ini_path)
-git_mgr = IsolatedGitBackupManager(settings.ini_path, backup_repo_dir=settings.backup_repo_dir)
 engine = PalEngine(
     admin_password=settings.AdminPassword,
     rest_port=settings.RESTAPIPort,
@@ -60,7 +58,8 @@ async def telemetry_streamer() -> None:
             if os.name != "nt":
                 try:
                     systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"
-                    proc = subprocess.run(
+                    proc = await asyncio.to_thread(
+                        subprocess.run,
                         [systemctl_bin, "is-active", settings.service_name],
                         capture_output=True,
                         text=True,
@@ -82,6 +81,7 @@ async def telemetry_streamer() -> None:
                 is_multiplay=getattr(settings, "bIsMultiplay", True),
                 host_ip=settings.host_ip,
                 public_port=settings.PublicPort,
+                query_port=settings.QueryPort,
                 server_password=settings.ServerPassword,
                 rcon_port=settings.RCONPort,
                 rest_port=settings.RESTAPIPort,
@@ -114,8 +114,18 @@ async def telemetry_streamer() -> None:
                 },
             }
             await engine.broadcast_ws(payload)
-        except Exception as e:
-            log.warning("Telemetry stream error: %s", e)
+        except WebSocketDisconnect as err:
+            log.debug("WebSocket client disconnected during telemetry streaming: %s", err)
+        except httpx.HTTPError as err:
+            log.warning("HTTP error in telemetry stream: %s", err)
+        except RuntimeError as err:
+            log.warning("Runtime error in telemetry stream: %s", err)
+        except OSError as err:
+            log.warning("OS error in telemetry stream: %s", err)
+        except ValueError as err:
+            log.warning("Value error in telemetry stream: %s", err)
+        except KeyError as err:
+            log.warning("Key error in telemetry stream: %s", err)
         await asyncio.sleep(2)
 
 
@@ -172,7 +182,7 @@ async def lifespan(_: FastAPI):
         except OSError as err:
             log.debug("OS error checking lock file on startup: %s", err)
 
-    asyncio.create_task(trigger_duckdns_sync())
+    duckdns_task = asyncio.create_task(trigger_duckdns_sync())
     stream_task = asyncio.create_task(telemetry_streamer())
 
     async def _send_startup_notice() -> None:
@@ -186,10 +196,12 @@ async def lifespan(_: FastAPI):
                 port=settings.PublicPort,
             )
 
-    asyncio.create_task(_send_startup_notice())
+    startup_task = asyncio.create_task(_send_startup_notice())
     yield
 
     # Shutdown sequence
+    duckdns_task.cancel()
+    startup_task.cancel()
     stream_task.cancel()
     try:
         await stream_task
@@ -298,9 +310,36 @@ async def get_settings_data() -> dict[str, Any]:
     try:
         public_view = pipeline.get_public_view()
         return {"status": "success", "metadata": SETTING_METADATA, "data": public_view}
-    except Exception as e:
-        log.error("Error fetching settings: %s", e)
+    except KeyError as e:
+        log.error("Missing key fetching settings: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
+    except ValueError as e:
+        log.error("Invalid value fetching settings: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    except RuntimeError as e:
+        log.error("Runtime error fetching settings: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    except OSError as e:
+        log.error("OS error fetching settings: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _write_ini_file_with_fallback(target_path_str: str, serialized_content: str) -> None:
+    """Writes serialized INI content to target path with user home fallback on failure."""
+    ini_file = Path(target_path_str)
+    try:
+        ini_file.parent.mkdir(parents=True, exist_ok=True)
+        ini_file.write_text(serialized_content, encoding="utf-8")
+    except PermissionError as err:
+        log.warning("Permission denied writing INI at %s: %s. Using home directory fallback.", ini_file, err)
+        fallback_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
+        fallback_file.parent.mkdir(parents=True, exist_ok=True)
+        fallback_file.write_text(serialized_content, encoding="utf-8")
+    except OSError as err:
+        log.warning("OS error writing INI at %s: %s. Using home directory fallback.", ini_file, err)
+        fallback_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
+        fallback_file.parent.mkdir(parents=True, exist_ok=True)
+        fallback_file.write_text(serialized_content, encoding="utf-8")
 
 
 @app.post("/api/settings")
@@ -319,27 +358,22 @@ async def save_sanitized_settings(payload: GameplaySettingsSchema) -> dict[str, 
     try:
         sanitized_dict = payload.model_dump(exclude_unset=True)
         serialized_ini = pipeline.merge_and_serialize(sanitized_dict)
-        ini_file = Path(settings.ini_path)
-        try:
-            ini_file.parent.mkdir(parents=True, exist_ok=True)
-            ini_file.write_text(serialized_ini, encoding="utf-8")
-        except PermissionError as err:
-            log.warning("Permission denied writing INI at %s: %s. Using home directory fallback.", ini_file, err)
-            ini_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
-            ini_file.parent.mkdir(parents=True, exist_ok=True)
-            ini_file.write_text(serialized_ini, encoding="utf-8")
-        except OSError as err:
-            log.warning("OS error writing INI at %s: %s. Using home directory fallback.", ini_file, err)
-            ini_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
-            ini_file.parent.mkdir(parents=True, exist_ok=True)
-            ini_file.write_text(serialized_ini, encoding="utf-8")
-        commit = git_mgr.create_commit("SAVE", "Web UI sanitized update")
+        await asyncio.to_thread(_write_ini_file_with_fallback, settings.ini_path, serialized_ini)
         reload_settings()
-        log.info("Saved settings cleanly to disk. Git snapshot: %s", commit)
-        return {"status": "success", "message": "Settings saved cleanly to disk.", "commit": commit}
-    except Exception as e:
-        log.error("Save error: %s", e)
-        raise HTTPException(status_code=500, detail=f"Save error: {e!s}") from e
+        log.info("Saved settings cleanly to disk.")
+        return {"status": "success", "message": "Settings saved cleanly to disk."}
+    except PermissionError as e:
+        log.error("Permission denied saving settings: %s", e)
+        raise HTTPException(status_code=500, detail=f"Permission denied: {e!s}") from e
+    except ValueError as e:
+        log.error("Validation error saving settings: %s", e)
+        raise HTTPException(status_code=500, detail=f"Validation error: {e!s}") from e
+    except RuntimeError as e:
+        log.error("Runtime error saving settings: %s", e)
+        raise HTTPException(status_code=500, detail=f"Runtime error: {e!s}") from e
+    except OSError as e:
+        log.error("OS error saving settings: %s", e)
+        raise HTTPException(status_code=500, detail=f"OS error: {e!s}") from e
 
 
 @app.get("/api/tracker/community")
@@ -352,6 +386,7 @@ async def get_community_tracker_data() -> dict[str, Any]:
     data = await engine.tracker.get_combined_telemetry(
         host_ip=settings.host_ip,
         public_port=settings.PublicPort,
+        query_port=settings.QueryPort,
         server_password=settings.ServerPassword,
         rcon_port=settings.RCONPort,
         rest_port=settings.RESTAPIPort,
@@ -378,23 +413,9 @@ async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks) -> dict[st
 
     if payload.settings:
         serialized_ini = pipeline.merge_and_serialize(payload.settings)
-        ini_file = Path(settings.ini_path)
-        try:
-            ini_file.parent.mkdir(parents=True, exist_ok=True)
-            ini_file.write_text(serialized_ini, encoding="utf-8")
-        except PermissionError as err:
-            log.warning("Permission denied writing INI at %s: %s. Using home directory fallback.", ini_file, err)
-            ini_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
-            ini_file.parent.mkdir(parents=True, exist_ok=True)
-            ini_file.write_text(serialized_ini, encoding="utf-8")
-        except OSError as err:
-            log.warning("OS error writing INI at %s: %s. Using home directory fallback.", ini_file, err)
-            ini_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
-            ini_file.parent.mkdir(parents=True, exist_ok=True)
-            ini_file.write_text(serialized_ini, encoding="utf-8")
-        commit = git_mgr.create_commit("RESTART", f"Prior to reboot ({payload.countdown_seconds}s countdown)")
+        await asyncio.to_thread(_write_ini_file_with_fallback, settings.ini_path, serialized_ini)
         reload_settings()
-        log.info("Saved configuration snapshot before reboot: %s", commit)
+        log.info("Saved configuration cleanly before reboot.")
 
     log.info(
         "Initiating reboot sequence (%ss, update=%s, msg=%s)",
@@ -472,68 +493,23 @@ async def handle_warn(req: PlayerWarnRequest) -> dict[str, Any]:
     return {"status": "success", "message": "Broadcast alert sent across in-game HUD and echoed to Discord."}
 
 
-@app.get("/api/backups/commits")
-async def get_commits() -> dict[str, Any]:
-    """Returns list of historical Git configuration snapshots.
-
-    Returns:
-        dict[str, Any]: Dictionary containing list of snapshot commit summaries.
-    """
-    return {"status": "success", "commits": git_mgr.get_history()}
-
-
-@app.get("/api/backups/diff/{commit_hash}")
-async def get_diff(commit_hash: str) -> dict[str, Any]:
-    """Returns unified diff between current config and a snapshot commit.
-
-    Args:
-        commit_hash (str): Target Git snapshot commit hash.
-
-    Returns:
-        dict[str, Any]: Dictionary containing unified diff text.
-    """
-    if not re.match(r"^[a-fA-F0-9]{4,64}$", commit_hash):
-        raise HTTPException(status_code=400, detail="Invalid Git commit hash format.")
-    return {"status": "success", "diff": git_mgr.get_diff(commit_hash)}
-
-
-@app.post("/api/backups/restore/{commit_hash}")
-async def restore_commit(commit_hash: str) -> dict[str, Any]:
-    """Rolls back the server configuration to a historical Git commit snapshot.
-
-    Args:
-        commit_hash (str): Target Git snapshot commit hash to restore.
-
-    Returns:
-        dict[str, Any]: Success response.
-    """
-    if not re.match(r"^[a-fA-F0-9]{4,64}$", commit_hash):
-        raise HTTPException(status_code=400, detail="Invalid Git commit hash format.")
-    log.info("Restoring configuration from snapshot %s", commit_hash)
-    success = git_mgr.restore_commit(commit_hash)
-    if not success:
-        raise HTTPException(status_code=400, detail=f"Failed to restore commit {commit_hash}.")
-    reload_settings()
-    return {"status": "success", "message": f"Restored configuration from {commit_hash}."}
-
-
 @app.get("/api/logs")
 async def get_logs(
     tail: int = 200,
-    filter: str | None = None,
+    filter_query: str | None = Query(default=None, alias="filter"),
     level: str = "ALL",
 ) -> dict[str, Any]:
     """Retrieves sanitized recent Palworld engine log lines.
 
     Args:
         tail (int): Number of recent lines to retrieve.
-        filter (str | None): Keyword or regex filter.
+        filter_query (str | None): Keyword or regex filter.
         level (str): Category filter (ALL, ENGINE, EOS, WARN_ERROR).
 
     Returns:
         dict[str, Any]: Log lines array and retrieval metadata.
     """
-    return engine.tracker.read_server_logs(tail=tail, filter_query=filter, level=level)
+    return engine.tracker.read_server_logs(tail=tail, filter_query=filter_query, level=level)
 
 
 @app.get("/api/logs/download")

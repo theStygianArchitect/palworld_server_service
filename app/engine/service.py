@@ -14,48 +14,20 @@ import shutil
 import subprocess
 import tempfile
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
-from .logger import log
+from app.core.config import resolve_palworld_ini_path
+from app.core.logger import log
+from app.core.types import EngineMetrics, LifecycleState, ReadinessInfo
+from app.monitoring.tracker import CommunityTracker
+
 from .notifications import DiscordNotifier
-from .tracker import CommunityTracker
-from .types import EngineMetrics, LifecycleState, ReadinessInfo
-
-
-def _resolve_default_ini_path() -> Path:
-    """Finds the active PalWorldSettings.ini across standard Steam and custom directories."""
-    candidate_paths = [
-        Path("/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
-        Path("/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
-        Path("/home/steam/Steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
-        Path(
-            "/home/steam/.local/share/Steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
-        ),
-        Path("/home/steam/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
-        Path("/opt/palworld/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
-        Path.home() / ".palmanager" / "PalWorldSettings.ini",
-    ]
-    for p in candidate_paths:
-        try:
-            if p.is_file():
-                return p
-        except PermissionError as err:
-            log.debug("Permission error checking candidate path %s: %s", p, err)
-        except OSError as err:
-            log.debug("OS error checking candidate path %s: %s", p, err)
-
-    if os.name != "nt":
-        if Path("/home/steam/.steam/steam/steamapps").exists():
-            return candidate_paths[0]
-        if Path("/home/steam/.steam/steamapps").exists():
-            return candidate_paths[1]
-        if Path("/home/steam").exists():
-            return candidate_paths[0]
-    return Path.home() / ".palmanager" / "PalWorldSettings.ini"
 
 
 def _resolve_default_update_flag() -> Path:
@@ -70,84 +42,93 @@ def _resolve_default_update_flag() -> Path:
     return Path.home() / ".palmanager" / ".update_requested"
 
 
-DEFAULT_INI_PATH: Path = _resolve_default_ini_path()
+DEFAULT_INI_PATH: Path = resolve_palworld_ini_path()
 DEFAULT_SERVICE_NAME: str = "palworld.service"
 DEFAULT_UPDATE_FLAG: Path = _resolve_default_update_flag()
 DEFAULT_LOCK_FILE: Path = Path(tempfile.gettempdir()) / "palworld_reboot.lock"
+LOCK_FILE: Path = DEFAULT_LOCK_FILE
 
 COUNTDOWN_DISCORD_INTERVALS: set[int] = {600, 300, 60}
 COUNTDOWN_ALL_INTERVALS: set[int] = {600, 300, 180, 120, 60, 30, 15, 10, 5, 4, 3, 2, 1}
+
+
+@dataclass
+class EnginePaths:
+    """Filesystem paths and service identifiers used by PalEngine."""
+
+    ini_path: Path = field(default_factory=lambda: DEFAULT_INI_PATH)
+    service_name: str = DEFAULT_SERVICE_NAME
+    update_flag: Path = field(default_factory=lambda: DEFAULT_UPDATE_FLAG)
+    lock_file: Path = field(default_factory=lambda: DEFAULT_LOCK_FILE)
+
+
+@dataclass
+class EngineConfig:
+    """Encapsulates configuration settings for the PalEngine lifecycle orchestrator."""
+
+    admin_password: str = "admin_password"
+    rest_port: int = 8212
+    server_name: str = "Palworld Dedicated Server"
+    domain: str = "yourdomain.duckdns.org"
+    discord_webhook_url: str | None = None
+    paths: EnginePaths = field(default_factory=EnginePaths)
 
 
 class PalEngine:
     """Core orchestrator for Palworld REST API, systemd operations, and reboot lifecycle.
 
     Attributes:
-        admin_password (str): Server administrator password for REST authentication.
-        rest_port (int): Listening port for internal REST API.
-        server_name (str): Display name for the dedicated server.
-        domain (str): Configured public domain name for announcements.
-        ini_path (Path): Path to active PalWorldSettings.ini file.
-        service_name (str): Systemd service unit name.
-        update_flag (Path): Filepath flag indicating SteamCMD update is requested.
-        lock_file (Path): Filepath lock preventing overlapping reboots.
-        base_url (str): Base HTTP URL for local REST API endpoint.
-        auth (tuple[str, str]): Basic auth credentials ('admin', password).
+        config (EngineConfig): Engine configuration object.
         active_sockets (set[WebSocket]): Set of active client WebSocket connections.
         tracker (CommunityTracker): Telemetry and discovery hub tracker.
         notifier (DiscordNotifier): Webhook notification dispatcher.
         lifecycle_state (LifecycleState): Current active lifecycle and reboot progress state.
     """
 
-    def __init__(
-        self,
-        admin_password: str | None = None,
-        rest_port: int | None = None,
-        server_name: str | None = None,
-        domain: str | None = None,
-        discord_webhook_url: str | None = None,
-        ini_path: str | Path | None = None,
-        service_name: str | None = None,
-        update_flag: str | Path | None = None,
-        lock_file: str | Path | None = None,
-    ) -> None:
+    def __init__(self, config: EngineConfig | None = None, **kwargs: Any) -> None:
         """Initializes the PalEngine orchestrator.
 
         Args:
-            admin_password (str | None): Admin password for REST authentication.
-            rest_port (int | None): REST API port (default: 8212).
-            server_name (str | None): Dedicated server name.
-            domain (str | None): Public domain hostname.
-            discord_webhook_url (str | None): Discord incoming webhook URL.
-            ini_path (str | Path | None): Filepath to PalWorldSettings.ini.
-            service_name (str | None): Systemd service unit name.
-            update_flag (str | Path | None): SteamCMD update flag path.
-            lock_file (str | Path | None): Reboot lock file path.
+            config (EngineConfig | None): Preconfigured EngineConfig instance.
+            **kwargs: Dynamic keyword arguments for backwards-compatible initialization.
 
         Raises:
             ValueError: If service_name contains illegal shell characters.
         """
-        self.admin_password: str = admin_password or os.getenv("PALWORLD_ADMIN_PASSWORD") or "admin_password"
-        self.rest_port: int = rest_port or int(os.getenv("PALWORLD_REST_PORT", "8212"))
-        self.server_name: str = server_name or os.getenv("PALWORLD_SERVER_NAME") or "Palworld Dedicated Server"
-        self.domain: str = domain or os.getenv("PALWORLD_SERVER_DOMAIN") or "yourdomain.duckdns.org"
+        if config is not None:
+            self.config: EngineConfig = config
+        else:
+            raw_svc = kwargs.get("service_name") or os.getenv("PALWORLD_SERVICE_NAME") or DEFAULT_SERVICE_NAME
+            if not re.match(r"^[a-zA-Z0-9_.\-]+$", raw_svc):
+                raise ValueError(f"Invalid service_name format: {raw_svc}")
 
-        self.ini_path: Path = Path(ini_path) if ini_path else DEFAULT_INI_PATH
-        raw_svc = service_name or os.getenv("PALWORLD_SERVICE_NAME") or DEFAULT_SERVICE_NAME
-        if not re.match(r"^[a-zA-Z0-9_.\-]+$", raw_svc):
-            raise ValueError(f"Invalid service_name format: {raw_svc}")
-        self.service_name: str = raw_svc
-        self.update_flag: Path = Path(update_flag) if update_flag else DEFAULT_UPDATE_FLAG
-        self.lock_file: Path = Path(lock_file) if lock_file else DEFAULT_LOCK_FILE
+            ini_p = kwargs.get("ini_path")
+            up_flag = kwargs.get("update_flag")
+            lk_file = kwargs.get("lock_file")
 
-        self.base_url: str = f"http://127.0.0.1:{self.rest_port}/v1/api"
-        self.auth: tuple[str, str] = ("admin", self.admin_password)
+            resolved_paths = EnginePaths(
+                ini_path=Path(ini_p) if ini_p else DEFAULT_INI_PATH,
+                service_name=raw_svc,
+                update_flag=Path(up_flag) if up_flag else DEFAULT_UPDATE_FLAG,
+                lock_file=Path(lk_file) if lk_file else DEFAULT_LOCK_FILE,
+            )
+
+            self.config = EngineConfig(
+                admin_password=kwargs.get("admin_password")
+                or os.getenv("PALWORLD_ADMIN_PASSWORD")
+                or "admin_password",
+                rest_port=kwargs.get("rest_port") or int(os.getenv("PALWORLD_REST_PORT", "8212")),
+                server_name=kwargs.get("server_name")
+                or os.getenv("PALWORLD_SERVER_NAME")
+                or "Palworld Dedicated Server",
+                domain=kwargs.get("domain") or os.getenv("PALWORLD_SERVER_DOMAIN") or "yourdomain.duckdns.org",
+                discord_webhook_url=kwargs.get("discord_webhook_url") or os.getenv("PALWORLD_DISCORD_WEBHOOK_URL"),
+                paths=resolved_paths,
+            )
+
         self.active_sockets: set[WebSocket] = set()
-
         self.tracker: CommunityTracker = CommunityTracker(self.server_name, self.domain)
-        self.notifier: DiscordNotifier = DiscordNotifier(
-            discord_webhook_url or os.getenv("PALWORLD_DISCORD_WEBHOOK_URL")
-        )
+        self.notifier: DiscordNotifier = DiscordNotifier(self.config.discord_webhook_url)
         self._lifecycle_lock: asyncio.Lock = asyncio.Lock()
 
         self.lifecycle_state: LifecycleState = {
@@ -157,6 +138,24 @@ class PalEngine:
             "current_broadcast": "",
             "is_updating": False,
         }
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegates attribute access to self.config for backwards compatibility."""
+        if hasattr(self.config, name):
+            return getattr(self.config, name)
+        if hasattr(self.config.paths, name):
+            return getattr(self.config.paths, name)
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    @property
+    def base_url(self) -> str:
+        """Base URL for local REST API endpoint."""
+        return f"http://127.0.0.1:{self.config.rest_port}/v1/api"
+
+    @property
+    def auth(self) -> tuple[str, str]:
+        """Basic authentication credentials for REST API."""
+        return ("admin", self.config.admin_password)
 
     async def register_socket(self, ws: WebSocket) -> None:
         """Registers an active client WebSocket connection for real-time telemetry.
@@ -185,8 +184,14 @@ class PalEngine:
         for ws in self.active_sockets:
             try:
                 await ws.send_json(message)
-            except Exception as err:
-                log.debug("WebSocket client disconnected or send failed: %s", err)
+            except WebSocketDisconnect as err:
+                log.debug("WebSocket client disconnected: %s", err)
+                dead_sockets.add(ws)
+            except RuntimeError as err:
+                log.debug("WebSocket client runtime error during send: %s", err)
+                dead_sockets.add(ws)
+            except OSError as err:
+                log.debug("WebSocket client OS error during send: %s", err)
                 dead_sockets.add(ws)
         self.active_sockets -= dead_sockets
 
@@ -428,24 +433,8 @@ class PalEngine:
             return f"{mins} minute{'s' if mins > 1 else ''}"
         return f"{remaining_seconds} seconds"
 
-    async def execute_countdown_and_reboot(
-        self,
-        countdown_seconds: int = 60,
-        trigger_update: bool = False,
-        update_version_tag: str = "",
-        custom_message: str = "",
-    ) -> None:
-        """Executes a linear, atomic reboot countdown sequence with in-game and Discord notifications.
-
-        Args:
-            countdown_seconds (int): Seconds duration before restarting (default: 60).
-            trigger_update (bool): Whether to touch SteamCMD update flag before restart.
-            update_version_tag (str): Target version string if updating.
-            custom_message (str): Optional administrator announcement note.
-
-        Raises:
-            RuntimeError: If a reboot countdown sequence is already active.
-        """
+    def _check_and_acquire_lock(self) -> None:
+        """Inspects and claims the atomic reboot lock file."""
         if self.lock_file.exists():
             try:
                 stale_age = time.time() - self.lock_file.stat().st_mtime
@@ -465,30 +454,142 @@ class PalEngine:
                 if self.lock_file.exists():
                     raise RuntimeError("Reboot countdown sequence is already active.") from err
 
-        async with self._lifecycle_lock:
-            self.lock_file.parent.mkdir(parents=True, exist_ok=True)
-            self.lock_file.touch()
+        self.lock_file.parent.mkdir(parents=True, exist_ok=True)
+        self.lock_file.touch()
 
+    def _set_update_flags(self) -> None:
+        """Touches candidate SteamCMD update flag files across host locations."""
+        candidate_flags = [
+            self.update_flag,
+            Path("/var/lib/palmanager/update_requested"),
+            Path("/home/steam/.update_requested"),
+        ]
+        touched_any = False
+        for flag_path in candidate_flags:
+            try:
+                flag_path.parent.mkdir(parents=True, exist_ok=True)
+                flag_path.touch()
+                touched_any = True
+                log.info("Set SteamCMD update flag at: %s", flag_path)
+            except PermissionError as err:
+                log.warning("Permission denied writing update flag at %s: %s", flag_path, err)
+            except OSError as err:
+                log.warning("OS error writing update flag at %s: %s", flag_path, err)
+        if not touched_any:
+            log.error("Could not write SteamCMD update flag to any candidate location!")
+
+    async def _run_countdown_loop(
+        self,
+        countdown_seconds: int,
+        trigger_update: bool,
+        update_version_tag: str,
+        custom_message: str,
+    ) -> None:
+        """Runs the tick-by-tick countdown broadcast loop."""
+        remaining = countdown_seconds
+        while remaining > 0:
+            self.lifecycle_state["remaining_seconds"] = remaining
+            if remaining in COUNTDOWN_ALL_INTERVALS or remaining == countdown_seconds:
+                time_str = self.format_countdown_string(remaining)
+                base_msg = f"Server maintenance restart in {time_str}."
+                if trigger_update:
+                    target_info = f" to {update_version_tag}" if update_version_tag else ""
+                    base_msg = f"Server updating{target_info} and restarting in {time_str}."
+
+                full_msg = f"{custom_message} - {base_msg}" if custom_message else base_msg
+                self.lifecycle_state["current_broadcast"] = full_msg
+                await self.send_broadcast(full_msg, mirror_discord=False)
+
+                if remaining in COUNTDOWN_DISCORD_INTERVALS or remaining == countdown_seconds:
+                    await self.notifier.notify_reboot_countdown(
+                        time_str,
+                        trigger_update,
+                        update_version_tag,
+                        custom_message=custom_message,
+                    )
+
+            await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+            await asyncio.sleep(1)
+            remaining -= 1
+
+    async def _restart_and_await_readiness(self) -> None:
+        """Saves world state, issues systemctl restart, and probes engine readiness."""
+        # 1. World Save Phase
+        self.lifecycle_state["phase"] = "SAVING"
+        self.lifecycle_state["current_broadcast"] = "Saving world state to disk..."
+        await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+        await self.send_broadcast("Server restarting NOW. Saving progress.")
+        await self.trigger_save()
+        await asyncio.sleep(1)
+
+        # 2. Systemctl Restart Phase
+        self.lifecycle_state["phase"] = "MAINTENANCE"
+        self.lifecycle_state["current_broadcast"] = "Executing systemctl restart & backup hooks..."
+        await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+
+        if os.name != "nt":
+            log.info("Triggering systemctl restart for %s", self.service_name)
+            try:
+                sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
+                systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"
+                await asyncio.to_thread(
+                    subprocess.run, [sudo_bin, systemctl_bin, "restart", self.service_name], check=False
+                )  # nosec B603
+            except OSError as err:
+                log.error("Failed to execute systemctl restart: %s", err)
+
+        # 3. Probing Readiness Phase
+        self.lifecycle_state["phase"] = "PROBING"
+        self.lifecycle_state["current_broadcast"] = "Probing engine initialization and readiness..."
+        await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+
+        for _ in range(90):
+            ready_check = await self.check_readiness()
+            if ready_check["ready"]:
+                log.info("Server engine restored to ready state.")
+                await self.notifier.notify_reboot_complete(self.server_name or "Palworld Server")
+                break
+            await asyncio.sleep(2)
+
+    def _release_reboot_lock(self) -> None:
+        """Removes the atomic reboot lock file and resets lifecycle state."""
+        if self.lock_file.exists():
+            try:
+                self.lock_file.unlink()
+            except OSError as err:
+                log.warning("Could not unlink lock file %s: %s", self.lock_file, err)
+
+        self.lifecycle_state = {
+            "phase": "IDLE",
+            "remaining_seconds": 0,
+            "total_seconds": 0,
+            "current_broadcast": "",
+            "is_updating": False,
+        }
+
+    async def execute_countdown_and_reboot(
+        self,
+        countdown_seconds: int = 60,
+        trigger_update: bool = False,
+        update_version_tag: str = "",
+        custom_message: str = "",
+    ) -> None:
+        """Executes a linear, atomic reboot countdown sequence with in-game and Discord notifications.
+
+        Args:
+            countdown_seconds (int): Seconds duration before restarting (default: 60).
+            trigger_update (bool): Whether to touch SteamCMD update flag before restart.
+            update_version_tag (str): Target version string if updating.
+            custom_message (str): Optional administrator announcement note.
+
+        Raises:
+            RuntimeError: If a reboot countdown sequence is already active.
+        """
+        self._check_and_acquire_lock()
+        async with self._lifecycle_lock:
             try:
                 if trigger_update:
-                    candidate_flags = [
-                        self.update_flag,
-                        Path("/var/lib/palmanager/update_requested"),
-                        Path("/home/steam/.update_requested"),
-                    ]
-                    touched_any = False
-                    for flag_path in candidate_flags:
-                        try:
-                            flag_path.parent.mkdir(parents=True, exist_ok=True)
-                            flag_path.touch()
-                            touched_any = True
-                            log.info("Set SteamCMD update flag at: %s", flag_path)
-                        except PermissionError as err:
-                            log.warning("Permission denied writing update flag at %s: %s", flag_path, err)
-                        except OSError as err:
-                            log.warning("OS error writing update flag at %s: %s", flag_path, err)
-                    if not touched_any:
-                        log.error("Could not write SteamCMD update flag to any candidate location!")
+                    self._set_update_flags()
 
                 self.lifecycle_state = {
                     "phase": "COUNTDOWN",
@@ -499,85 +600,10 @@ class PalEngine:
                 }
                 await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
 
-                remaining = countdown_seconds
-                while remaining > 0:
-                    self.lifecycle_state["remaining_seconds"] = remaining
-
-                    if remaining in COUNTDOWN_ALL_INTERVALS or remaining == countdown_seconds:
-                        time_str = self.format_countdown_string(remaining)
-
-                        base_msg = f"Server maintenance restart in {time_str}."
-                        if trigger_update:
-                            target_info = f" to {update_version_tag}" if update_version_tag else ""
-                            base_msg = f"Server updating{target_info} and restarting in {time_str}."
-
-                        full_msg = f"{custom_message} - {base_msg}" if custom_message else base_msg
-                        self.lifecycle_state["current_broadcast"] = full_msg
-
-                        await self.send_broadcast(full_msg, mirror_discord=False)
-
-                        if remaining in COUNTDOWN_DISCORD_INTERVALS or remaining == countdown_seconds:
-                            await self.notifier.notify_reboot_countdown(
-                                time_str,
-                                trigger_update,
-                                update_version_tag,
-                                custom_message=custom_message,
-                            )
-
-                    await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
-                    await asyncio.sleep(1)
-                    remaining -= 1
-
-                # 1. World Save Phase
-                self.lifecycle_state["phase"] = "SAVING"
-                self.lifecycle_state["current_broadcast"] = "Saving world state to disk..."
-                await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
-                await self.send_broadcast("Server restarting NOW. Saving progress.")
-                await self.trigger_save()
-                await asyncio.sleep(1)
-
-                # 2. Systemctl Restart Phase
-                self.lifecycle_state["phase"] = "MAINTENANCE"
-                self.lifecycle_state["current_broadcast"] = "Executing systemctl restart & backup hooks..."
-                await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
-
-                if os.name != "nt":
-                    log.info("Triggering systemctl restart for %s", self.service_name)
-                    try:
-                        sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
-                        systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"
-                        subprocess.run([sudo_bin, systemctl_bin, "restart", self.service_name], check=False)
-                    except OSError as err:
-                        log.error("Failed to execute systemctl restart: %s", err)
-
-                # 3. Probing Readiness Phase
-                self.lifecycle_state["phase"] = "PROBING"
-                self.lifecycle_state["current_broadcast"] = "Probing engine initialization and readiness..."
-                await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
-
-                for _ in range(90):
-                    ready_check = await self.check_readiness()
-                    if ready_check["ready"]:
-                        log.info("Server engine restored to ready state.")
-                        await self.notifier.notify_reboot_complete(self.server_name or "Palworld Server")
-                        break
-                    await asyncio.sleep(2)
-
+                await self._run_countdown_loop(
+                    countdown_seconds, trigger_update, update_version_tag, custom_message
+                )
+                await self._restart_and_await_readiness()
             finally:
-                if self.lock_file.exists():
-                    try:
-                        self.lock_file.unlink()
-                    except OSError as err:
-                        log.warning("Could not unlink lock file %s: %s", self.lock_file, err)
-
-                self.lifecycle_state = {
-                    "phase": "IDLE",
-                    "remaining_seconds": 0,
-                    "total_seconds": 0,
-                    "current_broadcast": "",
-                    "is_updating": False,
-                }
+                self._release_reboot_lock()
                 await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
-
-
-LOCK_FILE: Path = DEFAULT_LOCK_FILE

@@ -1,8 +1,16 @@
+"""Unit tests for sensitive data filtering and logger configuration."""
+# pylint: disable=missing-function-docstring
+# Rationale: Pytest test function names are self-descriptive and documented via assertions.
+# pylint: disable=protected-access
+# Rationale: Unit tests verify internal redaction regexes and queue handlers directly.
+# pylint: disable=import-outside-toplevel
+# Rationale: Test functions dynamically import isolated logging fixtures.
+
 import logging
 import os
 import tempfile
 
-from app.logger import SensitiveDataFilter, setup_logger
+from app.core.logger import SensitiveDataFilter, setup_logger
 
 
 def test_sensitive_data_filter_redactions():
@@ -46,7 +54,7 @@ def test_setup_logger_with_rotation():
 
 
 def test_discord_log_handler_formatting():
-    from app.logger import DiscordLogHandler
+    from app.core.logger import DiscordLogHandler
 
     handler = DiscordLogHandler(
         webhook_url="https://discord.com/api/webhooks/12345/abcdef",

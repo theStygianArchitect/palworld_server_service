@@ -361,7 +361,7 @@
             <div class="text-2xl font-black text-emerald-400" id="a2sPingVal">-- ms</div>
             <div class="text-[11px] text-slate-400 space-y-1">
               <div class="flex justify-between"><span>Map:</span><strong id="a2sMapVal" class="text-slate-200">Palworld</strong></div>
-              <div class="flex justify-between"><span>Socket State:</span><strong id="a2sSocketVal" class="text-emerald-400">Listening 8211/UDP</strong></div>
+              <div class="flex justify-between"><span>Socket State:</span><strong id="a2sSocketVal" class="text-emerald-400">Listening 27015/UDP</strong></div>
             </div>
           </div>
 
@@ -1349,8 +1349,11 @@
             ? "px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 text-emerald-300"
             : "px-2 py-0.5 rounded text-[10px] font-bold bg-red-900/60 text-red-300";
         }
-        if (document.getElementById('a2sMapVal')) document.getElementById('a2sMapVal').innerText = a2s.map_name || "Palworld";
-        if (document.getElementById('a2sSocketVal')) document.getElementById('a2sSocketVal').innerText = a2s.responsive ? "Listening 8211/UDP (OK)" : "No UDP Response";
+        if (document.getElementById('a2sSocketVal')) {
+          const qPort = a2s.query_port || 27015;
+          document.getElementById('a2sSocketVal').innerText = a2s.responsive ? `Listening ${qPort}/UDP (OK)` : "No UDP Response";
+          document.getElementById('a2sSocketVal').className = a2s.responsive ? "text-emerald-400" : "text-rose-400";
+        }
       }
 
       // Engine Metrics

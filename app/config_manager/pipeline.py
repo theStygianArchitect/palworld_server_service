@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .config_parser import parse_ini_file, serialize_ini_settings
+from .parser import parse_ini_file, serialize_ini_settings
 
 PROTECTED_ADMIN_KEYS: set[str] = {
     "AdminPassword",

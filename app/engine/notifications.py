@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from .logger import log
+from app.core.logger import log, parse_discord_retry_after
 
 
 class DiscordNotifier:
@@ -78,15 +78,7 @@ class DiscordNotifier:
                 if res.status_code in {200, 204}:
                     return True
                 if res.status_code == 429:
-                    try:
-                        retry_data = res.json()
-                        retry_after = float(retry_data.get("retry_after", 1.5))
-                    except ValueError as err:
-                        log.debug("Discord rate limit JSON/float parsing error: %s", err)
-                        retry_after = 2.0
-                    except KeyError as err:
-                        log.debug("Discord rate limit response missing retry_after key: %s", err)
-                        retry_after = 2.0
+                    retry_after = parse_discord_retry_after(res)
                     log.warning("Discord webhook rate-limited (HTTP 429). Retrying after %.1fs...", retry_after)
                     await asyncio.sleep(retry_after)
                     res_retry = await client.post(self.webhook_url, json=payload)

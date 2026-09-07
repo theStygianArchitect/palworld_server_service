@@ -1,8 +1,12 @@
+"""Unit tests for Discord webhook notifications and retry dispatch."""
+# pylint: disable=missing-function-docstring
+# Rationale: Pytest test function names are self-descriptive and documented via assertions.
+
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.notifications import DiscordNotifier
+from app.engine.notifications import DiscordNotifier
 
 
 @pytest.mark.asyncio

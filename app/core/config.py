@@ -11,6 +11,7 @@ import socket
 from pathlib import Path
 from typing import Any
 
+import psutil
 from pydantic import AliasChoices, Field
 from pydantic_settings import (
     BaseSettings,
@@ -18,7 +19,6 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
-from .config_parser import parse_ini_file
 from .logger import log
 
 
@@ -45,9 +45,7 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             self.ini_path = Path(ini_path)
         else:
             env_path = os.getenv("PALWORLD_INI_PATH")
-            if env_path and Path(env_path).is_file():
-                self.ini_path = Path(env_path)
-            elif env_path and Path(env_path).parent.exists():
+            if env_path and (Path(env_path).is_file() or Path(env_path).parent.exists()):
                 self.ini_path = Path(env_path)
             else:
                 self.ini_path = Path(default_path)
@@ -78,6 +76,10 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             return {}
 
         try:
+            # pylint: disable=import-outside-toplevel
+            # Rationale: Defer config_manager parser import to decouple core domain from grammar parsing.
+            from app.config_manager.parser import parse_ini_file
+
             ini_data = parse_ini_file(self.ini_path)
             mapped: dict[str, Any] = {}
             for k, v in ini_data.items():
@@ -94,6 +96,9 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
                     mapped["server_name"] = v
                 elif k == "PublicPort":
                     mapped["PUBLIC_PORT"] = v
+                elif k == "QueryPort":
+                    mapped["QUERY_PORT"] = v
+                    mapped["query_port"] = v
                 elif k == "RCONPort":
                     mapped["RCON_PORT"] = v
                 elif k == "RESTAPIPort":
@@ -116,14 +121,19 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             return {}
 
 
-def _resolve_default_ini_path() -> str:
+def is_posix() -> bool:
+    """Returns True if running on POSIX (Linux/macOS) and False on Windows/NT."""
+    return os.name == "posix"
+
+
+def resolve_palworld_ini_path() -> Path:
     """Finds the active PalWorldSettings.ini across standard Steam and custom directories."""
     candidate_paths = [
         Path("/home/steam/.steam/steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
-        Path("/home/steam/.steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
         Path("/home/steam/Steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
         Path(
-            "/home/steam/.local/share/Steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
+            "/home/steam/.local/share/Steam/steamapps/common/PalServer"
+            "/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"
         ),
         Path("/home/steam/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
         Path("/opt/palworld/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini"),
@@ -132,7 +142,7 @@ def _resolve_default_ini_path() -> str:
     for p in candidate_paths:
         try:
             if p.is_file():
-                return str(p)
+                return p
         except PermissionError as err:
             log.debug("Permission error checking candidate path %s: %s", p, err)
         except OSError as err:
@@ -140,12 +150,80 @@ def _resolve_default_ini_path() -> str:
 
     if os.name != "nt":
         if Path("/home/steam/.steam/steam/steamapps").exists():
-            return str(candidate_paths[0])
-        if Path("/home/steam/.steam/steamapps").exists():
-            return str(candidate_paths[1])
-        if Path("/home/steam").exists():
-            return str(candidate_paths[0])
-    return str(Path.home() / ".palmanager" / "PalWorldSettings.ini")
+            return candidate_paths[0]
+        if Path("/home/steam/Steam/steamapps").exists():
+            return candidate_paths[1]
+        return candidate_paths[3]
+    return Path.home() / ".palmanager" / "PalWorldSettings.ini"
+
+
+def _probe_socket_lan_ip() -> str | None:
+    """Probes default routing socket for outbound LAN interface IP."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            detected_ip = s.getsockname()[0]
+            if detected_ip and not detected_ip.startswith("127."):
+                return str(detected_ip)
+    except OSError as err:
+        log.debug("Socket routing LAN IP probe failed: %s", err)
+    return None
+
+
+def _probe_iface_lan_ip() -> str | None:
+    """Scans physical and virtual network interfaces for non-loopback IPv4 addresses."""
+    try:
+        for iface_name, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if (
+                    addr.family == socket.AF_INET
+                    and not addr.address.startswith("127.")
+                    and iface_name.startswith(("eth", "en", "wl", "bond", "Ethernet", "Wi-Fi"))
+                ):
+                    return str(addr.address)
+    except psutil.Error as err:
+        log.debug("Psutil network interface probe failed: %s", err)
+    except OSError as err:
+        log.debug("OS error probing network interface: %s", err)
+    except KeyError as err:
+        log.debug("Key error probing network interface: %s", err)
+    except AttributeError as err:
+        log.debug("Attribute error probing network interface: %s", err)
+    return None
+
+
+def _probe_hostname_lan_ip() -> str | None:
+    """Resolves local hostname against DNS/hosts database."""
+    try:
+        host_ip = socket.gethostbyname(socket.gethostname())
+        if host_ip and not host_ip.startswith("127."):
+            return host_ip
+    except socket.gaierror as err:
+        log.debug("Hostname LAN IP resolution gaierror: %s", err)
+    except socket.herror as err:
+        log.debug("Hostname LAN IP resolution herror: %s", err)
+    except OSError as err:
+        log.debug("Hostname LAN IP resolution OS error: %s", err)
+    return None
+
+
+def resolve_host_lan_ip() -> str:
+    """Discovers the active host primary LAN IP address (e.g. eth0 / 192.168.x.x)."""
+    env_ip = os.getenv("PALWORLD_HOST_IP") or os.getenv("HOST_IP")
+    if env_ip and env_ip != "127.0.0.1":
+        return env_ip
+
+    return (
+        _probe_socket_lan_ip()
+        or _probe_iface_lan_ip()
+        or _probe_hostname_lan_ip()
+        or "127.0.0.1"
+    )
+
+
+def _resolve_default_ini_path() -> str:
+    """Finds the active PalWorldSettings.ini across standard Steam and custom directories."""
+    return str(resolve_palworld_ini_path())
 
 
 def _resolve_default_backup_dir() -> str:
@@ -154,22 +232,6 @@ def _resolve_default_backup_dir() -> str:
     if os.name != "nt" and Path("/home/steam").exists():
         return str(steam_backup)
     return str(Path.home() / ".palmanager" / "Palworld_backups")
-
-
-def _resolve_default_backup_repo_dir() -> str:
-    """Returns a writable backup repository path, falling back to home dir if unprivileged."""
-    if os.name == "nt":
-        return str(Path.home() / ".palmanager" / "backups")
-    var_lib = Path("/var/lib/palmanager/backups")
-    try:
-        var_lib.mkdir(parents=True, exist_ok=True)
-        return str(var_lib)
-    except PermissionError as err:
-        log.debug("Permission denied creating /var/lib/palmanager/backups (%s), using home dir fallback.", err)
-        return str(Path.home() / ".palmanager" / "backups")
-    except OSError as err:
-        log.debug("OS error creating /var/lib/palmanager/backups (%s), using home dir fallback.", err)
-        return str(Path.home() / ".palmanager" / "backups")
 
 
 def _resolve_default_log_dir() -> str:
@@ -187,15 +249,7 @@ def _resolve_default_log_dir() -> str:
 
 def _resolve_default_host_ip() -> str:
     """Discovers the active host primary LAN IP address (e.g. eth0 / 192.168.x.x)."""
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))
-            detected_ip = s.getsockname()[0]
-            if detected_ip and not detected_ip.startswith("127."):
-                return str(detected_ip)
-    except OSError as err:
-        log.debug("Socket probe for default LAN IP failed: %s", err)
-    return "127.0.0.1"
+    return resolve_host_lan_ip()
 
 
 class AppSettings(BaseSettings):
@@ -210,6 +264,7 @@ class AppSettings(BaseSettings):
         ServerName (str): Dedicated server display name.
         ServerDescription (str): Extended server description.
         PublicPort (int): Game UDP port (default: 8211).
+        QueryPort (int): Steam query UDP port (default: 27015).
         RCONPort (int): RCON administration port (default: 25575).
         RCONEnabled (bool): Whether RCON is enabled.
         RESTAPIPort (int): Internal REST API port (default: 8212).
@@ -218,7 +273,6 @@ class AppSettings(BaseSettings):
         web_port (int): Operations Suite web interface port (default: 8080).
         ini_path (str): Filepath to PalWorldSettings.ini.
         service_name (str): Target systemd service name.
-        backup_repo_dir (str): Directory for isolated Git snapshots.
         backup_dir (str): Directory for server world save archives.
         log_dir (str): Directory for manager log files.
         duckdns_domain (str): Configured DuckDNS domain hostname.
@@ -245,6 +299,11 @@ class AppSettings(BaseSettings):
 
     # Ports & Crossplay
     PublicPort: int = Field(default=8211, alias="PUBLIC_PORT")
+    QueryPort: int = Field(
+        default=27015,
+        alias="QUERY_PORT",
+        validation_alias=AliasChoices("PALWORLD_QUERY_PORT", "QUERY_PORT", "query_port"),
+    )
     RCONPort: int = Field(default=25575, alias="RCON_PORT")
     RCONEnabled: bool = Field(default=True, alias="RCON_ENABLED")
     RESTAPIPort: int = Field(default=8212, alias="REST_PORT")
@@ -258,10 +317,6 @@ class AppSettings(BaseSettings):
         alias="INI_PATH",
     )
     service_name: str = Field(default="palworld.service", alias="SERVICE_NAME")
-    backup_repo_dir: str = Field(
-        default_factory=_resolve_default_backup_repo_dir,
-        alias="BACKUP_REPO_DIR",
-    )
     backup_dir: str = Field(
         default_factory=_resolve_default_backup_dir,
         alias="BACKUP_DIR",
@@ -348,6 +403,8 @@ class AppSettings(BaseSettings):
         )
 
 
+# pylint: disable=invalid-name
+# Rationale: Standard lowercase leading-underscore naming for module-level singleton instance.
 _settings_instance: AppSettings | None = None
 
 
@@ -357,6 +414,8 @@ def get_settings() -> AppSettings:
     Returns:
         AppSettings: Active application configuration settings object.
     """
+    # pylint: disable=global-statement
+    # Rationale: Module singleton pattern requires updating module-level reference.
     global _settings_instance
     if _settings_instance is None:
         _settings_instance = AppSettings()
@@ -369,6 +428,8 @@ def reload_settings() -> AppSettings:
     Returns:
         AppSettings: Freshly reloaded application configuration settings object.
     """
+    # pylint: disable=global-statement
+    # Rationale: Module singleton pattern requires updating module-level reference.
     global _settings_instance
     _settings_instance = AppSettings()
     return _settings_instance

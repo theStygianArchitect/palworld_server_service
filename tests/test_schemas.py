@@ -1,7 +1,13 @@
+"""Unit tests for Pydantic request models, gameplay settings, and payload validation."""
+# pylint: disable=missing-function-docstring
+# Rationale: Pytest test function names are self-descriptive and documented via assertions.
+# pylint: disable=import-outside-toplevel
+# Rationale: Scoped imports inside tests isolate schema validation side-effects.
+
 import pytest
 from pydantic import ValidationError
 
-from app.schemas import (
+from app.api.schemas import (
     GameplaySettingsSchema,
     PlayerBanRequest,
     PlayerKickRequest,
@@ -71,7 +77,7 @@ def test_isolated_request_schemas():
 
 
 def test_domain_types_instantiation():
-    from app.types import DiscoveryHubPayload, HardwareTelemetryInfo, TopBadgeInfo
+    from app.core.types import DiscoveryHubPayload, HardwareTelemetryInfo, TopBadgeInfo
 
     badge: TopBadgeInfo = {
         "label": "Community Listed",
@@ -128,5 +134,14 @@ def test_domain_types_instantiation():
         "disk_pct": 10.0,
         "net_bytes_sent": 1000,
         "net_bytes_recv": 2000,
+        "net_rx_rate_kbps": 12.5,
+        "net_tx_rate_kbps": 5.0,
+        "net_rx_rate_mbps": 0.1,
+        "net_tx_rate_mbps": 0.04,
+        "net_dropin": 0,
+        "net_dropout": 0,
+        "net_errin": 0,
+        "net_errout": 0,
+        "net_traffic_status": "HEALTHY",
     }
     assert hw["host_ram_pct"] == 25.0

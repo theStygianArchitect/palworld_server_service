@@ -5,6 +5,7 @@
 
 app_directory_list=(
   app/*.py
+  app/*/*.py
   scripts/*.py
   tests/*.py
 )
@@ -94,7 +95,7 @@ run_pylint_check() {
   for python_file in "${app_directory_list[@]}"; do
     if [ -f "${python_file}" ]; then
       echo "  Checking ${python_file}"
-      uv run pylint -s no "${python_file}"
+      uv run pylint --rcfile=pyproject.toml -s no "${python_file}"
       exit_code=$?
       if [ ${exit_code} -ne 0 ]; then
         echo "[-] Pylint check failed on ${python_file}"
@@ -206,6 +207,8 @@ run_linting_check() {
   run_ruff_check
   run_mypy_check
   run_pylint_check
+  run_pycodestyle_check
+  run_pydocstyle_check
 }
 
 quality_check() {
@@ -218,9 +221,10 @@ quality_check() {
   run_bandit_check
   run_ruff_check
   run_mypy_check
+  run_pylint_check
+  run_pycodestyle_check
   run_pydocstyle_check
   run_coverage
-  run_multi_python_matrix
   echo "========================================================================="
   echo " [SUCCESS] All Master Quality & Security Checks Passed!"
   echo "========================================================================="
@@ -232,15 +236,15 @@ show_usage() {
   echo "  quality_check.sh [-a] [-c] [-h] [-l] [-m] [-q <check type>] [-s] [-t] [-u]"
   echo ""
   echo "OPTIONS"
-  echo "  -a  Run all quality, security, and multi-version checks. (DEFAULT)"
+  echo "  -a  Run all quality, security, and linting checks with coverage (DEFAULT)."
   echo "  -c  Run pytest code coverage report."
   echo "  -h  Show usage information."
-  echo "  -l  Run linting checks (ruff, mypy, pylint)."
-  echo "  -m  Run multi-Python matrix test (auto-installs 3.10-3.13 via uv)."
+  echo "  -l  Run linting checks (ruff, mypy, pylint, pycodestyle, pydocstyle)."
+  echo "  -m  Run multi-Python matrix test (Python 3.10-3.13; dev branch & pre-merge)."
   echo "  -s  Run security checks (bandit, pip-audit)."
   echo "  -t  Run project unit tests."
   echo "  -u  Upgrade dependencies and uv.lock."
-  echo "  -q  Run specific check: [bandit | pip-audit | ruff | mypy | pylint | pytest | coverage | matrix]"
+  echo "  -q  Run specific check: [bandit | pip-audit | ruff | mypy | pylint | pycodestyle | pydocstyle | pytest | coverage | matrix]"
   echo ""
 }
 
@@ -265,6 +269,8 @@ while getopts 'achlmstuq:' flag; do
       ruff) run_ruff_check ;;
       mypy) run_mypy_check ;;
       pylint) run_pylint_check ;;
+      pycodestyle) run_pycodestyle_check ;;
+      pydocstyle) run_pydocstyle_check ;;
       pytest) run_pytest ;;
       coverage) run_coverage ;;
       matrix) run_multi_python_matrix ;;

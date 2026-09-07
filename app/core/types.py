@@ -123,6 +123,9 @@ class SteamA2SInfo(TypedDict):
         map_name (str): Active map name parsed from response packet.
         folder (str): Game folder directory name.
         game (str): Game name identifier string.
+        query_port (int): UDP query port probed.
+        players (int): Current connected players reported by Steam query.
+        max_players (int): Maximum server player capacity.
     """
 
     responsive: bool
@@ -131,6 +134,9 @@ class SteamA2SInfo(TypedDict):
     map_name: str
     folder: str
     game: str
+    query_port: int
+    players: int
+    max_players: int
 
 
 class SecurityMatrixInfo(TypedDict):
@@ -178,9 +184,11 @@ class PlayerRecord(TypedDict):
         name (str): Character or Steam account display name.
         level (int): Current player character level.
         ping (float): Latency in milliseconds to the server.
-        location (PlayerCoordinates): Current or last-known world coordinates.
-        status (str): Connection status ('ONLINE' or 'OFFLINE').
+        location_x (float): Current or last-known world X coordinate.
+        location_y (float): Current or last-known world Y coordinate.
+        first_seen (str): Timestamp string when first active on server.
         last_seen (str): Timestamp string when last active on server.
+        status (str): Connection status ('ONLINE' or 'OFFLINE').
     """
 
     playerId: str
@@ -188,9 +196,11 @@ class PlayerRecord(TypedDict):
     name: str
     level: int
     ping: float
-    location: PlayerCoordinates
-    status: str
+    location_x: float
+    location_y: float
+    first_seen: str
     last_seen: str
+    status: str
 
 
 class PlayerLedgerMatrix(TypedDict):
@@ -282,7 +292,8 @@ class NetworkDiagnosticsResult(TypedDict):
         server_frame_time_ms (float): Engine tick duration in milliseconds.
         udp_drops_detected (bool): Whether OS or network interface is dropping UDP packets.
         nat_aligned (bool): Whether WAN IP matches public DuckDNS resolution.
-        verdict (str): Root-cause diagnosis code ('CLEAN', 'NETWORK_JITTER', 'NAT_PACKET_LOSS', 'SERVER_TICK_STARVATION').
+        verdict (str): Root-cause diagnosis code
+            ('CLEAN', 'NETWORK_JITTER', 'NAT_PACKET_LOSS', 'SERVER_TICK_STARVATION').
         verdict_title (str): Human-readable verdict headline.
         verdict_details (str): Detailed technical root cause explanation.
         recommendation (str): Recommended action to eliminate rubberbanding.

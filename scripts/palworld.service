@@ -10,7 +10,7 @@ Environment="templdpath=$LD_LIBRARY_PATH"
 Environment="LD_LIBRARY_PATH=/home/steam/:$LD_LIBRARY_PATH"
 Environment="SteamAppId=2394010"
 ExecStartPre=/home/steam/palworld-maintenance.sh
-ExecStart=/home/steam/.steam/steam/steamapps/common/PalServer/PalServer.sh -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS -publiclobby -EpicApp=PalServer -publicport=8211
+ExecStart=/home/steam/.steam/steam/steamapps/common/PalServer/PalServer.sh -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS -publiclobby -EpicApp=PalServer -publicport=8211 -queryport=27015
 Restart=always
 
 StandardOutput=journal

@@ -10,7 +10,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 APP_USER="palmanager"
 APP_DIR="/opt/palworld-web-manager"
-BACKUP_REPO_DIR="/var/lib/palmanager/backups"
 STEAM_USER="steam"
 STEAM_HOME="/home/steam"
 PAL_CONFIG_DIR="${STEAM_HOME}/.steam/steam/steamapps/common/PalServer/Pal/Saved/Config/LinuxServer"
@@ -53,7 +52,6 @@ echo "[ OK ]"
 # 3. Directory Structures, DuckDNS Setup & POSIX ACLs
 echo -n "[3/8] Setting up directories, DuckDNS, and POSIX ACLs... "
 mkdir -p "${APP_DIR}"
-mkdir -p "${BACKUP_REPO_DIR}"
 mkdir -p "${STEAM_HOME}/Palworld_backups"
 mkdir -p "${DUCKDNS_DIR}"
 
@@ -68,8 +66,7 @@ if [ -f "${REPO_ROOT}/README.md" ]; then
     cp "${REPO_ROOT}/README.md" "${APP_DIR}/"
 fi
 
-chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}" "${BACKUP_REPO_DIR}"
-chmod 0750 "${BACKUP_REPO_DIR}"
+chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 
 setfacl -m u:"${APP_USER}":rx "${STEAM_HOME}" || true
 setfacl -R -m u:"${APP_USER}":rwX "${DUCKDNS_DIR}" || true

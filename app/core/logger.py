@@ -15,13 +15,29 @@ import sys
 import threading
 import time
 import traceback
+from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
 
+def parse_discord_retry_after(res: httpx.Response) -> float:
+    """Extracts the retry_after duration from a Discord 429 response."""
+    try:
+        retry_data = res.json()
+        return float(retry_data.get("retry_after", 1.5))
+    except ValueError as err:
+        sys.stderr.write(f"Discord rate limit JSON/float parsing error: {err}\n")
+        return 2.0
+    except KeyError as err:
+        sys.stderr.write(f"Discord rate limit response missing retry_after key: {err}\n")
+        return 2.0
+
+
+# pylint: disable=too-few-public-methods
+# Rationale: Standard library logging.Filter interface requires only a single method: filter(record).
 class SensitiveDataFilter(logging.Filter):
     """Logging filter that redacts sensitive credentials, passwords, and tokens.
 
@@ -29,7 +45,7 @@ class SensitiveDataFilter(logging.Filter):
     prior to emission to console streams, disk files, or Discord webhooks.
     """
 
-    PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    PATTERNS: ClassVar[list[tuple[re.Pattern[str], str]]] = [
         (re.compile(r'(?i)(admin_password|password|token|secret)\s*[:=]\s*["\']?([^"\'\s,]+)'), r"\1=[REDACTED]"),
         (re.compile(r"(?i)(Basic|Bearer)\s+[A-Za-z0-9+/=._-]+"), r"\1 [REDACTED]"),
         (
@@ -104,20 +120,16 @@ class DiscordLogHandler(logging.Handler):
                 with httpx.Client(timeout=4.0) as client:
                     res = client.post(self.webhook_url, json=payload)
                     if res.status_code == 429:
-                        try:
-                            retry_data = res.json()
-                            retry_after = float(retry_data.get("retry_after", 1.5))
-                        except ValueError as err:
-                            sys.stderr.write(f"Discord retry_after integer parsing error: {err}\n")
-                            retry_after = 2.0
-                        except KeyError as err:
-                            sys.stderr.write(f"Discord response missing retry_after key: {err}\n")
-                            retry_after = 2.0
+                        retry_after = parse_discord_retry_after(res)
                         sys.stderr.write(f"Discord rate limit (HTTP 429) hit. Backing off for {retry_after:.1f}s...\n")
                         time.sleep(retry_after)
                         client.post(self.webhook_url, json=payload)
-            except Exception as err:
-                sys.stderr.write(f"DiscordLogHandler worker dispatch error: {err}\n")
+            except httpx.HTTPError as err:
+                sys.stderr.write(f"DiscordLogHandler HTTP error: {err}\n")
+            except OSError as err:
+                sys.stderr.write(f"DiscordLogHandler OS error: {err}\n")
+            except RuntimeError as err:
+                sys.stderr.write(f"DiscordLogHandler runtime error: {err}\n")
             finally:
                 self._queue.task_done()
 
@@ -149,7 +161,7 @@ class DiscordLogHandler(logging.Handler):
                 content = ""
             else:
                 color = self.COLOR_INFO
-                title = f"ℹ️ [{level_name}] {record.name}"
+                title = f"ℹ️ [{level_name}] {record.name}"  # noqa: RUF001
                 content = ""
 
             fields = [
@@ -181,7 +193,17 @@ class DiscordLogHandler(logging.Handler):
                 self._queue.put_nowait(payload)
             except queue.Full as err:
                 sys.stderr.write(f"DiscordLogHandler queue full: {err}\n")
-        except Exception:
+        except TypeError as err:
+            sys.stderr.write(f"DiscordLogHandler type error in emit: {err}\n")
+            self.handleError(record)
+        except ValueError as err:
+            sys.stderr.write(f"DiscordLogHandler value error in emit: {err}\n")
+            self.handleError(record)
+        except AttributeError as err:
+            sys.stderr.write(f"DiscordLogHandler attribute error in emit: {err}\n")
+            self.handleError(record)
+        except RuntimeError as err:
+            sys.stderr.write(f"DiscordLogHandler runtime error in emit: {err}\n")
             self.handleError(record)
 
     def flush(self) -> None:
@@ -205,15 +227,93 @@ class DiscordLogHandler(logging.Handler):
         super().close()
 
 
+@dataclass
+class LogRotationConfig:
+    """File rotation configuration parameters."""
+
+    max_bytes: int = 10 * 1024 * 1024
+    backup_count: int = 5
+
+
+@dataclass
+class DiscordLogConfig:
+    """Discord mirror webhook configuration parameters."""
+
+    webhook_url: str | None = None
+    log_level: int | str = logging.ERROR
+    critical_ping: str = "@thestygianarchitect"
+
+
+def _setup_file_handler(
+    logger: logging.Logger,
+    name: str,
+    log_dir: str | Path | None,
+    log_level: int,
+    rotation: LogRotationConfig,
+) -> None:
+    """Attaches a rotating file handler to the specified logger."""
+    if log_dir is None:
+        target_dir = Path("/var/log/palmanager") if os.name != "nt" else Path.home() / ".palmanager" / "logs"
+    else:
+        target_dir = Path(log_dir)
+
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        log_file = target_dir / f"{name}.log"
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=rotation.max_bytes,
+            backupCount=rotation.backup_count,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(
+            logging.Formatter(
+                fmt="%(asctime)s [%(levelname)s] [%(name)s:%(lineno)d]: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+        file_handler.addFilter(SensitiveDataFilter())
+        logger.addHandler(file_handler)
+    except PermissionError as err:
+        logger.warning("Permission denied initializing log directory %s: %s", target_dir, err)
+    except OSError as err:
+        logger.warning("OS error initializing log file handler at %s: %s", target_dir, err)
+
+
+def _setup_discord_handler(
+    logger: logging.Logger,
+    discord_cfg: DiscordLogConfig,
+) -> None:
+    """Attaches a Discord webhook mirror handler to the logger if configured."""
+    webhook = discord_cfg.webhook_url or os.getenv("PALWORLD_DISCORD_WEBHOOK_URL")
+    if not webhook:
+        return
+
+    if isinstance(discord_cfg.log_level, str):
+        resolved_level = getattr(logging, discord_cfg.log_level.upper(), logging.ERROR)
+    else:
+        resolved_level = discord_cfg.log_level
+
+    ping = discord_cfg.critical_ping or os.getenv("PALWORLD_DISCORD_CRITICAL_PING", "@thestygianarchitect")
+    discord_handler = DiscordLogHandler(webhook_url=webhook, level=resolved_level, critical_ping=ping)
+    discord_handler.setFormatter(
+        logging.Formatter(
+            fmt="%(asctime)s [%(levelname)s] [%(name)s:%(lineno)d]: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    discord_handler.addFilter(SensitiveDataFilter())
+    logger.addHandler(discord_handler)
+
+
 def setup_logger(
     name: str = "palworld_manager",
     log_dir: str | Path | None = None,
     log_level: int = logging.INFO,
-    max_bytes: int = 10 * 1024 * 1024,
-    backup_count: int = 5,
-    discord_webhook_url: str | None = None,
-    discord_log_level: int | str = logging.ERROR,
-    discord_critical_ping: str = "@thestygianarchitect",
+    rotation: LogRotationConfig | None = None,
+    discord: DiscordLogConfig | None = None,
+    **kwargs: Any,
 ) -> logging.Logger:
     """Configures and returns a structured logger with console, rotation, and Discord mirroring.
 
@@ -221,11 +321,9 @@ def setup_logger(
         name (str): Logger name identifier.
         log_dir (str | Path | None): Directory path for persistent log files.
         log_level (int): Minimum logging severity level (default: INFO).
-        max_bytes (int): Maximum size per log file before rotation (default: 10MB).
-        backup_count (int): Number of rotated backup log files to retain (default: 5).
-        discord_webhook_url (str | None): Optional Discord incoming webhook URL for log mirroring.
-        discord_log_level (int | str): Minimum log level threshold for Discord mirroring (default: ERROR).
-        discord_critical_ping (str): User/role mention string for CRITICAL alerts (default: '@thestygianarchitect').
+        rotation (LogRotationConfig | None): Optional log rotation configuration.
+        discord (DiscordLogConfig | None): Optional Discord webhook configuration.
+        **kwargs: Backwards-compatible keyword arguments (max_bytes, backup_count, etc.).
 
     Returns:
         logging.Logger: Configured logger instance.
@@ -244,50 +342,24 @@ def setup_logger(
     sensitive_filter = SensitiveDataFilter()
     logger.addFilter(sensitive_filter)
 
-    # 1. Console Stream Handler
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(log_level)
     stream_handler.setFormatter(formatter)
     stream_handler.addFilter(sensitive_filter)
     logger.addHandler(stream_handler)
 
-    # 2. Rotating File Handler
-    if log_dir is None:
-        target_dir = Path("/var/log/palmanager") if os.name != "nt" else Path.home() / ".palmanager" / "logs"
-    else:
-        target_dir = Path(log_dir)
+    rot_cfg = rotation or LogRotationConfig(
+        max_bytes=kwargs.get("max_bytes", 10 * 1024 * 1024),
+        backup_count=kwargs.get("backup_count", 5),
+    )
+    _setup_file_handler(logger, name, log_dir, log_level, rot_cfg)
 
-    try:
-        target_dir.mkdir(parents=True, exist_ok=True)
-        log_file = target_dir / f"{name}.log"
-        file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=max_bytes,
-            backupCount=backup_count,
-            encoding="utf-8",
-        )
-        file_handler.setLevel(log_level)
-        file_handler.setFormatter(formatter)
-        file_handler.addFilter(sensitive_filter)
-        logger.addHandler(file_handler)
-    except PermissionError as err:
-        logger.warning("Permission denied initializing log directory %s: %s", target_dir, err)
-    except OSError as err:
-        logger.warning("OS error initializing log file handler at %s: %s", target_dir, err)
-
-    # 3. Discord Log Mirroring Handler
-    webhook = discord_webhook_url or os.getenv("PALWORLD_DISCORD_WEBHOOK_URL")
-    if webhook:
-        if isinstance(discord_log_level, str):
-            resolved_level = getattr(logging, discord_log_level.upper(), logging.ERROR)
-        else:
-            resolved_level = discord_log_level
-
-        ping = discord_critical_ping or os.getenv("PALWORLD_DISCORD_CRITICAL_PING", "@thestygianarchitect")
-        discord_handler = DiscordLogHandler(webhook_url=webhook, level=resolved_level, critical_ping=ping)
-        discord_handler.setFormatter(formatter)
-        discord_handler.addFilter(sensitive_filter)
-        logger.addHandler(discord_handler)
+    disc_cfg = discord or DiscordLogConfig(
+        webhook_url=kwargs.get("discord_webhook_url"),
+        log_level=kwargs.get("discord_log_level", logging.ERROR),
+        critical_ping=kwargs.get("discord_critical_ping", "@thestygianarchitect"),
+    )
+    _setup_discord_handler(logger, disc_cfg)
 
     return logger
 

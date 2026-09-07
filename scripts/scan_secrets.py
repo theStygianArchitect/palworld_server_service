@@ -49,7 +49,8 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
         "Hardcoded DuckDNS Live Token",
         re.compile(
-            r"(?i)duckdns.*token\s*[:=]\s*[\"']?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})[\"']?"
+            r"(?i)duckdns.*token\s*[:=]\s*[\"']?"
+            r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})[\"']?"
         ),
     ),
     (
@@ -114,8 +115,9 @@ def scan_file(file_path: Path) -> list[str]:
                         break
 
                 if not is_safe:
+                    preview = f"{matched_str[:4]}...{matched_str[-4:]}"
                     violations.append(
-                        f"{file_path}:{line_no} -> [{label}] Potential hardcoded secret found: '{matched_str[:4]}...{matched_str[-4:]}'"
+                        f"{file_path}:{line_no} -> [{label}] Potential secret found: '{preview}'"
                     )
 
     return violations

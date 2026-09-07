@@ -60,8 +60,20 @@ line-length = 120
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP"]
-ignore = ["E501"]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # Pyflakes logic checks
+    "W",      # pycodestyle warnings
+    "I",      # isort import sorting
+    "UP",     # pyupgrade modern Python 3.10+ syntax
+    "B",      # flake8-bugbear bug prevention
+    "C4",     # flake8-comprehensions
+    "SIM",    # flake8-simplify
+    "RUF",    # Ruff-specific lint rules
+    "ASYNC",  # flake8-async best practices
+    "PIE",    # flake8-pie code cleanliness
+    "PGH",    # pygrep-hooks (error codes on type comments)
+]
 
 [tool.mypy]
 ignore_missing_imports = true
@@ -74,29 +86,27 @@ convention = "google"
 [tool.pylint]
 max-line-length = 120
 
-[tool.pylint.messages_control]
-disable = [
-    "C0114", # missing-module-docstring
-    "C0115", # missing-class-docstring
-    "C0116", # missing-function-docstring
-    "W1203", # logging-fstring-interpolation
-    "W0718", # broad-exception-caught
-    "R0902", # too-many-instance-attributes
-    "R0903", # too-few-public-methods
-    "R0913", # too-many-arguments
-    "R0914", # too-many-locals
-    "R0917", # too-many-positional-arguments
-    "W0621", # redefined-outer-name
-    "W0613", # unused-argument
-    "W0707", # raise-missing-from
-    "R1702", # too-many-nested-blocks
-]
+[tool.pylint."messages control"]
+disable = []
 
 [tool.pycodestyle]
 max-line-length = 120
 
 [tool.bandit]
-skips = ["B104", "B110", "B404", "B603", "B607"]
+# Security Scanner Skips:
+# B104: Web management plane intentionally binds to 0.0.0.0 or LAN IP for remote dashboard access
+# B110: Benign fallback checks (e.g. non-fatal directory checks) where failure has no operational impact
+# B404: Subprocess module is required to interact with systemctl, steamcmd, ping, and OS utilities
+# B603: Subprocess calls use explicit argument lists without shell=True for secure execution
+# B607: System binaries (systemctl, ping, ip, journalctl) are discovered dynamically via PATH / shutil.which
+skips = [
+    "B104", # hardcoded_bind_all_interfaces: Web interface binds to 0.0.0.0 / eth0 IP for admin dashboard access
+    "B110", # try_except_pass: Benign fallback checks where failure has zero operational security impact
+    "B404", # blacklist:import_subprocess: Subprocess required for systemctl, steamcmd, and network diagnostic utilities
+    "B603", # subprocess_without_shell_equals_true: Subprocess invocations use validated argument lists without shell=True
+    "B607", # start_process_with_partial_path: System utilities (systemctl, ping, ip) are resolved via PATH
+]
 
 [tool.bandit.assert_used]
+# Assertions are standard testing idioms and are safe in pytest suites
 skips = ['*_test.py', '*/test_*.py']

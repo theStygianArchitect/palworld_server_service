@@ -1,10 +1,14 @@
+"""Unit tests for community tracker, player ledger persistence, and network diagnostics."""
+# pylint: disable=missing-function-docstring
+# Rationale: Pytest test function names are self-descriptive and documented via assertions.
+
 import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.tracker import CommunityTracker
+from app.monitoring.tracker import CommunityTracker
 
 
 def test_tracker_player_ledger(monkeypatch):
@@ -59,7 +63,7 @@ def test_tracker_hardware_telemetry():
 async def test_tracker_network_diagnostics():
     tracker = CommunityTracker("TestServer", "test.duckdns.org")
 
-    with patch("app.tracker._execute_ping_probes", side_effect=[(0.5, 0.2, 0.0), (12.0, 1.5, 0.0)]):
+    with patch("app.monitoring.tracker._execute_ping_probes", side_effect=[(0.5, 0.2, 0.0), (12.0, 1.5, 0.0)]):
         diag = await tracker.run_network_diagnostics(server_fps=60.0, server_frame_time_ms=16.6)
         assert diag["verdict"] == "CLEAN"
         assert "Healthy" in diag["verdict_title"]
@@ -67,13 +71,13 @@ async def test_tracker_network_diagnostics():
         assert diag["internet_ping_avg_ms"] == 12.0
 
     # Test tick starvation verdict
-    with patch("app.tracker._execute_ping_probes", side_effect=[(0.5, 0.2, 0.0), (12.0, 1.5, 0.0)]):
+    with patch("app.monitoring.tracker._execute_ping_probes", side_effect=[(0.5, 0.2, 0.0), (12.0, 1.5, 0.0)]):
         diag_starve = await tracker.run_network_diagnostics(server_fps=18.0, server_frame_time_ms=55.0)
         assert diag_starve["verdict"] == "SERVER_TICK_STARVATION"
         assert "Low FPS" in diag_starve["verdict_title"]
 
     # Test high jitter verdict
-    with patch("app.tracker._execute_ping_probes", side_effect=[(0.5, 30.0, 0.0), (12.0, 1.5, 0.0)]):
+    with patch("app.monitoring.tracker._execute_ping_probes", side_effect=[(0.5, 30.0, 0.0), (12.0, 1.5, 0.0)]):
         diag_jitter = await tracker.run_network_diagnostics(server_fps=60.0, server_frame_time_ms=16.6)
         assert diag_jitter["verdict"] == "NETWORK_JITTER"
 
@@ -100,14 +104,19 @@ async def test_tracker_combined_telemetry():
     assert telemetry["security_matrix"]["is_password_protected"] is True
 
 
-def test_tracker_probe_local_logs_eos_session_extraction():
-    tracker = CommunityTracker("TestServer", "test.duckdns.org")
+def test_tracker_probe_local_logs_eos_session_extraction(tmp_path):
+    cache_path = tmp_path / "eos_session.json"
+    tracker = CommunityTracker("TestServer", "test.duckdns.org", session_cache_path=cache_path)
+    tracker.log_registered = False
+    tracker.log_session_id = None
 
     fake_proc = MagicMock()
     fake_proc.returncode = 0
     fake_proc.stdout = "Aug 30 06:00:00 server: Created public lobby session [SessionId: 0002a89bf12]\n"
 
-    with patch("subprocess.run", return_value=fake_proc), patch("os.name", "posix"):
+    with patch("subprocess.run", return_value=fake_proc), patch(
+        "app.monitoring.tracker.is_posix", return_value=True
+    ):
         res = tracker.probe_local_logs()
         assert res["registered"] is True
         assert res["session_id"] == "0002a89bf12"
@@ -116,8 +125,12 @@ def test_tracker_probe_local_logs_eos_session_extraction():
 
 
 def test_tracker_parse_a2s_packet():
-    # Fake A2S_INFO response packet: \xFF\xFF\xFF\xFF\x49 (I header) + Protocol (0x11) + "Palworld Server\x00" + "Pal/Maps/World\x00" + "Pal\x00" + "Palworld\x00"
-    fake_payload = b"\xff\xff\xff\xff\x49\x11Palworld Server\x00Pal/Maps/World\x00Pal\x00Palworld\x00\xe6\x08\x00\x20\x00\x64\x6c\x00\x01\x30\x2e\x32\x2e\x34\x2e\x30\x00"
+    # Fake A2S_INFO response packet: \xFF\xFF\xFF\xFF\x49 (I header) + Protocol (0x11)
+    # + "Palworld Server\x00" + "Pal/Maps/World\x00" + "Pal\x00" + "Palworld\x00"
+    fake_payload = (
+        b"\xff\xff\xff\xff\x49\x11Palworld Server\x00Pal/Maps/World\x00Pal\x00"
+        b"Palworld\x00\xe6\x08\x00\x20\x00\x64\x6c\x00\x01\x30\x2e\x32\x2e\x34\x2e\x30\x00"
+    )
     res = CommunityTracker.parse_a2s_packet(fake_payload, latency_ms=12.5)
 
     assert res["responsive"] is True
@@ -125,3 +138,9 @@ def test_tracker_parse_a2s_packet():
     assert res["server_name"] == "Palworld Server"
     assert res["map_name"] == "Pal/Maps/World"
     assert res["game"] == "Palworld"
+    assert res["query_port"] == 27015
+    assert res["players"] == 0
+    assert res["max_players"] == 32
+
+    res_custom = CommunityTracker.parse_a2s_packet(fake_payload, latency_ms=5.0, query_port=27016)
+    assert res_custom["query_port"] == 27016

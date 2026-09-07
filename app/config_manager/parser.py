@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .logger import log
+from app.core.logger import log
 
 SETTING_METADATA: dict[str, dict[str, Any]] = {
     # 🌐 Crossplay & Matchmaking

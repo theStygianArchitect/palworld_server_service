@@ -1,3 +1,9 @@
+"""Unit tests for PalEngine lifecycle management, REST API queries, and reboot timers."""
+# pylint: disable=missing-function-docstring
+# Rationale: Pytest test function names are self-descriptive and documented via assertions.
+# pylint: disable=unused-argument
+# Rationale: Mock coroutines and monkeypatch fixtures must accept standard signature arguments.
+
 import httpx
 import pytest
 
@@ -35,7 +41,11 @@ async def test_pal_engine_mock_rest_api_calls(monkeypatch):
 
     # Mock announcements
     async def mock_post(url, *args, **kwargs):
+        # pylint: disable=too-few-public-methods
+        # Rationale: Lightweight mock object designed solely to stub HTTP response status.
         class MockResponse:
+            """Mock HTTP response."""
+
             status_code = 200
 
             def json(self):
@@ -77,7 +87,7 @@ async def test_pal_engine_execute_countdown_and_reboot_fast(monkeypatch, tmp_pat
     async def mock_sleep(*a, **kw):
         return None
 
-    monkeypatch.setattr("app.engine.asyncio.sleep", mock_sleep)
+    monkeypatch.setattr("app.engine.service.asyncio.sleep", mock_sleep)
 
     # Mock engine operations
     async def mock_broadcast(*a, **kw):

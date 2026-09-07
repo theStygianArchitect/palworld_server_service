@@ -46,7 +46,9 @@ def audit_exceptions_in_file(py_file: Path) -> list[str]:
             if isinstance(node.type, ast.Tuple):
                 bundled_types = [ast.unparse(elt) for elt in node.type.elts]
                 violations.append(
-                    f"{py_file}:{node.lineno} -> [BUNDLED EXCEPTION] Handler 'except ({', '.join(bundled_types)})' bundles multiple exception types. Unbundle into distinct handlers."
+                    f"{py_file}:{node.lineno} -> [BUNDLED EXCEPTION] "
+                    f"Handler 'except ({', '.join(bundled_types)})' bundles multiple types. "
+                    "Unbundle into distinct handlers."
                 )
 
             # 2. Check for `pass` in exception handler
@@ -61,18 +63,14 @@ def audit_exceptions_in_file(py_file: Path) -> list[str]:
             for stmt in node.body:
                 if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
                     call_str = ast.unparse(stmt.value)
-                    if (
-                        call_str.startswith("log.")
-                        or call_str.startswith("logger.")
-                        or call_str.startswith("self.handleError")
-                        or call_str.startswith("sys.stderr.write")
-                    ):
+                    if call_str.startswith(("log.", "logger.", "self.handleError", "sys.stderr.write")):
                         has_log = True
                         break
 
             if not has_log:
                 violations.append(
-                    f"{py_file}:{node.lineno} -> [UNLOGGED EXCEPTION] Handler 'except {exc_name}' does not invoke logging or error handling."
+                    f"{py_file}:{node.lineno} -> [UNLOGGED EXCEPTION] "
+                    f"Handler 'except {exc_name}' does not invoke logging or error handling."
                 )
 
     return violations
