@@ -34,6 +34,14 @@ async def test_discord_notifier_successful_dispatch():
         )
         assert reboot_sent is True
 
+        immediate_sent = await notifier.notify_reboot_countdown(
+            "immediately",
+            is_updating=True,
+            update_tag="v0.3.5",
+            custom_message="Urgent security patch",
+        )
+        assert immediate_sent is True
+
         broadcast_sent = await notifier.notify_admin_broadcast(
             "Test Server",
             "[ADMIN NOTICE] Server event starting in 5 minutes!",

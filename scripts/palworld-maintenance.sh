@@ -52,8 +52,14 @@ SAVED_DIR="${INSTALL_DIR}/Pal/Saved"
     fi
 
     UPDATE_REQUESTED=0
-    if [ -f "$UPDATE_FLAG_1" ] || [ -f "$UPDATE_FLAG_2" ]; then
+    if [ -s "$UPDATE_FLAG_1" ] || [ -s "$UPDATE_FLAG_2" ]; then
         UPDATE_REQUESTED=1
+    elif [ -f "$UPDATE_FLAG_1" ] || [ -f "$UPDATE_FLAG_2" ]; then
+        if [ -f "$UPDATE_FLAG_1" ] && [ -n "$(find "$UPDATE_FLAG_1" -mmin -15 2>/dev/null)" ]; then
+            UPDATE_REQUESTED=1
+        elif [ -f "$UPDATE_FLAG_2" ] && [ -n "$(find "$UPDATE_FLAG_2" -mmin -15 2>/dev/null)" ]; then
+            UPDATE_REQUESTED=1
+        fi
     fi
 
     if [ "$UPDATE_REQUESTED" -eq 1 ]; then
@@ -67,6 +73,8 @@ SAVED_DIR="${INSTALL_DIR}/Pal/Saved"
         STEAM_EXIT=$?
         if [ $STEAM_EXIT -eq 0 ]; then
             echo "--> SteamCMD update finished successfully."
+            : > "$UPDATE_FLAG_1" 2>/dev/null || true
+            : > "$UPDATE_FLAG_2" 2>/dev/null || true
             rm -f "$UPDATE_FLAG_1" "$UPDATE_FLAG_2" 2>/dev/null || true
         else
             echo "ERROR: SteamCMD update returned exit code: ${STEAM_EXIT}. Halting."

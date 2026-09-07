@@ -93,7 +93,23 @@ def test_api_reboot_with_custom_message_route(client: TestClient):
         response = client.post("/api/service/reboot", json=payload)
         assert response.status_code == 200
         assert response.json()["status"] == "success"
+        assert "Countdown sequence (2s) initiated." in response.json()["message"]
         mock_reboot.assert_called_once_with(2, False, "", "Scheduled memory purge and restart.")
+
+
+def test_api_instant_reboot_with_update_route(client: TestClient):
+    payload = {
+        "countdown_seconds": 0,
+        "trigger_steam_update": True,
+        "custom_message": "Emergency maintenance patch",
+    }
+    with patch("app.main.engine.execute_countdown_and_reboot", new_callable=AsyncMock) as mock_reboot:
+        response = client.post("/api/service/reboot", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["message"] == "Immediate server restart with SteamCMD update initiated."
+        mock_reboot.assert_called_once_with(0, True, "", "Emergency maintenance patch")
 
 
 def test_api_moderation_routes(client: TestClient):

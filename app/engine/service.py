@@ -477,7 +477,13 @@ class PalEngine:
         for flag_path in candidate_flags:
             try:
                 flag_path.parent.mkdir(parents=True, exist_ok=True)
-                flag_path.touch()
+                flag_path.write_text("1\n", encoding="utf-8")
+                try:
+                    flag_path.chmod(0o666)
+                except PermissionError as err:
+                    log.debug("Could not chmod update flag %s: %s", flag_path, err)
+                except OSError as err:
+                    log.debug("OS error chmodding update flag %s: %s", flag_path, err)
                 touched_any = True
                 log.info("Set SteamCMD update flag at: %s", flag_path)
             except PermissionError as err:
@@ -497,7 +503,8 @@ class PalEngine:
         for flag_path in candidate_flags:
             if flag_path.exists():
                 try:
-                    flag_path.unlink()
+                    flag_path.write_text("", encoding="utf-8")
+                    flag_path.unlink(missing_ok=True)
                     log.info("Cleared SteamCMD update flag at: %s", flag_path)
                 except PermissionError as err:
                     log.warning("Permission denied removing update flag at %s: %s", flag_path, err)
@@ -549,6 +556,10 @@ class PalEngine:
                 return False
             except TimeoutError:
                 log.debug("Countdown tick elapsed; remaining=%d", remaining - 1)
+            # In Python 3.11+, asyncio.TimeoutError is an alias for builtins.TimeoutError,
+            # but in Python 3.10 they are distinct classes. Both are caught for multi-Python matrix compatibility.
+            except asyncio.TimeoutError:  # pylint: disable=duplicate-except
+                log.debug("Countdown tick elapsed; remaining=%d", remaining - 1)
             remaining -= 1
 
         return True
@@ -573,11 +584,34 @@ class PalEngine:
             try:
                 sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
                 systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"
-                await asyncio.to_thread(
-                    subprocess.run, [sudo_bin, systemctl_bin, "restart", self.service_name], check=False
+                cmd = [sudo_bin, "-n", systemctl_bin, "restart", self.service_name]
+                proc = await asyncio.to_thread(
+                    subprocess.run, cmd, capture_output=True, text=True, check=False
                 )  # nosec B603
+                if proc.returncode != 0:
+                    log.error(
+                        "systemctl restart failed with returncode %d: %s; attempting fallback binary path.",
+                        proc.returncode,
+                        proc.stderr.strip(),
+                    )
+                    fallback_systemctl = (
+                        "/bin/systemctl" if systemctl_bin != "/bin/systemctl" else "/usr/bin/systemctl"
+                    )
+                    fallback_cmd = [sudo_bin, "-n", fallback_systemctl, "restart", self.service_name]
+                    fallback_proc = await asyncio.to_thread(
+                        subprocess.run, fallback_cmd, capture_output=True, text=True, check=False
+                    )  # nosec B603
+                    if fallback_proc.returncode != 0:
+                        log.error(
+                            "Fallback systemctl restart failed with returncode %d: %s",
+                            fallback_proc.returncode,
+                            fallback_proc.stderr.strip(),
+                        )
             except OSError as err:
                 log.error("Failed to execute systemctl restart: %s", err)
+
+        # Allow systemd a moment to transition service down before probing
+        await asyncio.sleep(3)
 
         # 3. Probing Readiness Phase
         self.lifecycle_state["phase"] = "PROBING"
@@ -634,31 +668,48 @@ class PalEngine:
                 if trigger_update:
                     self._set_update_flags()
 
-                self.lifecycle_state = {
-                    "phase": "COUNTDOWN",
-                    "remaining_seconds": countdown_seconds,
-                    "total_seconds": countdown_seconds,
-                    "current_broadcast": custom_message or "Initiating countdown sequence...",
-                    "is_updating": trigger_update,
-                }
-                await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
+                if countdown_seconds > 0:
+                    self.lifecycle_state = {
+                        "phase": "COUNTDOWN",
+                        "remaining_seconds": countdown_seconds,
+                        "total_seconds": countdown_seconds,
+                        "current_broadcast": custom_message or "Initiating countdown sequence...",
+                        "is_updating": trigger_update,
+                    }
+                    await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
 
-                completed = await self._run_countdown_loop(
-                    countdown_seconds, trigger_update, update_version_tag, custom_message
-                )
-                if completed:
-                    await self._restart_and_await_readiness()
-                else:
-                    log.info("Reboot countdown was cancelled by administrator. Aborting reboot procedure.")
-                    cancel_msg = "Server restart CANCELLED."
-                    if self._cancel_state.reason:
-                        cancel_msg = f"Server restart CANCELLED: {self._cancel_state.reason}"
-                    await self.send_broadcast(cancel_msg, mirror_discord=False)
-                    await self.notifier.notify_reboot_cancelled(
-                        server_name=self.server_name or "Palworld Dedicated Server",
-                        reason=self._cancel_state.reason,
+                    completed = await self._run_countdown_loop(
+                        countdown_seconds, trigger_update, update_version_tag, custom_message
                     )
-                    self._clear_update_flags()
+                    if not completed:
+                        log.info("Reboot countdown was cancelled by administrator. Aborting reboot procedure.")
+                        cancel_msg = "Server restart CANCELLED."
+                        if self._cancel_state.reason:
+                            cancel_msg = f"Server restart CANCELLED: {self._cancel_state.reason}"
+                        await self.send_broadcast(cancel_msg, mirror_discord=False)
+                        await self.notifier.notify_reboot_cancelled(
+                            server_name=self.server_name or "Palworld Dedicated Server",
+                            reason=self._cancel_state.reason,
+                        )
+                        self._clear_update_flags()
+                        return
+                else:
+                    # Immediate restart path (0 seconds)
+                    instant_desc = (
+                        "Server updating and restarting immediately."
+                        if trigger_update
+                        else "Server restarting immediately."
+                    )
+                    instant_msg = f"{custom_message} - {instant_desc}" if custom_message else instant_desc
+                    await self.send_broadcast(instant_msg, mirror_discord=False)
+                    await self.notifier.notify_reboot_countdown(
+                        "immediately",
+                        trigger_update,
+                        update_version_tag,
+                        custom_message=custom_message,
+                    )
+
+                await self._restart_and_await_readiness()
             finally:
                 self._release_reboot_lock()
                 await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})

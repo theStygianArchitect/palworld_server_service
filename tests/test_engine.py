@@ -181,3 +181,79 @@ async def test_pal_engine_cancel_countdown(monkeypatch, tmp_path):
     assert any("CANCELLED: Boss raid active" in b for b in broadcasts)
     assert len(cancelled_notifs) == 1
     assert cancelled_notifs[0][1] == "Boss raid active"
+
+
+@pytest.mark.asyncio
+async def test_pal_engine_instant_update_and_reboot(monkeypatch, tmp_path):
+    """Verifies that an immediate restart (0s countdown) with update executes without delay."""
+    lock_file = tmp_path / "palworld_reboot.lock"
+    update_flag = tmp_path / ".update_requested"
+
+    engine = PalEngine(
+        admin_password="test_password",  # nosec B105,B106
+        rest_port=8212,
+        lock_file=lock_file,
+        update_flag=update_flag,
+    )
+
+    async def mock_sleep(*a, **kw):
+        return None
+
+    monkeypatch.setattr("app.engine.service.asyncio.sleep", mock_sleep)
+
+    broadcasts: list[str] = []
+
+    async def mock_broadcast(msg, mirror_discord=False):
+        broadcasts.append(msg)
+        return True
+
+    countdown_notifs: list[tuple[str, bool, str, str]] = []
+
+    async def mock_notify_countdown(time_str, is_updating, tag, custom_message=""):
+        countdown_notifs.append((time_str, is_updating, tag, custom_message))
+        return True
+
+    complete_notifs: list[str] = []
+
+    async def mock_notify_complete(server_name=""):
+        complete_notifs.append(server_name)
+        return True
+
+    async def mock_save(*a, **kw):
+        return True
+
+    async def mock_check_readiness(*a, **kw):
+        return {"ready": True, "version": "v0.3.5", "server_name": "Test Server"}
+
+    monkeypatch.setattr(engine, "send_broadcast", mock_broadcast)
+    monkeypatch.setattr(engine.notifier, "notify_reboot_countdown", mock_notify_countdown)
+    monkeypatch.setattr(engine.notifier, "notify_reboot_complete", mock_notify_complete)
+    monkeypatch.setattr(engine, "trigger_save", mock_save)
+    monkeypatch.setattr(engine, "check_readiness", mock_check_readiness)
+
+    # Execute 0-second instant restart with update
+    await engine.execute_countdown_and_reboot(
+        countdown_seconds=0,
+        trigger_update=True,
+        update_version_tag="v0.3.5",
+        custom_message="Instant update test",
+    )
+
+    # Engine lifecycle state returns to IDLE after restart
+    assert engine.lifecycle_state["phase"] == "IDLE"
+    assert not lock_file.exists()
+    assert update_flag.exists()
+    assert update_flag.read_text(encoding="utf-8") == "1\n"
+
+    # Verify immediate broadcast was sent
+    assert any("Server updating and restarting immediately." in b for b in broadcasts)
+
+    # Verify immediate Discord notification was dispatched
+    assert len(countdown_notifs) == 1
+    assert countdown_notifs[0][0] == "immediately"
+    assert countdown_notifs[0][1] is True
+    assert countdown_notifs[0][2] == "v0.3.5"
+    assert countdown_notifs[0][3] == "Instant update test"
+
+    # Verify completion notification
+    assert len(complete_notifs) == 1

@@ -431,7 +431,13 @@ async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks) -> dict[st
         payload.update_version_tag,
         payload.custom_message,
     )
-    return {"status": "success", "message": f"Countdown sequence ({payload.countdown_seconds}s) initiated."}
+    reboot_type = (
+        "Immediate server restart"
+        if payload.countdown_seconds == 0
+        else f"Countdown sequence ({payload.countdown_seconds}s)"
+    )
+    update_note = " with SteamCMD update" if payload.trigger_steam_update else ""
+    return {"status": "success", "message": f"{reboot_type}{update_note} initiated."}
 
 
 @app.post("/api/service/reboot/cancel")

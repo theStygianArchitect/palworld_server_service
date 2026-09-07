@@ -81,22 +81,26 @@ if [ -d "${PAL_CONFIG_DIR}" ]; then
 fi
 
 touch "${STEAM_HOME}/.update_requested" 2>/dev/null || true
-chmod 0664 "${STEAM_HOME}/.update_requested" 2>/dev/null || true
+: > "${STEAM_HOME}/.update_requested" 2>/dev/null || true
+chmod 0666 "${STEAM_HOME}/.update_requested" 2>/dev/null || true
 setfacl -m u:"${APP_USER}":rw "${STEAM_HOME}/.update_requested" 2>/dev/null || true
 
+mkdir -p /var/lib/palmanager
 touch /var/lib/palmanager/update_requested 2>/dev/null || true
+: > /var/lib/palmanager/update_requested 2>/dev/null || true
 chown "${APP_USER}:${APP_USER}" /var/lib/palmanager/update_requested 2>/dev/null || true
-chmod 0664 /var/lib/palmanager/update_requested 2>/dev/null || true
+chmod 0666 /var/lib/palmanager/update_requested 2>/dev/null || true
 setfacl -m u:steam:rw /var/lib/palmanager/update_requested 2>/dev/null || true
+setfacl -m u:steam:rwx /var/lib/palmanager 2>/dev/null || true
 echo "[ OK ]"
 
 # 4. Scoped Sudoers Privileges
 echo -n "[4/8] Configuring scoped sudoers rules for '${APP_USER}'... "
 cat << SUDO_EOF > "${SUDOERS_FILE}"
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart palworld.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status palworld.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart palworld.service, /usr/bin/systemctl restart palworld.service
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status palworld.service, /usr/bin/systemctl status palworld.service
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld.service, /usr/bin/systemctl is-active palworld.service
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *, /usr/bin/journalctl -u palworld.service *
 ${APP_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status
 SUDO_EOF
 chmod 0440 "${SUDOERS_FILE}"

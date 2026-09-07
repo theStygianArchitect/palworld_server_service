@@ -619,8 +619,9 @@
 
         <div>
           <label class="block text-[11px] font-mono uppercase text-slate-400 mb-1">In-Game Notice Duration</label>
-          <select id="countdownSelect" class="w-full bg-dark-950 border border-slate-700 rounded-lg p-2.5 text-xs sm:text-sm">
-            <option value="0">Immediate (0 Seconds - Instant Restart & Update)</option>
+          <select id="countdownSelect" onchange="onCountdownSelectChange(this.value)" class="w-full bg-dark-950 border border-slate-700 rounded-lg p-2.5 text-xs sm:text-sm">
+            <option value="0_update">Immediate (0 Seconds - Instant Restart & Update)</option>
+            <option value="0">Immediate (0 Seconds - Instant Restart Only)</option>
             <option value="10">10 Seconds (Quick Restart)</option>
             <option value="30">30 Seconds</option>
             <option value="60">1 Minute</option>
@@ -1540,13 +1541,36 @@
       }
     }
 
-    function openRebootModal() { document.getElementById('rebootModal').classList.remove('hidden'); }
+    function onCountdownSelectChange(val) {
+      const updateCheck = document.getElementById('updateCheck');
+      if (val === '0_update') {
+        updateCheck.checked = true;
+      } else if (val === '0') {
+        updateCheck.checked = false;
+      }
+    }
+
+    function openRebootModal() {
+      document.getElementById('rebootModal').classList.remove('hidden');
+      if (document.getElementById('countdownSelect').value === '0_update') {
+        document.getElementById('updateCheck').checked = true;
+      }
+    }
     function closeRebootModal() { document.getElementById('rebootModal').classList.add('hidden'); }
 
     async function executeReboot() {
       const customMsg = document.getElementById('customRebootMsg').value.trim();
-      const secs = parseInt(document.getElementById('countdownSelect').value) || 600;
-      const update = document.getElementById('updateCheck').checked;
+      const selectVal = document.getElementById('countdownSelect').value;
+      let secs = 600;
+      let isInstantUpdate = false;
+      if (selectVal === '0_update') {
+        secs = 0;
+        isInstantUpdate = true;
+      } else {
+        const parsed = parseInt(selectVal, 10);
+        secs = Number.isNaN(parsed) ? 600 : parsed;
+      }
+      const update = isInstantUpdate || document.getElementById('updateCheck').checked;
       closeRebootModal();
 
       try {

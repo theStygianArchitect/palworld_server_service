@@ -161,10 +161,16 @@ class DiscordNotifier:
             if (is_updating and update_tag)
             else (" (with SteamCMD update)" if is_updating else "")
         )
-        desc = (
-            f"Server restart scheduled in **{time_remaining_str}**{update_text}."
-            " Please find a safe location to prevent data loss."
-        )
+        if time_remaining_str.lower() == "immediately":
+            desc = (
+                f"Server is restarting **immediately**{update_text}."
+                " World save and maintenance in progress."
+            )
+        else:
+            desc = (
+                f"Server restart scheduled in **{time_remaining_str}**{update_text}."
+                " Please find a safe location to prevent data loss."
+            )
         if custom_message:
             desc = f"**Reason:** {custom_message}\n\n{desc}"
 
