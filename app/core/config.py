@@ -457,6 +457,14 @@ class AppSettings(BaseSettings):
             "github_repo_url",
         ),
     )
+    admin_credential_export_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "PALWORLD_ADMIN_CREDENTIAL_EXPORT_PATH",
+            "ADMIN_CREDENTIAL_EXPORT_PATH",
+            "admin_credential_export_path",
+        ),
+    )
 
     @field_validator("github_repo_url")
     @classmethod
@@ -527,3 +535,29 @@ def reload_settings() -> AppSettings:
     global _settings_instance
     _settings_instance = AppSettings()
     return _settings_instance
+
+
+def resolve_admin_credential_export_path(custom_path: str | Path | None = None) -> Path:
+    """Resolves the destination filepath for writing initial administrator credentials out-of-band.
+
+    Args:
+        custom_path: Optional override path from configuration or arguments.
+
+    Returns:
+        Path: Resolved absolute Path object with ensured parent directory existence.
+    """
+    if custom_path:
+        target = Path(custom_path).expanduser().resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
+
+    # Default resolution: On POSIX when /etc is writable (root), use /etc/palmanager;
+    # otherwise fallback to user home directory ~/.palmanager
+    if os.name != "nt" and Path("/etc").is_dir() and os.access("/etc", os.W_OK):
+        etc_dir = Path("/etc/palmanager")
+        etc_dir.mkdir(parents=True, exist_ok=True)
+        return etc_dir / "initial_admin_credential.txt"
+
+    home_dir = Path.home() / ".palmanager"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    return home_dir / "initial_admin_credential.txt"

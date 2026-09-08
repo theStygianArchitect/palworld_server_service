@@ -238,3 +238,16 @@ echo " Web UI Dashboard:        http://${ETH0_DETECTED:-localhost}:${APP_PORT}"
 echo " Pages Available:         World Settings | Player Roster | Hardware | Backups | Observability"
 echo " Game Server State:       $(systemctl is-active palworld.service 2>/dev/null || echo 'inactive')"
 echo "========================================================================="
+
+ADMIN_CRED_FILE="/etc/palmanager/initial_admin_credential.txt"
+if [ ! -f "${ADMIN_CRED_FILE}" ] && [ -f "${HOME}/.palmanager/initial_admin_credential.txt" ]; then
+    ADMIN_CRED_FILE="${HOME}/.palmanager/initial_admin_credential.txt"
+fi
+
+if [ -f "${ADMIN_CRED_FILE}" ]; then
+    echo " [!] NOTICE: Initial administrator credentials generated:"
+    echo "     Credential File: ${ADMIN_CRED_FILE} (mode 0600)"
+    echo "     Username:        admin"
+    echo "     Password:        [Stored in ${ADMIN_CRED_FILE}]"
+    echo "========================================================================="
+fi

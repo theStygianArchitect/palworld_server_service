@@ -8,13 +8,17 @@ external C dependencies in strict compliance with 3 AM standards.
 from __future__ import annotations
 
 import base64
+import datetime
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import time
+from pathlib import Path
 from typing import Any
 
+from app.core.config import resolve_admin_credential_export_path
 from app.core.logger import log
 from app.database.db import DatabaseManager
 from app.database.models import DEFAULT_ROLE_PERMISSIONS, UserRecord
@@ -175,15 +179,25 @@ def has_permission(user_role: str, user_permissions: list[str], required_permiss
     return required_permission in role_defaults
 
 
-def bootstrap_admin_user(db: DatabaseManager, default_password: str) -> UserRecord:
+def bootstrap_admin_user(
+    db: DatabaseManager,
+    default_password: str | None = None,
+    export_path: Path | str | None = None,
+) -> UserRecord:
     """Bootstraps default administrator user upon first database initialization.
+
+    If no users exist in the database and default_password is not explicitly provided,
+    generates a cryptographically strong random password using CSPRNG secrets,
+    hashes it, stores the admin user, and writes the credentials out-of-band to export_path
+    with strict POSIX 0600 file permissions.
 
     Args:
         db: Initialized DatabaseManager instance.
-        default_password: Password to assign to the default 'admin' user.
+        default_password: Optional password to assign. If None or empty, generates random token.
+        export_path: Optional destination filepath for writing out-of-band credentials.
 
     Returns:
-        UserRecord of the bootstrapped or existing administrator.
+        UserRecord: The bootstrapped or existing administrator record.
     """
     existing_admin = db.get_user_by_username("admin")
     if existing_admin is not None:
@@ -191,8 +205,14 @@ def bootstrap_admin_user(db: DatabaseManager, default_password: str) -> UserReco
 
     if db.count_users() == 0:
         log.info("Bootstrapping default 'admin' user account in SQLite database.")
-        pw_hash, salt = hash_password(default_password)
-        return db.create_user(
+        is_generated = False
+        password_to_use = default_password
+        if not password_to_use:
+            password_to_use = secrets.token_urlsafe(20)
+            is_generated = True
+
+        pw_hash, salt = hash_password(password_to_use)
+        admin_user = db.create_user(
             username="admin",
             password_hash=pw_hash,
             salt=salt,
@@ -201,6 +221,40 @@ def bootstrap_admin_user(db: DatabaseManager, default_password: str) -> UserReco
             is_active=True,
         )
 
+        if is_generated or export_path is not None:
+            resolved_export = resolve_admin_credential_export_path(export_path)
+            _export_credentials_to_file(resolved_export, password_to_use)
+
+        return admin_user
+
     # If users exist but 'admin' does not, return first available user or create admin
     first_users = db.list_users()
     return first_users[0]
+
+
+def _export_credentials_to_file(export_path: Path, password: str) -> None:
+    """Safely writes initial administrator credentials out-of-band with POSIX 0600 mode."""
+    try:
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        banner = (
+            "=========================================================================\n"
+            " Palworld Operations Suite - Initial Administrator Credentials\n"
+            f" Generated: {now_ts}\n"
+            " Username:  admin\n"
+            f" Password:  {password}\n"
+            " Note:      Store this securely or rotate via Web Portal.\n"
+            "=========================================================================\n"
+        )
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        mode = 0o600
+        fd = os.open(str(export_path), flags, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(banner)
+
+        if os.name != "nt":
+            os.chmod(export_path, 0o600)
+
+        log.info("Initial admin credentials exported out-of-band to %s", export_path)
+    except OSError as err:
+        log.warning("Could not export initial admin credentials to %s: %s", export_path, err)

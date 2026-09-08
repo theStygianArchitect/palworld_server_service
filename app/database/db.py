@@ -256,6 +256,17 @@ class DatabaseManager:
             cursor = conn.execute("SELECT COUNT(*) FROM users")
             return int(cursor.fetchone()[0])
 
+    def count_active_admins(self) -> int:
+        """Returns the total number of active users with administrator role.
+
+        Returns:
+            Integer count of active administrator user rows.
+        """
+        with self._lock:
+            conn = self.get_connection()
+            cursor = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1")
+            return int(cursor.fetchone()[0])
+
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     # Rationale: User entity relational schema requires primary credentials and account attributes.
     def create_user(

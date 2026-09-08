@@ -333,6 +333,50 @@ class UserCreateRequest(BaseModel):
     permissions: list[str] | None = Field(default=None, description="Optional custom permissions list")
 
 
+class UserRegisterRequest(BaseModel):
+    """Payload for public self-service user registration.
+
+    Attributes:
+        username (str): New user login handle (3-32 characters, alphanumeric/dash/underscore).
+        password (str): Secret password (minimum 8 characters).
+        email (EmailStr): Valid contact email address.
+    """
+
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=32,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+        description="Alphanumeric username with optional underscores and hyphens",
+    )
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="Plaintext password meeting minimum 8-character length requirement",
+    )
+    email: str = Field(
+        ...,
+        min_length=3,
+        max_length=120,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+        description="Valid contact email address for account notification",
+    )
+
+
+class UserRoleUpdateRequest(BaseModel):
+    """Payload for administrative role promotion or demotion.
+
+    Attributes:
+        role (Literal['admin', 'operator', 'viewer']): Target system role to assign.
+    """
+
+    role: Literal["admin", "operator", "viewer"] = Field(
+        ...,
+        description="Target system role to assign to the user",
+    )
+
+
 class UserUpdateRequest(BaseModel):
     """Payload for updating an existing user record.
 

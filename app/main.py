@@ -58,7 +58,9 @@ from app.api.schemas import (
     UserCreateRequest,
     UserLoginRequest,
     UserLoginResponse,
+    UserRegisterRequest,
     UserResponse,
+    UserRoleUpdateRequest,
     UserUpdateRequest,
     build_github_issue_url,
 )
@@ -335,7 +337,13 @@ async def lifespan(_: FastAPI):
     # Database Persistence: Initialize schema and bootstrap default administrator
     try:
         await asyncio.to_thread(db.initialize)
-        await asyncio.to_thread(bootstrap_admin_user, db, settings.AdminPassword)
+        initial_admin_pwd = None if settings.AdminPassword == "admin_password" else settings.AdminPassword
+        await asyncio.to_thread(
+            bootstrap_admin_user,
+            db,
+            initial_admin_pwd,
+            settings.admin_credential_export_path,
+        )
         await asyncio.to_thread(metrics_db.initialize)
         await asyncio.to_thread(metrics_db.prune_older_than, settings.metrics_retention_days)
     except sqlite3.OperationalError as err:
@@ -1190,6 +1198,52 @@ async def login(req: UserLoginRequest, request: Request, response: Response) -> 
     )
 
 
+@app.post("/api/auth/register", response_model=UserResponse)
+async def register(
+    req: UserRegisterRequest,
+    request: Request,
+) -> UserResponse:
+    """Public self-service user registration assigning least-privilege viewer role.
+
+    Args:
+        req: Validated user registration request payload.
+        request: FastAPI HTTP request for client IP audit logging.
+
+    Returns:
+        Created UserResponse record.
+
+    Raises:
+        HTTPException: 409 Conflict if username is already registered.
+    """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    existing = db.get_user_by_username(req.username)
+    if existing is not None:
+        log.warning("Registration conflict: username '%s' already exists (client %s)", req.username, client_ip)
+        raise HTTPException(status_code=409, detail=f"Username '{req.username}' already registered.")
+
+    pw_hash, salt = hash_password(req.password)
+    user = db.create_user(
+        username=req.username,
+        password_hash=pw_hash,
+        salt=salt,
+        email=req.email,
+        role="viewer",
+        is_active=True,
+    )
+    log.info("Registered new user '%s' with role 'viewer' from %s", user.username, client_ip)
+    perms = db.get_user_permissions(user.id)
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        last_login=user.last_login,
+        permissions=perms,
+    )
+
+
 @app.post("/api/auth/logout")
 async def logout(response: Response) -> dict[str, str]:
     """Terminates session by clearing session cookie.
@@ -1358,6 +1412,12 @@ async def update_existing_user(
     if existing is None:
         raise HTTPException(status_code=404, detail=f"User ID {user_id} not found.")
 
+    if existing.role == "admin" and existing.is_active:
+        if req.role is not None and req.role != "admin" and db.count_active_admins() <= 1:
+            raise HTTPException(status_code=400, detail="Cannot demote the last remaining active administrator.")
+        if req.is_active is False and db.count_active_admins() <= 1:
+            raise HTTPException(status_code=400, detail="Cannot deactivate the last remaining active administrator.")
+
     pw_hash: str | None = None
     salt: str | None = None
     if req.password:
@@ -1390,6 +1450,51 @@ async def update_existing_user(
     )
 
 
+@app.patch("/api/users/{user_id}/role", response_model=UserResponse)
+async def update_user_role(
+    user_id: int,
+    req: UserRoleUpdateRequest,
+    _: UserRecord = Depends(perm_users_manage),
+) -> UserResponse:
+    """Promotes or demotes an existing user account to a designated system role.
+
+    Args:
+        user_id: Target user identifier.
+        req: Validated role update payload.
+        _: Enforces users:manage administrative permission.
+
+    Returns:
+        Updated UserResponse record with synchronized permissions.
+
+    Raises:
+        HTTPException: 404 Not Found if user does not exist.
+        HTTPException: 400 Bad Request if demoting the last remaining active administrator.
+    """
+    existing = db.get_user_by_id(user_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"User ID {user_id} not found.")
+
+    if existing.role == "admin" and existing.is_active and req.role != "admin" and db.count_active_admins() <= 1:
+        raise HTTPException(status_code=400, detail="Cannot demote the last remaining active administrator.")
+
+    updated = db.update_user(user_id=user_id, role=req.role)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"User ID {user_id} not found.")
+
+    perms = db.get_user_permissions(user_id)
+    log.info("Updated role for user '%s' (ID %d) to '%s'", updated.username, user_id, req.role)
+    return UserResponse(
+        id=updated.id,
+        username=updated.username,
+        email=updated.email,
+        role=updated.role,
+        is_active=updated.is_active,
+        created_at=updated.created_at,
+        last_login=updated.last_login,
+        permissions=perms,
+    )
+
+
 @app.delete("/api/users/{user_id}")
 async def delete_existing_user(
     user_id: int,
@@ -1405,10 +1510,17 @@ async def delete_existing_user(
         Confirmation dictionary.
 
     Raises:
-        HTTPException: 400 Bad Request if deleting self, or 404 if not found.
+        HTTPException: 400 Bad Request if deleting self or the last administrator, or 404 if not found.
     """
     if admin_user.id == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete your own active administrator account.")
+
+    existing = db.get_user_by_id(user_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"User ID {user_id} not found.")
+
+    if existing.role == "admin" and existing.is_active and db.count_active_admins() <= 1:
+        raise HTTPException(status_code=400, detail="Cannot delete the last remaining active administrator.")
 
     ok = db.delete_user(user_id)
     if not ok:

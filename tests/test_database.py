@@ -53,6 +53,35 @@ def test_bootstrap_admin_user(db: DatabaseManager) -> None:
     assert admin_again.username == "admin"
 
 
+def test_bootstrap_admin_user_random_generation(tmp_path: Path) -> None:
+    """Verifies that omitted default_password generates a random password and exports it out-of-band."""
+    db_file = tmp_path / "test_random_bootstrap.db"
+    manager = DatabaseManager(str(db_file))
+    manager.initialize()
+
+    export_file = tmp_path / "initial_admin_credential.txt"
+    admin_user = bootstrap_admin_user(manager, default_password=None, export_path=export_file)
+
+    assert admin_user.username == "admin"
+    assert admin_user.role == "admin"
+    assert admin_user.is_active is True
+    assert export_file.is_file()
+
+    content = export_file.read_text(encoding="utf-8")
+    assert "Username:  admin" in content
+    assert "Password:" in content
+
+    # Extract password line and verify against password_hash
+    password_line = next(line for line in content.splitlines() if "Password:" in line)
+    extracted_password = password_line.split("Password:", 1)[1].strip()
+    assert len(extracted_password) >= 20
+    assert verify_password(extracted_password, admin_user.salt, admin_user.password_hash)
+
+    # Calling bootstrap again returns existing admin without modifying export file
+    admin_again = bootstrap_admin_user(manager, default_password=None, export_path=export_file)
+    assert admin_again.id == admin_user.id
+
+
 def test_user_crud_lifecycle(db: DatabaseManager) -> None:
     """Tests creating, querying, updating, and deleting user accounts."""
     pwd_hash, salt = hash_password("SecretPass123!")
@@ -291,3 +320,51 @@ def test_list_feedbacks_filtering(db: DatabaseManager) -> None:
     assert len(all_paged) == 2
     offset_paged = db.list_feedbacks(limit=2, offset=2)
     assert len(offset_paged) == 1
+
+
+def test_user_role_and_admin_count(db: DatabaseManager) -> None:
+    """Verifies count_active_admins accurately tracks admins and update_user_role syncs permissions."""
+    # Initially 0 admins
+    assert db.count_active_admins() == 0
+
+    # Create admin
+    pwd_hash, salt = hash_password("AdminPass123!")
+    admin = db.create_user(
+        username="primary_admin",
+        password_hash=pwd_hash,
+        salt=salt,
+        role="admin",
+        is_active=True,
+    )
+    assert db.count_active_admins() == 1
+
+    # Create viewer
+    viewer = db.create_user(
+        username="test_viewer",
+        password_hash=pwd_hash,
+        salt=salt,
+        role="viewer",
+        is_active=True,
+    )
+    assert db.count_active_admins() == 1
+
+    # Promote viewer to operator
+    updated_op = db.update_user(viewer.id, role="operator")
+    assert updated_op is not None
+    assert updated_op.role == "operator"
+    assert db.count_active_admins() == 1
+    op_perms = db.get_user_permissions(viewer.id)
+    assert "server:reboot" in op_perms
+    assert "users:manage" not in op_perms
+
+    # Promote operator to admin
+    updated_admin = db.update_user(viewer.id, role="admin")
+    assert updated_admin is not None
+    assert updated_admin.role == "admin"
+    assert db.count_active_admins() == 2
+    admin_perms = db.get_user_permissions(viewer.id)
+    assert "users:manage" in admin_perms
+
+    # Deactivating one admin reduces count
+    db.update_user(admin.id, is_active=False)
+    assert db.count_active_admins() == 1
