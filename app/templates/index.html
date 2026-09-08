@@ -1223,6 +1223,12 @@
         </div>
         <div id="loginErrorMsg" class="hidden text-xs text-red-400 bg-red-950/40 p-2 rounded-lg border border-red-800"></div>
 
+        <div class="text-center pt-1">
+          <button type="button" onclick="switchToRegisterModal()" class="text-xs text-brand-400 hover:text-brand-300 underline font-mono">
+            New user? Register an account
+          </button>
+        </div>
+
         <div class="flex justify-between items-center pt-2 border-t border-slate-800">
           <button type="button" onclick="handleUserLogout()" id="loginLogoutBtn" class="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800 transition text-xs">
             Sign Out
@@ -1233,6 +1239,55 @@
             </button>
             <button type="submit" id="loginSubmitBtn" class="px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-brand-500/20">
               <span>🔓</span> Sign In
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- User Self-Service Registration Modal -->
+  <div id="registerModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-dark-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold flex items-center gap-2 text-slate-200">
+          <span>✨</span> Create New Account
+        </h3>
+        <button onclick="closeRegisterModal()" class="text-slate-400 hover:text-white text-sm font-bold p-1">✕</button>
+      </div>
+      <p class="text-xs text-slate-400">
+        Sign up for a management portal account. New accounts are assigned viewer access by default.
+      </p>
+
+      <form id="registerForm" onsubmit="handleUserRegister(event)" class="space-y-3 font-mono text-xs">
+        <div>
+          <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Username * (alphanumeric, 3-32 chars)</label>
+          <input type="text" id="regUsername" required minlength="3" maxlength="32" pattern="^[a-zA-Z0-9_-]+$" placeholder="e.g. pal_hunter"
+                 class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+        </div>
+        <div>
+          <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Email Address *</label>
+          <input type="email" id="regEmail" required placeholder="user@example.com"
+                 class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+        </div>
+        <div>
+          <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Password * (min 8 characters)</label>
+          <input type="password" id="regPassword" required minlength="8" maxlength="128" placeholder="••••••••"
+                 class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+        </div>
+        <div id="regErrorMsg" class="hidden text-xs text-red-400 bg-red-950/40 p-2 rounded-lg border border-red-800"></div>
+        <div id="regSuccessMsg" class="hidden text-xs text-green-400 bg-green-950/40 p-2 rounded-lg border border-green-800"></div>
+
+        <div class="flex justify-between items-center pt-2 border-t border-slate-800">
+          <button type="button" onclick="switchToLoginModal()" class="text-xs text-brand-400 hover:text-brand-300 underline">
+            Already have an account? Sign in
+          </button>
+          <div class="flex gap-2">
+            <button type="button" onclick="closeRegisterModal()" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition">
+              Cancel
+            </button>
+            <button type="submit" id="regSubmitBtn" class="px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-brand-500/20">
+              <span>✨</span> Register
             </button>
           </div>
         </div>
@@ -2584,38 +2639,48 @@
           return;
         }
         const json = await res.json();
-        if (json.status === 'success' && json.data) {
-          if (json.data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-slate-500">No registered users.</td></tr>`;
-            return;
-          }
-
-          tbody.innerHTML = json.data.map(u => {
-            let roleBadge = "bg-slate-800 text-slate-300";
-            if (u.role === 'admin') roleBadge = "bg-purple-950 text-purple-300 border border-purple-800";
-            else if (u.role === 'operator') roleBadge = "bg-indigo-950 text-indigo-300 border border-indigo-800";
-            else if (u.role === 'viewer') roleBadge = "bg-slate-900 text-slate-400 border border-slate-700";
-
-            const lastLogin = u.last_login ? u.last_login.replace('T', ' ').slice(0, 19) : 'Never';
-            const deleteBtn = u.id === 1 ? '<span class="text-slate-600 text-[10px]">Primary</span>' : `
-              <button onclick="deleteUserAccount(${u.id}, '${u.username}')" class="px-2 py-0.5 bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800 rounded text-[10px] transition">
-                Delete
-              </button>
-            `;
-
-            return `
-              <tr class="hover:bg-dark-900/60 transition">
-                <td class="py-2.5 px-3 text-slate-500 font-mono">#${u.id}</td>
-                <td class="py-2.5 px-3 font-bold text-slate-200">${u.username}</td>
-                <td class="py-2.5 px-3 text-slate-400">${u.email || '--'}</td>
-                <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${roleBadge}">${u.role}</span></td>
-                <td class="py-2.5 px-3">${u.is_active ? '<span class="text-emerald-400 font-bold">✓ Active</span>' : '<span class="text-red-400 font-bold">✗ Disabled</span>'}</td>
-                <td class="py-2.5 px-3 text-slate-400 text-[10px]">${lastLogin}</td>
-                <td class="py-2.5 px-3 text-right">${deleteBtn}</td>
-              </tr>
-            `;
-          }).join('');
+        const users = Array.isArray(json) ? json : (json.data || []);
+        if (users.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-slate-500">No registered users.</td></tr>`;
+          return;
         }
+
+        tbody.innerHTML = users.map(u => {
+          let roleBadge = "bg-slate-800 text-slate-300";
+          if (u.role === 'admin') roleBadge = "bg-purple-950 text-purple-300 border border-purple-800";
+          else if (u.role === 'operator') roleBadge = "bg-indigo-950 text-indigo-300 border border-indigo-800";
+          else if (u.role === 'viewer') roleBadge = "bg-slate-900 text-slate-400 border border-slate-700";
+
+          const roleControl = `
+            <div class="flex items-center gap-1.5">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold ${roleBadge}">${u.role}</span>
+              <select onchange="changeUserRole(${u.id}, '${u.username}', this.value)" class="bg-dark-900 border border-slate-700 text-slate-200 text-[10px] rounded px-1.5 py-0.5 font-mono focus:outline-none focus:border-brand-500 cursor-pointer">
+                <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+                <option value="operator" ${u.role === 'operator' ? 'selected' : ''}>Operator</option>
+                <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+              </select>
+            </div>
+          `;
+
+          const lastLogin = u.last_login ? u.last_login.replace('T', ' ').slice(0, 19) : 'Never';
+          const deleteBtn = u.id === 1 ? '<span class="text-slate-600 text-[10px]">Primary</span>' : `
+            <button onclick="deleteUserAccount(${u.id}, '${u.username}')" class="px-2 py-0.5 bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800 rounded text-[10px] transition">
+              Delete
+            </button>
+          `;
+
+          return `
+            <tr class="hover:bg-dark-900/60 transition">
+              <td class="py-2.5 px-3 text-slate-500 font-mono">#${u.id}</td>
+              <td class="py-2.5 px-3 font-bold text-slate-200">${u.username}</td>
+              <td class="py-2.5 px-3 text-slate-400">${u.email || '--'}</td>
+              <td class="py-2.5 px-3">${roleControl}</td>
+              <td class="py-2.5 px-3">${u.is_active ? '<span class="text-emerald-400 font-bold">✓ Active</span>' : '<span class="text-red-400 font-bold">✗ Disabled</span>'}</td>
+              <td class="py-2.5 px-3 text-slate-400 text-[10px]">${lastLogin}</td>
+              <td class="py-2.5 px-3 text-right">${deleteBtn}</td>
+            </tr>
+          `;
+        }).join('');
       } catch (err) {
         console.debug("User roster error:", err);
         tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-red-400">Failed to load user accounts.</td></tr>`;
@@ -2683,6 +2748,28 @@
       }
     }
 
+    async function changeUserRole(userId, username, newRole) {
+      try {
+        const res = await fetch(`/api/users/${userId}/role`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: newRole }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showAlert(`Updated role for '${username}' to '${newRole}'.`);
+          loadUsers();
+        } else {
+          showAlert(data.detail || 'Failed to update user role.', true);
+          loadUsers();
+        }
+      } catch (err) {
+        console.debug("Update user role error:", err);
+        showAlert("Failed to contact server to update user role.", true);
+        loadUsers();
+      }
+    }
+
     async function loadLoginAudit() {
       const tbody = document.getElementById('auditTableBody');
       if (!tbody) return;
@@ -2694,13 +2781,13 @@
           return;
         }
         const json = await res.json();
-        if (json.status === 'success' && json.data) {
-          if (json.data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">No login attempts recorded yet.</td></tr>`;
-            return;
-          }
+        const records = Array.isArray(json) ? json : (json.data || []);
+        if (records.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">No login attempts recorded yet.</td></tr>`;
+          return;
+        }
 
-          tbody.innerHTML = json.data.map(a => {
+        tbody.innerHTML = records.map(a => {
             const isSuccess = a.status === 'SUCCESS';
             const statusBadge = isSuccess
               ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">SUCCESS</span>'
@@ -2740,6 +2827,82 @@
 
     function closeLoginModal() {
       document.getElementById('loginModal')?.classList.add('hidden');
+    }
+
+    function openRegisterModal() {
+      document.getElementById('registerModal')?.classList.remove('hidden');
+      const errEl = document.getElementById('regErrorMsg');
+      if (errEl) errEl.classList.add('hidden');
+      const succEl = document.getElementById('regSuccessMsg');
+      if (succEl) succEl.classList.add('hidden');
+    }
+
+    function closeRegisterModal() {
+      document.getElementById('registerModal')?.classList.add('hidden');
+      document.getElementById('registerForm')?.reset();
+    }
+
+    function switchToRegisterModal() {
+      closeLoginModal();
+      openRegisterModal();
+    }
+
+    function switchToLoginModal() {
+      closeRegisterModal();
+      openLoginModal();
+    }
+
+    async function handleUserRegister(event) {
+      event.preventDefault();
+      const usernameInput = document.getElementById('regUsername');
+      const emailInput = document.getElementById('regEmail');
+      const passwordInput = document.getElementById('regPassword');
+      const errEl = document.getElementById('regErrorMsg');
+      const succEl = document.getElementById('regSuccessMsg');
+      const submitBtn = document.getElementById('regSubmitBtn');
+
+      if (!usernameInput || !emailInput || !passwordInput) return;
+      if (submitBtn) submitBtn.disabled = true;
+      if (errEl) errEl.classList.add('hidden');
+      if (succEl) succEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: usernameInput.value.trim(),
+            email: emailInput.value.trim(),
+            password: passwordInput.value,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          if (succEl) {
+            succEl.textContent = `Account '${data.username}' registered successfully!`;
+            succEl.classList.remove('hidden');
+          }
+          document.getElementById('registerForm')?.reset();
+          setTimeout(() => {
+            switchToLoginModal();
+            const loginUser = document.getElementById('loginUsername');
+            if (loginUser) loginUser.value = data.username;
+          }, 1200);
+        } else {
+          if (errEl) {
+            errEl.textContent = data.detail || 'Registration failed.';
+            errEl.classList.remove('hidden');
+          }
+        }
+      } catch (err) {
+        console.debug("Registration error:", err);
+        if (errEl) {
+          errEl.textContent = "Network error during registration.";
+          errEl.classList.remove('hidden');
+        }
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
     }
 
     async function handleUserLogin(event) {
@@ -2805,10 +2968,11 @@
         const res = await fetch('/api/auth/me');
         if (res.ok) {
           const json = await res.json();
-          if (json.status === 'success' && json.user) {
-            currentAuthUser = json.user;
+          if ((json.status === 'success' && json.user) || json.username) {
+            const user = json.user || json;
+            currentAuthUser = user;
             if (headerText) {
-              headerText.innerText = `${json.user.username} (${json.user.role})`;
+              headerText.innerText = `${user.username} (${user.role})`;
             }
             if (logoutBtn) logoutBtn.classList.remove('hidden');
             return;

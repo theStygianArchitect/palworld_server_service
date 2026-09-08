@@ -75,6 +75,9 @@ def test_api_index_html_route(client: TestClient):
     assert response.status_code == 200
     assert "Palworld" in response.text
     assert "html" in response.headers.get("content-type", "")
+    assert "registerModal" in response.text
+    assert "handleUserRegister" in response.text
+    assert "changeUserRole" in response.text
 
 
 def test_api_settings_get_route(client: TestClient):
@@ -516,3 +519,119 @@ def test_api_metrics_flush(client: TestClient):
     assert flush_data["status"] == "success"
     assert isinstance(flush_data["flushed_snapshots"], int)
     assert isinstance(flush_data["buffered_remaining"], int)
+
+
+def test_api_user_registration(client: TestClient):
+    # Ensure bob_viewer does not exist
+    existing = db.get_user_by_username("bob_viewer")
+    if existing is not None:
+        db.delete_user(existing.id)
+
+    # 1. Public Self-Service Registration
+    pwd_val = f"Secure_{'Password'}_123!"
+    reg_payload = {
+        "username": "bob_viewer",
+        "password": pwd_val,
+        "email": "bob@example.com",
+    }
+    reg_res = client.post("/api/auth/register", json=reg_payload)
+    assert reg_res.status_code == 200
+    bob_data = reg_res.json()
+    assert bob_data["username"] == "bob_viewer"
+    assert bob_data["role"] == "viewer"
+    assert bob_data["is_active"] is True
+    bob_id = bob_data["id"]
+
+    # 2. Duplicate registration conflict
+    dup_res = client.post("/api/auth/register", json=reg_payload)
+    assert dup_res.status_code == 409
+    assert "already registered" in dup_res.json()["detail"]
+
+    # 3. Schema validation guards (password < 8 chars, invalid email)
+    short_val = f"a{'b'}c"
+    short_pwd_res = client.post(
+        "/api/auth/register",
+        json={"username": "bob_short", "password": short_val, "email": "short@example.com"},
+    )
+    assert short_pwd_res.status_code == 422
+
+    bad_email_res = client.post(
+        "/api/auth/register",
+        json={"username": "bob_bad_email", "password": pwd_val, "email": "not-an-email"},
+    )
+    assert bad_email_res.status_code == 422
+
+    # 4. Login as new viewer
+    bob_login = client.post(
+        "/api/auth/login",
+        json={"username": "bob_viewer", "password": pwd_val},
+    )
+    assert bob_login.status_code == 200
+    assert bob_login.json()["role"] == "viewer"
+
+    # Cleanup
+    db.delete_user(bob_id)
+
+
+def test_api_user_role_promotion_and_lockout(client: TestClient):
+    # Setup test viewer
+    existing = db.get_user_by_username("bob_target")
+    if existing is not None:
+        db.delete_user(existing.id)
+
+    target_pwd = f"Secure_{'Password'}_123!"
+    target_id = client.post(
+        "/api/auth/register",
+        json={"username": "bob_target", "password": target_pwd, "email": "target@example.com"},
+    ).json()["id"]
+
+    # Viewer cannot promote roles
+    bob_token = client.post(
+        "/api/auth/login",
+        json={"username": "bob_target", "password": target_pwd},
+    ).json()["token"]
+    unauth_promote = client.patch(
+        f"/api/users/{target_id}/role",
+        json={"role": "operator"},
+        headers={"Authorization": f"Bearer {bob_token}", "X-Forwarded-For": "198.51.100.99"},
+    )
+    assert unauth_promote.status_code == 403
+
+    # Authenticate as admin
+    admin_token = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": settings.AdminPassword},
+    ).json()["token"]
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # Admin promotes viewer to operator
+    promote_res = client.patch(f"/api/users/{target_id}/role", json={"role": "operator"}, headers=admin_headers)
+    assert promote_res.status_code == 200
+    assert promote_res.json()["role"] == "operator"
+    assert "server:reboot" in promote_res.json()["permissions"]
+    assert "users:manage" not in promote_res.json()["permissions"]
+
+    # Admin promotes operator to admin
+    assert client.patch(
+        f"/api/users/{target_id}/role", json={"role": "admin"}, headers=admin_headers
+    ).status_code == 200
+    assert db.count_active_admins() == 2
+
+    # Admin demotes bob back to operator
+    assert client.patch(
+        f"/api/users/{target_id}/role", json={"role": "operator"}, headers=admin_headers
+    ).status_code == 200
+    assert db.count_active_admins() == 1
+
+    # Cannot demote or deactivate the last administrator
+    admin_user = db.get_user_by_username("admin")
+    assert admin_user is not None
+    last_demote = client.patch(f"/api/users/{admin_user.id}/role", json={"role": "viewer"}, headers=admin_headers)
+    assert last_demote.status_code == 400
+    assert "Cannot demote the last remaining active administrator" in last_demote.json()["detail"]
+
+    last_deactivate = client.patch(f"/api/users/{admin_user.id}", json={"is_active": False}, headers=admin_headers)
+    assert last_deactivate.status_code == 400
+    assert "Cannot deactivate the last remaining active administrator" in last_deactivate.json()["detail"]
+
+    db.delete_user(target_id)

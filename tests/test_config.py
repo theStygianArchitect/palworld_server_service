@@ -4,11 +4,17 @@
 
 import os
 import tempfile
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import AppSettings, PalWorldIniSettingsSource, get_settings
+from app.core.config import (
+    AppSettings,
+    PalWorldIniSettingsSource,
+    get_settings,
+    resolve_admin_credential_export_path,
+)
 
 SAMPLE_INI = (
     "[/Script/Pal.PalGameWorldSettings]\n"
@@ -66,3 +72,21 @@ def test_github_repo_url_env_override(monkeypatch):
 def test_github_repo_url_validation():
     with pytest.raises(ValidationError):
         AppSettings(ini_path="/non/existent.ini", github_repo_url="ftp://invalid.url")
+
+
+def test_admin_credential_export_path_default():
+    s = AppSettings(ini_path="/non/existent.ini")
+    assert s.admin_credential_export_path is None
+    resolved = resolve_admin_credential_export_path(s.admin_credential_export_path)
+    assert isinstance(resolved, Path)
+    assert resolved.name == "initial_admin_credential.txt"
+
+
+def test_admin_credential_export_path_custom(tmp_path: Path, monkeypatch):
+    custom_target = str(tmp_path / "custom_creds.txt")
+    monkeypatch.setenv("PALWORLD_ADMIN_CREDENTIAL_EXPORT_PATH", custom_target)
+    s = AppSettings(ini_path="/non/existent.ini")
+    assert s.admin_credential_export_path == custom_target
+    resolved = resolve_admin_credential_export_path(s.admin_credential_export_path)
+    assert resolved == Path(custom_target).resolve()
+    assert resolved.parent.exists()

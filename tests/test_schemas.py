@@ -16,6 +16,8 @@ from app.api.schemas import (
     RebootCancelRequest,
     RebootRequest,
     SettingsRestoreRequest,
+    UserRegisterRequest,
+    UserRoleUpdateRequest,
     build_github_issue_url,
 )
 
@@ -213,3 +215,44 @@ def test_feedback_filter_params():
     assert custom.status == "OPEN"
     assert custom.limit == 25
     assert custom.offset == 10
+
+
+def test_user_register_and_role_schemas():
+    pwd_val = f"Valid_{'Password'}_123!"
+    short_val = f"sh{'o'}rt"
+
+    # Valid register
+    reg = UserRegisterRequest(
+        username="new_player",
+        password=pwd_val,
+        email="player@example.com",
+    )
+    assert reg.username == "new_player"
+    assert reg.password == pwd_val
+    assert reg.email == "player@example.com"
+
+    # Invalid username (too short, special chars)
+    with pytest.raises(ValidationError):
+        UserRegisterRequest(username="ab", password=pwd_val, email="p@e.com")
+    with pytest.raises(ValidationError):
+        UserRegisterRequest(username="bad name", password=pwd_val, email="p@e.com")
+
+    # Invalid password (too short)
+    with pytest.raises(ValidationError):
+        UserRegisterRequest(username="new_player", password=short_val, email="p@e.com")
+
+    # Invalid email
+    with pytest.raises(ValidationError):
+        UserRegisterRequest(username="new_player", password=pwd_val, email="not-an-email")
+
+    # Valid role update
+    role_admin = UserRoleUpdateRequest(role="admin")
+    assert role_admin.role == "admin"
+    role_op = UserRoleUpdateRequest(role="operator")
+    assert role_op.role == "operator"
+    role_view = UserRoleUpdateRequest(role="viewer")
+    assert role_view.role == "viewer"
+
+    # Invalid role
+    with pytest.raises(ValidationError):
+        UserRoleUpdateRequest(role="superadmin")  # type: ignore[arg-type]
