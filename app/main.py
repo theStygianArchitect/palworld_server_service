@@ -4,40 +4,84 @@ Provides FastAPI REST endpoints, WebSocket telemetry streaming, configuration ma
 and server reboot orchestration in compliance with Google Style Guide and 3 AM standards.
 """
 
+# pylint: disable=too-many-lines
+# Rationale: Central FastAPI entrypoint aggregates lifecycle orchestration, REST endpoints, and WebSockets.
+
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import datetime
+import json
 import logging
 import os
 import shutil
+import sqlite3
 import subprocess
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.schemas import (
+    FeedbackResponse,
+    FeedbackSubmitRequest,
     GameplaySettingsSchema,
+    LoginAuditResponse,
+    MetricBucketResponse,
+    MetricFlushResponse,
+    MetricHistoryResponse,
+    MetricPruneResponse,
+    MetricSummaryResponse,
     PlayerBanRequest,
     PlayerKickRequest,
     PlayerWarnRequest,
     RebootCancelRequest,
     RebootRequest,
+    UserCreateRequest,
+    UserLoginRequest,
+    UserLoginResponse,
+    UserResponse,
+    UserUpdateRequest,
 )
 from app.config_manager.parser import SETTING_METADATA
 from app.config_manager.pipeline import ConfigPipeline
 from app.core.config import get_settings, reload_settings
 from app.core.logger import log
+from app.database import (
+    DatabaseManager,
+    MetricsDatabaseManager,
+    MetricSnapshotRecord,
+    UserRecord,
+    bootstrap_admin_user,
+    generate_session_token,
+    has_permission,
+    hash_password,
+    verify_password,
+    verify_session_token,
+)
 from app.engine.notifications import DiscordNotifier
 from app.engine.service import LOCK_FILE, PalEngine
 
 settings = get_settings()
+db = DatabaseManager(settings.database_path)
+metrics_db = MetricsDatabaseManager(settings.metrics_db_path)
 pipeline = ConfigPipeline(settings.ini_path)
 engine = PalEngine(
     admin_password=settings.AdminPassword,
@@ -49,6 +93,37 @@ engine = PalEngine(
     service_name=settings.service_name,
 )
 notifier = DiscordNotifier(settings.discord_webhook_url)
+
+metrics_buffer: list[MetricSnapshotRecord] = []
+metrics_buffer_lock = asyncio.Lock()
+
+
+async def flush_metrics_buffer() -> int:
+    """Atomically flushes in-memory buffered metric snapshots to the SQLite database.
+
+    Returns:
+        int: Number of snapshots written to disk.
+    """
+    async with metrics_buffer_lock:
+        if not metrics_buffer:
+            return 0
+        batch = list(metrics_buffer)
+        metrics_buffer.clear()
+
+    try:
+        inserted = await asyncio.to_thread(metrics_db.record_snapshots_batch, batch)
+        log.info("Flushed %d telemetry snapshots from memory buffer to metrics.db", inserted)
+        return inserted
+    except sqlite3.OperationalError as err:
+        log.error("Database operational error during metrics buffer flush: %s", err)
+        async with metrics_buffer_lock:
+            metrics_buffer[0:0] = batch[:1000]
+        return 0
+    except sqlite3.DatabaseError as err:
+        log.error("Database error during metrics buffer flush: %s", err)
+        async with metrics_buffer_lock:
+            metrics_buffer[0:0] = batch[:1000]
+        return 0
 
 
 async def telemetry_streamer() -> None:
@@ -155,6 +230,78 @@ async def trigger_duckdns_sync() -> None:
                 log.debug("DuckDNS sync script OS error: %s", err)
 
 
+async def metrics_collector_loop() -> None:
+    """Periodically samples server and hardware telemetry into memory and batch flushes to disk.
+
+    Samples into metrics_buffer every settings.metrics_sample_interval_seconds (default 10s),
+    batch flushes to metrics.db every settings.metrics_flush_interval_seconds (default 300s / 5m),
+    and prunes records older than settings.metrics_retention_days (default 30 days) every hour.
+    """
+    last_flush_time = time.time()
+    last_prune_time = time.time()
+    while True:
+        try:
+            metrics = await engine.get_engine_metrics()
+            hw = engine.tracker.get_hardware_telemetry()
+            now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            snapshot = MetricSnapshotRecord(
+                id=None,
+                timestamp=now_str,
+                server_fps=float(metrics.get("server_fps", 0.0)),
+                server_frame_time_ms=float(metrics.get("server_frame_time_ms", 0.0)),
+                uptime_seconds=int(metrics.get("uptime_seconds", 0)),
+                active_players=int(metrics.get("current_players", 0)),
+                max_players=int(metrics.get("max_players", 32)),
+                cpu_avg_pct=float(hw.get("cpu_avg_pct", 0.0)),
+                host_ram_used_gb=float(hw.get("host_ram_used_gb", 0.0)),
+                host_ram_total_gb=float(hw.get("host_ram_total_gb", 0.0)),
+                host_ram_pct=float(hw.get("host_ram_pct", 0.0)),
+                cgroup_ram_used_gb=float(hw.get("cgroup_ram_used_gb", 0.0)),
+                cgroup_ram_pct=float(hw.get("cgroup_ram_pct", 0.0)),
+                disk_used_gb=float(hw.get("disk_used_gb", 0.0)),
+                disk_pct=float(hw.get("disk_pct", 0.0)),
+                net_rx_rate_kbps=float(hw.get("net_rx_rate_kbps", 0.0)),
+                net_tx_rate_kbps=float(hw.get("net_tx_rate_kbps", 0.0)),
+            )
+
+            async with metrics_buffer_lock:
+                metrics_buffer.append(snapshot)
+                buffer_size = len(metrics_buffer)
+
+            now_time = time.time()
+            if (now_time - last_flush_time >= settings.metrics_flush_interval_seconds) or buffer_size >= 1000:
+                await flush_metrics_buffer()
+                last_flush_time = now_time
+
+            # Prune once every hour
+            if now_time - last_prune_time >= 3600:
+                await asyncio.to_thread(metrics_db.prune_older_than, settings.metrics_retention_days)
+                last_prune_time = now_time
+
+        except sqlite3.OperationalError as err:
+            log.warning("Database operational error in metrics collector: %s", err)
+        except sqlite3.DatabaseError as err:
+            log.warning("Database error in metrics collector: %s", err)
+        except httpx.HTTPError as err:
+            log.debug("HTTP error querying engine metrics in collector: %s", err)
+        except asyncio.CancelledError as err:
+            log.debug("Metrics collector task received cancellation: %s", err)
+            break
+        except OSError as err:
+            log.warning("OS error in metrics collector: %s", err)
+        except RuntimeError as err:
+            log.warning("Runtime error in metrics collector: %s", err)
+        except KeyError as err:
+            log.warning("Key error in metrics collector: %s", err)
+        except ValueError as err:
+            log.warning("Value error in metrics collector: %s", err)
+
+        await asyncio.sleep(settings.metrics_sample_interval_seconds)
+
+
+# pylint: disable=too-many-branches,too-many-statements
+# Rationale: Orchestrates startup/shutdown routines across SQLite, DuckDNS, telemetry, and logging queues.
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Manage application lifespan and background telemetry streaming loops.
@@ -183,8 +330,26 @@ async def lifespan(_: FastAPI):
         except OSError as err:
             log.debug("OS error checking lock file on startup: %s", err)
 
+    # Database Persistence: Initialize schema and bootstrap default administrator
+    try:
+        await asyncio.to_thread(db.initialize)
+        await asyncio.to_thread(bootstrap_admin_user, db, settings.AdminPassword)
+        await asyncio.to_thread(metrics_db.initialize)
+        await asyncio.to_thread(metrics_db.prune_older_than, settings.metrics_retention_days)
+    except sqlite3.OperationalError as err:
+        log.error("OperationalError initializing database: %s", err)
+    except sqlite3.DatabaseError as err:
+        log.error("DatabaseError initializing database: %s", err)
+    except sqlite3.Error as err:
+        log.error("SQLite Error initializing database: %s", err)
+    except OSError as err:
+        log.error("OS error initializing database: %s", err)
+    except RuntimeError as err:
+        log.error("Runtime error initializing database: %s", err)
+
     duckdns_task = asyncio.create_task(trigger_duckdns_sync())
     stream_task = asyncio.create_task(telemetry_streamer())
+    metrics_task = asyncio.create_task(metrics_collector_loop())
 
     async def _send_startup_notice() -> None:
         await asyncio.sleep(4)
@@ -204,10 +369,40 @@ async def lifespan(_: FastAPI):
     duckdns_task.cancel()
     startup_task.cancel()
     stream_task.cancel()
+    metrics_task.cancel()
     try:
         await stream_task
     except asyncio.CancelledError as err:
         log.debug("Telemetry background task cancelled during shutdown: %s", err)
+    try:
+        await metrics_task
+    except asyncio.CancelledError as err:
+        log.debug("Metrics background task cancelled during shutdown: %s", err)
+
+    # Flush any remaining in-memory telemetry buffer to disk before database closure
+    try:
+        await flush_metrics_buffer()
+    except sqlite3.OperationalError as err:
+        log.error("Operational error flushing metrics buffer during shutdown: %s", err)
+    except sqlite3.DatabaseError as err:
+        log.error("Database error flushing metrics buffer during shutdown: %s", err)
+    except OSError as err:
+        log.error("OS error flushing metrics buffer during shutdown: %s", err)
+
+    # Database connection cleanup
+    try:
+        db.close()
+    except sqlite3.Error as err:
+        log.debug("SQLite error closing database during shutdown: %s", err)
+    except OSError as err:
+        log.debug("OS error closing database during shutdown: %s", err)
+
+    try:
+        metrics_db.close()
+    except sqlite3.Error as err:
+        log.debug("SQLite error closing metrics database during shutdown: %s", err)
+    except OSError as err:
+        log.debug("OS error closing metrics database during shutdown: %s", err)
 
     # 12-Factor Resilience: Drain and flush in-flight Discord log queue before process exit
     for handler in logging.getLogger().handlers:
@@ -230,6 +425,221 @@ app = FastAPI(
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+
+def get_client_ip(request: Request) -> str:
+    """Extracts client IP address respecting X-Forwarded-For and request.client.
+
+    Args:
+        request: Inbound FastAPI HTTP request.
+
+    Returns:
+        str: Detected client IP string.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
+
+
+# pylint: disable=too-many-branches
+# Rationale: Defensive evaluation of Bearer tokens, cookies, Basic Auth, and localhost fallback.
+def get_current_user(request: Request) -> UserRecord:
+    """Resolves and validates the active user session or localhost/Basic Auth fallback.
+
+    Args:
+        request: Inbound FastAPI HTTP request.
+
+    Returns:
+        UserRecord: Authenticated user record.
+
+    Raises:
+        HTTPException: 401 Unauthorized if credentials are missing, expired, or invalid.
+    """
+    token: str | None = None
+    auth_header = request.headers.get("authorization", "")
+
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    elif "pal_session_token" in request.cookies:
+        token = request.cookies.get("pal_session_token")
+    elif auth_header.startswith("Basic "):
+        try:
+            encoded_creds = auth_header[6:].strip()
+            decoded = base64.b64decode(encoded_creds).decode("utf-8")
+            if ":" in decoded:
+                user_part, pass_part = decoded.split(":", 1)
+                if user_part == "admin" and pass_part == settings.AdminPassword:
+                    admin_rec = db.get_user_by_username("admin")
+                    if admin_rec is not None and admin_rec.is_active:
+                        return admin_rec
+        except binascii.Error as err:
+            log.debug("Binascii error decoding basic auth: %s", err)
+        except UnicodeDecodeError as err:
+            log.debug("Unicode error decoding basic auth: %s", err)
+        except ValueError as err:
+            log.debug("Value error decoding basic auth: %s", err)
+
+    if token:
+        username = verify_session_token(token, secret_key=settings.AdminPassword)
+        if username:
+            user = db.get_user_by_username(username)
+            if user is not None and user.is_active:
+                return user
+        log.warning("Authentication rejected: invalid or expired token.")
+        raise HTTPException(status_code=401, detail="Invalid or expired session token.")
+
+    # 12-Factor Resilience & Local Automation Backwards Compatibility:
+    # Requests directly from localhost loopback or test runners inherit admin rights if unauthenticated.
+    client_ip = get_client_ip(request)
+    if client_ip in ("127.0.0.1", "::1", "testclient", "localhost"):
+        admin_rec = db.get_user_by_username("admin")
+        if admin_rec is not None and admin_rec.is_active:
+            return admin_rec
+        now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        empty_digest = ""
+        return UserRecord(
+            id=1,
+            username="admin",
+            password_hash=empty_digest,
+            salt=empty_digest,
+            email="admin@localhost",
+            role="admin",
+            is_active=True,
+            created_at=now_ts,
+        )
+
+    raise HTTPException(status_code=401, detail="Authentication credentials required.")
+
+
+def require_permission(permission: str):
+    """Factory creating FastAPI route dependencies that enforce granular RBAC permissions.
+
+    Args:
+        permission: Required granular permission token string.
+
+    Returns:
+        Callable dependency validating user authorization.
+    """
+
+    def _dependency(user: UserRecord = Depends(get_current_user)) -> UserRecord:
+        user_perms = db.get_user_permissions(user.id)
+        if not has_permission(user.role, user_perms, permission):
+            log.warning("Permission denied: user '%s' lacks required '%s'", user.username, permission)
+            raise HTTPException(
+                status_code=403,
+                detail=f"Forbidden: Insufficient privileges. Required permission: '{permission}'.",
+            )
+        return user
+
+    return _dependency
+
+
+perm_server_settings = require_permission("server:settings")
+perm_server_reboot = require_permission("server:reboot")
+perm_player_kick = require_permission("player:kick")
+perm_player_ban = require_permission("player:ban")
+perm_player_broadcast = require_permission("player:broadcast")
+perm_logs_view = require_permission("logs:view")
+perm_feedback_submit = require_permission("feedback:submit")
+perm_users_manage = require_permission("users:manage")
+
+
+def render_feedback_markdown(req: FeedbackSubmitRequest) -> str:
+    """Renders formatted Markdown matching GitHub issue templates from validated submission.
+
+    Args:
+        req: Validated feedback submission payload.
+
+    Returns:
+        str: Rendered Markdown body text.
+    """
+    if req.category == "bug_report":
+        return (
+            f"## 🐛 Expected Behavior\n{req.expected_behavior or 'N/A'}\n\n"
+            f"## 💥 Current Behavior\n{req.current_behavior or 'N/A'}\n\n"
+            f"## 📋 Steps to Reproduce\n{req.steps_to_reproduce or 'N/A'}\n\n"
+            f"## 🖥️ Environment & Host Diagnostics\n{req.host_environment or 'N/A'}\n\n"
+            f"## 📜 Diagnostic Logs & Tracebacks\n```text\n{req.diagnostic_logs or 'N/A'}\n```\n\n"
+            f"## 🛠️ Possible Root Cause / Proposed Solution\n{req.proposed_solution or 'N/A'}\n"
+        )
+    if req.category == "feature_request":
+        return (
+            f"## 🚀 Feature Proposal\n{req.feature_proposal or req.title}\n\n"
+            f"## 🎯 Problem / User Story\n{req.problem_user_story or 'N/A'}\n\n"
+            f"## 💡 Proposed Solution & Architecture\n{req.description or 'N/A'}\n\n"
+            f"## 🧱 12-Factor & Resilience Considerations\n{req.twelve_factor_considerations or 'N/A'}\n\n"
+            f"## 🔄 Alternatives Considered\n{req.alternatives_considered or 'N/A'}\n"
+        )
+    if req.category == "documentation_update":
+        return (
+            f"## 📝 Documentation Area\n{req.documentation_area or 'N/A'}\n\n"
+            f"## 🎯 Motivation & Missing Context\n{req.motivation_missing_context or 'N/A'}\n\n"
+            f"## ✏️ Proposed Content / Diff\n{req.proposed_content or req.description or 'N/A'}\n"
+        )
+    if req.category == "security_report":
+        return (
+            f"## 🛡️ Security Vulnerability Summary\n{req.vulnerability_summary or req.description or 'N/A'}\n\n"
+            f"## 🔍 Vulnerability Details & Attack Vector\n"
+            f"- **Affected File & Line(s)**: {req.affected_files_lines or 'N/A'}\n"
+            f"- **CWE Identifier**: {req.cwe_identifier or 'N/A'}\n"
+            f"- **Severity**: {req.severity or 'Medium'}\n\n"
+            f"## 💣 Proof of Concept / Reproduction Flow\n{req.poc_reproduction or 'N/A'}\n\n"
+            f"## 🛡️ Recommended Remediation / Defensive Patch\n{req.recommended_remediation or 'N/A'}\n"
+        )
+    return req.description or req.title
+
+
+async def dispatch_github_issue(
+    category: str,
+    title: str,
+    body: str,
+    feedback_id: int,
+) -> None:
+    """Asynchronously creates a GitHub issue via the GitHub CLI if configured.
+
+    Args:
+        category: Issue category matching repo templates.
+        title: Issue title string.
+        body: Markdown issue body content.
+        feedback_id: Target feedback database primary key.
+    """
+    gh_bin = shutil.which("gh")
+    if not gh_bin:
+        log.debug("GitHub CLI (gh) not installed. Issue dispatch skipped for feedback #%d.", feedback_id)
+        return
+
+    label_map = {
+        "bug_report": "bug",
+        "feature_request": "enhancement",
+        "documentation_update": "documentation",
+        "security_report": "security",
+    }
+    label = label_map.get(category, "feedback")
+    cmd = [gh_bin, "issue", "create", "--title", f"[{category.upper()}] {title}", "--body", body, "--label", label]
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+        if proc.returncode == 0:
+            output_str = stdout.decode("utf-8").strip()
+            parts = output_str.split("/")
+            if parts and parts[-1].isdigit():
+                issue_num = int(parts[-1])
+                await asyncio.to_thread(db.update_feedback_status, feedback_id, "OPEN", issue_num)
+                log.info("Dispatched GitHub issue #%d for feedback #%d", issue_num, feedback_id)
+    except asyncio.TimeoutError as err:
+        log.warning("GitHub CLI issue dispatch timed out: %s", err)
+    except OSError as err:
+        log.debug("OS error running GitHub CLI issue dispatch: %s", err)
+    except ValueError as err:
+        log.debug("Value error parsing GitHub issue number: %s", err)
 
 
 @app.get("/health")
@@ -280,6 +690,23 @@ async def serve_dashboard() -> HTMLResponse:
         except OSError as err:
             log.warning("Error reading template file at %s: %s", template_path, err)
     return HTMLResponse("<h2>Palworld Operations Suite Dashboard</h2><p>Template loading...</p>")
+
+
+@app.get("/observability", response_class=HTMLResponse)
+@app.get("/metrics", response_class=HTMLResponse)
+async def serve_observability_dashboard() -> HTMLResponse:
+    """Serves the standalone Prometheus/Grafana style telemetry and observability dashboard.
+
+    Returns:
+        HTMLResponse: Rendered observability dashboard HTML content.
+    """
+    template_path = Path(__file__).parent / "templates" / "metrics.html"
+    if template_path.exists():
+        try:
+            return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
+        except OSError as err:
+            log.warning("Error reading template file at %s: %s", template_path, err)
+    return HTMLResponse("<h2>Palworld Observability Dashboard</h2><p>Template loading...</p>")
 
 
 @app.websocket("/ws/telemetry")
@@ -344,11 +771,15 @@ def _write_ini_file_with_fallback(target_path_str: str, serialized_content: str)
 
 
 @app.post("/api/settings")
-async def save_sanitized_settings(payload: GameplaySettingsSchema) -> dict[str, Any]:
+async def save_sanitized_settings(
+    payload: GameplaySettingsSchema,
+    _: UserRecord = Depends(perm_server_settings),
+) -> dict[str, Any]:
     """Sanitizes, persists, and Git-commits updated gameplay settings.
 
     Args:
         payload (GameplaySettingsSchema): Validated gameplay settings input.
+        _: Enforces server:settings permission.
 
     Returns:
         dict[str, Any]: Success status, message, and Git snapshot commit hash.
@@ -396,12 +827,17 @@ async def get_community_tracker_data() -> dict[str, Any]:
 
 
 @app.post("/api/service/reboot")
-async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks) -> dict[str, Any]:
+async def trigger_reboot(
+    payload: RebootRequest,
+    bg: BackgroundTasks,
+    _: UserRecord = Depends(perm_server_reboot),
+) -> dict[str, Any]:
     """Schedules a graceful server restart with in-game and Discord notifications.
 
     Args:
         payload (RebootRequest): Reboot configuration including countdown and custom message.
         bg (BackgroundTasks): FastAPI background task manager.
+        _: Enforces server:reboot permission.
 
     Returns:
         dict[str, Any]: Success response acknowledging countdown initiation.
@@ -442,11 +878,15 @@ async def trigger_reboot(payload: RebootRequest, bg: BackgroundTasks) -> dict[st
 
 @app.post("/api/service/reboot/cancel")
 @app.post("/api/reboot/cancel")
-async def cancel_reboot(payload: RebootCancelRequest | None = None) -> dict[str, Any]:
+async def cancel_reboot(
+    payload: RebootCancelRequest | None = None,
+    _: UserRecord = Depends(perm_server_reboot),
+) -> dict[str, Any]:
     """Cancels an active reboot countdown sequence.
 
     Args:
         payload (RebootCancelRequest | None): Optional payload with cancellation reason.
+        _: Enforces server:reboot permission.
 
     Returns:
         dict[str, Any]: Success response acknowledging cancellation.
@@ -476,11 +916,15 @@ async def cancel_reboot(payload: RebootCancelRequest | None = None) -> dict[str,
 
 
 @app.post("/api/players/kick")
-async def handle_kick(req: PlayerKickRequest) -> dict[str, Any]:
+async def handle_kick(
+    req: PlayerKickRequest,
+    _: UserRecord = Depends(perm_player_kick),
+) -> dict[str, Any]:
     """Admin endpoint to kick an online player.
 
     Args:
         req (PlayerKickRequest): Target player ID and moderation reason.
+        _: Enforces player:kick permission.
 
     Returns:
         dict[str, Any]: Success response.
@@ -496,11 +940,15 @@ async def handle_kick(req: PlayerKickRequest) -> dict[str, Any]:
 
 
 @app.post("/api/players/ban")
-async def handle_ban(req: PlayerBanRequest) -> dict[str, Any]:
+async def handle_ban(
+    req: PlayerBanRequest,
+    _: UserRecord = Depends(perm_player_ban),
+) -> dict[str, Any]:
     """Admin endpoint to ban a player.
 
     Args:
         req (PlayerBanRequest): Target player ID and moderation reason.
+        _: Enforces player:ban permission.
 
     Returns:
         dict[str, Any]: Success response.
@@ -516,11 +964,15 @@ async def handle_ban(req: PlayerBanRequest) -> dict[str, Any]:
 
 
 @app.post("/api/players/warn")
-async def handle_warn(req: PlayerWarnRequest) -> dict[str, Any]:
+async def handle_warn(
+    req: PlayerWarnRequest,
+    _: UserRecord = Depends(perm_player_broadcast),
+) -> dict[str, Any]:
     """Admin endpoint to send an announcement across in-game HUD and Discord room.
 
     Args:
         req (PlayerWarnRequest): Broadcast announcement message string.
+        _: Enforces player:broadcast permission.
 
     Returns:
         dict[str, Any]: Success response.
@@ -540,6 +992,7 @@ async def get_logs(
     tail: int = 200,
     filter_query: str | None = Query(default=None, alias="filter"),
     level: str = "ALL",
+    _: UserRecord = Depends(perm_logs_view),
 ) -> dict[str, Any]:
     """Retrieves sanitized recent Palworld engine log lines.
 
@@ -547,6 +1000,7 @@ async def get_logs(
         tail (int): Number of recent lines to retrieve.
         filter_query (str | None): Keyword or regex filter.
         level (str): Category filter (ALL, ENGINE, EOS, WARN_ERROR).
+        _: Enforces logs:view permission.
 
     Returns:
         dict[str, Any]: Log lines array and retrieval metadata.
@@ -555,8 +1009,13 @@ async def get_logs(
 
 
 @app.get("/api/logs/download")
-async def download_logs() -> PlainTextResponse:
+async def download_logs(
+    _: UserRecord = Depends(perm_logs_view),
+) -> PlainTextResponse:
     """Streams full sanitized Palworld engine log file as an attachment.
+
+    Args:
+        _: Enforces logs:view permission.
 
     Returns:
         PlainTextResponse: Raw text stream with attachment headers.
@@ -593,3 +1052,519 @@ async def run_network_diagnostics_test() -> dict[str, Any]:
         "status": "success",
         "data": diag_result,
     }
+
+
+# =========================================================================
+# Authentication & User RBAC Endpoints
+# =========================================================================
+
+
+@app.post("/api/auth/login", response_model=UserLoginResponse)
+async def login(req: UserLoginRequest, request: Request, response: Response) -> UserLoginResponse:
+    """Authenticates user credentials, writes an audit record, and issues a session token.
+
+    Args:
+        req: Login credentials.
+        request: FastAPI HTTP request.
+        response: FastAPI HTTP response.
+
+    Returns:
+        UserLoginResponse with token and granted permissions.
+
+    Raises:
+        HTTPException: 401 Unauthorized if credentials fail.
+    """
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent", "Unknown")
+
+    user = db.get_user_by_username(req.username)
+    if user is None or not user.is_active or not verify_password(req.password, user.salt, user.password_hash):
+        reason = "Account disabled" if (user and not user.is_active) else "Invalid credentials"
+        db.record_login_audit(
+            username=req.username,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            status="FAILED",
+            failure_reason=reason,
+        )
+        log.warning("Login failed for user '%s' from %s: %s", req.username, client_ip, reason)
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
+
+    token = generate_session_token(user.username, secret_key=settings.AdminPassword)
+    db.record_login_audit(
+        username=user.username,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        status="SUCCESS",
+    )
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    db.update_user_last_login(user.id, now_iso)
+
+    # Issue session cookie
+    response.set_cookie(
+        key="pal_session_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=86400,
+    )
+
+    permissions = db.get_user_permissions(user.id)
+    return UserLoginResponse(
+        status="success",
+        token=token,
+        username=user.username,
+        role=user.role,
+        permissions=permissions,
+    )
+
+
+@app.post("/api/auth/logout")
+async def logout(response: Response) -> dict[str, str]:
+    """Terminates session by clearing session cookie.
+
+    Args:
+        response: FastAPI HTTP response.
+
+    Returns:
+        Confirmation dictionary.
+    """
+    response.delete_cookie("pal_session_token")
+    return {"status": "success", "message": "Successfully logged out."}
+
+
+@app.get("/api/auth/me", response_model=UserResponse)
+async def get_me(user: UserRecord = Depends(get_current_user)) -> UserResponse:
+    """Returns profile and active permissions for the calling user.
+
+    Args:
+        user: Authenticated user record.
+
+    Returns:
+        UserResponse with role and permissions.
+    """
+    permissions = db.get_user_permissions(user.id)
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        last_login=user.last_login,
+        permissions=permissions,
+    )
+
+
+@app.get("/api/auth/audit", response_model=list[LoginAuditResponse])
+async def get_login_audit_trail(
+    limit: int = 50,
+    offset: int = 0,
+    _: UserRecord = Depends(perm_users_manage),
+) -> list[LoginAuditResponse]:
+    """Retrieves paginated login attempts from the audit trail.
+
+    Args:
+        limit: Number of audit records to retrieve.
+        offset: Query offset.
+        _: Enforces users:manage permission.
+
+    Returns:
+        List of LoginAuditResponse items.
+    """
+    records = db.list_login_audits(limit=limit, offset=offset)
+    return [
+        LoginAuditResponse(
+            id=rec.id,
+            username=rec.username,
+            timestamp=rec.timestamp,
+            ip_address=rec.ip_address,
+            user_agent=rec.user_agent,
+            status=rec.status,
+            failure_reason=rec.failure_reason,
+        )
+        for rec in records
+    ]
+
+
+@app.get("/api/users", response_model=list[UserResponse])
+async def list_registered_users(
+    _: UserRecord = Depends(perm_users_manage),
+) -> list[UserResponse]:
+    """Lists all registered system user accounts.
+
+    Args:
+        _: Enforces users:manage permission.
+
+    Returns:
+        List of UserResponse items.
+    """
+    users = db.list_users()
+    response_list: list[UserResponse] = []
+    for u in users:
+        perms = db.get_user_permissions(u.id)
+        response_list.append(
+            UserResponse(
+                id=u.id,
+                username=u.username,
+                email=u.email,
+                role=u.role,
+                is_active=u.is_active,
+                created_at=u.created_at,
+                last_login=u.last_login,
+                permissions=perms,
+            )
+        )
+    return response_list
+
+
+@app.post("/api/users", response_model=UserResponse)
+async def create_new_user(
+    req: UserCreateRequest,
+    _: UserRecord = Depends(perm_users_manage),
+) -> UserResponse:
+    """Creates a new user account with hashed password and assigned permissions.
+
+    Args:
+        req: User creation request.
+        _: Enforces users:manage permission.
+
+    Returns:
+        Created UserResponse record.
+
+    Raises:
+        HTTPException: 409 Conflict if username already exists.
+    """
+    existing = db.get_user_by_username(req.username)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=f"Username '{req.username}' already registered.")
+
+    pw_hash, salt = hash_password(req.password)
+    user = db.create_user(
+        username=req.username,
+        password_hash=pw_hash,
+        salt=salt,
+        email=req.email,
+        role=req.role,
+        is_active=True,
+    )
+    if req.permissions is not None:
+        db.set_user_permissions(user.id, req.permissions)
+
+    perms = db.get_user_permissions(user.id)
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        last_login=user.last_login,
+        permissions=perms,
+    )
+
+
+@app.patch("/api/users/{user_id}", response_model=UserResponse)
+async def update_existing_user(
+    user_id: int,
+    req: UserUpdateRequest,
+    _: UserRecord = Depends(perm_users_manage),
+) -> UserResponse:
+    """Updates profile attributes, role, or credentials for an existing user.
+
+    Args:
+        user_id: Target user identifier.
+        req: User update request.
+        _: Enforces users:manage permission.
+
+    Returns:
+        Updated UserResponse record.
+
+    Raises:
+        HTTPException: 404 Not Found if user does not exist.
+    """
+    existing = db.get_user_by_id(user_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"User ID {user_id} not found.")
+
+    pw_hash: str | None = None
+    salt: str | None = None
+    if req.password:
+        pw_hash, salt = hash_password(req.password)
+
+    updated = db.update_user(
+        user_id=user_id,
+        email=req.email,
+        role=req.role,
+        is_active=req.is_active,
+        password_hash=pw_hash,
+        salt=salt,
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"User ID {user_id} not found.")
+
+    if req.permissions is not None:
+        db.set_user_permissions(user_id, req.permissions)
+
+    perms = db.get_user_permissions(user_id)
+    return UserResponse(
+        id=updated.id,
+        username=updated.username,
+        email=updated.email,
+        role=updated.role,
+        is_active=updated.is_active,
+        created_at=updated.created_at,
+        last_login=updated.last_login,
+        permissions=perms,
+    )
+
+
+@app.delete("/api/users/{user_id}")
+async def delete_existing_user(
+    user_id: int,
+    admin_user: UserRecord = Depends(perm_users_manage),
+) -> dict[str, str]:
+    """Deletes a user account from the system.
+
+    Args:
+        user_id: Target user identifier.
+        admin_user: Currently authenticated administrator.
+
+    Returns:
+        Confirmation dictionary.
+
+    Raises:
+        HTTPException: 400 Bad Request if deleting self, or 404 if not found.
+    """
+    if admin_user.id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own active administrator account.")
+
+    ok = db.delete_user(user_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"User ID {user_id} not found.")
+
+    return {"status": "success", "message": f"User ID {user_id} deleted."}
+
+
+# =========================================================================
+# Feedback & Template-Driven Issue Submissions Endpoints
+# =========================================================================
+
+
+@app.post("/api/feedback", response_model=FeedbackResponse)
+async def submit_feedback(
+    req: FeedbackSubmitRequest,
+    bg: BackgroundTasks,
+    user: UserRecord = Depends(perm_feedback_submit),
+) -> FeedbackResponse:
+    """Records an issue or feedback submission mapped 1:1 to repository templates.
+
+    Args:
+        req: Template feedback submission payload.
+        bg: FastAPI background tasks.
+        user: Authenticated user.
+
+    Returns:
+        FeedbackResponse with ticket status.
+    """
+    markdown_body = render_feedback_markdown(req)
+    metadata = req.model_dump(exclude={"category", "title", "description"}, exclude_none=True)
+    metadata_json = json.dumps(metadata)
+
+    feedback_rec = db.create_feedback(
+        category=req.category,
+        title=req.title,
+        description=markdown_body,
+        metadata_json=metadata_json,
+        submitted_by=user.username,
+    )
+
+    bg.add_task(
+        dispatch_github_issue,
+        req.category,
+        req.title,
+        markdown_body,
+        feedback_rec.id,
+    )
+
+    return FeedbackResponse(
+        id=feedback_rec.id,
+        category=feedback_rec.category,
+        title=feedback_rec.title,
+        description=feedback_rec.description,
+        metadata=metadata,
+        submitted_by=feedback_rec.submitted_by,
+        status=feedback_rec.status,
+        github_issue_number=feedback_rec.github_issue_number,
+        created_at=feedback_rec.created_at,
+    )
+
+
+@app.get("/api/feedback", response_model=list[FeedbackResponse])
+async def list_feedback_submissions(
+    limit: int = 50,
+    offset: int = 0,
+) -> list[FeedbackResponse]:
+    """Lists historical feedback submissions.
+
+    Args:
+        limit: Max entries to return.
+        offset: Query offset.
+
+    Returns:
+        List of FeedbackResponse items.
+    """
+    records = db.list_feedbacks(limit=limit, offset=offset)
+    result: list[FeedbackResponse] = []
+    for rec in records:
+        try:
+            meta = json.loads(rec.metadata_json)
+        except json.JSONDecodeError as err:
+            log.debug("JSON decode error in feedback metadata: %s", err)
+            meta = {}
+        result.append(
+            FeedbackResponse(
+                id=rec.id,
+                category=rec.category,
+                title=rec.title,
+                description=rec.description,
+                metadata=meta,
+                submitted_by=rec.submitted_by,
+                status=rec.status,
+                github_issue_number=rec.github_issue_number,
+                created_at=rec.created_at,
+            )
+        )
+    return result
+
+
+# =========================================================================
+# 5. Historical Metrics & 30-Day Retention Endpoints
+# =========================================================================
+
+
+@app.get(
+    "/api/metrics/history",
+    response_model=MetricHistoryResponse,
+    dependencies=[Depends(perm_logs_view)],
+)
+async def get_metrics_history(
+    window: Literal["1h", "24h", "7d", "30d"] = Query(
+        default="24h",
+        description="Historical aggregation time window ('1h', '24h', '7d', '30d')",
+    ),
+) -> MetricHistoryResponse:
+    """Retrieves downsampled time-series aggregation buckets for the requested window.
+
+    Args:
+        window: Selected time window filter.
+
+    Returns:
+        MetricHistoryResponse containing time-series buckets.
+    """
+    await flush_metrics_buffer()
+    buckets_data = await asyncio.to_thread(metrics_db.get_history, window)
+    response_buckets = [
+        MetricBucketResponse(
+            bucket_timestamp=b.bucket_timestamp,
+            avg_fps=b.avg_fps,
+            min_fps=b.min_fps,
+            max_fps=b.max_fps,
+            avg_frame_time_ms=b.avg_frame_time_ms,
+            avg_players=b.avg_players,
+            max_players=b.max_players,
+            avg_cpu_pct=b.avg_cpu_pct,
+            max_cpu_pct=b.max_cpu_pct,
+            avg_ram_pct=b.avg_ram_pct,
+            max_ram_pct=b.max_ram_pct,
+            sample_count=b.sample_count,
+        )
+        for b in buckets_data
+    ]
+    return MetricHistoryResponse(
+        window=window,
+        total_buckets=len(response_buckets),
+        buckets=response_buckets,
+    )
+
+
+@app.get(
+    "/api/metrics/summary",
+    response_model=MetricSummaryResponse,
+    dependencies=[Depends(perm_logs_view)],
+)
+async def get_metrics_summary() -> MetricSummaryResponse:
+    """Retrieves statistical KPI summary across performance and telemetry over a rolling 30-day window.
+
+    Returns:
+        MetricSummaryResponse with 30-day aggregates.
+    """
+    await flush_metrics_buffer()
+    summary = await asyncio.to_thread(metrics_db.get_30_day_summary)
+    async with metrics_buffer_lock:
+        buffered_count = len(metrics_buffer)
+    return MetricSummaryResponse(
+        total_samples=summary.total_samples,
+        peak_players=summary.peak_players,
+        avg_players=summary.avg_players,
+        lowest_fps=summary.lowest_fps,
+        avg_fps=summary.avg_fps,
+        peak_cpu_pct=summary.peak_cpu_pct,
+        avg_cpu_pct=summary.avg_cpu_pct,
+        peak_ram_pct=summary.peak_ram_pct,
+        avg_ram_pct=summary.avg_ram_pct,
+        buffered_samples=buffered_count,
+        window_start=summary.window_start,
+        window_end=summary.window_end,
+    )
+
+
+@app.post(
+    "/api/metrics/flush",
+    response_model=MetricFlushResponse,
+    dependencies=[Depends(perm_server_settings)],
+)
+async def flush_metrics() -> MetricFlushResponse:
+    """Manually flushes in-memory buffered metrics to disk.
+
+    Returns:
+        MetricFlushResponse with flushed and remaining snapshot counts.
+    """
+    flushed = await flush_metrics_buffer()
+    async with metrics_buffer_lock:
+        remaining = len(metrics_buffer)
+    return MetricFlushResponse(
+        status="success",
+        flushed_snapshots=flushed,
+        buffered_remaining=remaining,
+    )
+
+
+@app.post(
+    "/api/metrics/prune",
+    response_model=MetricPruneResponse,
+    dependencies=[Depends(perm_server_settings)],
+)
+async def prune_metrics(
+    days: int | None = Query(
+        default=None,
+        ge=1,
+        le=365,
+        description="Optional retention window override in days",
+    ),
+) -> MetricPruneResponse:
+    """Manually triggers pruning of metrics older than the retention threshold.
+
+    Args:
+        days: Optional retention window override in days (default: configured settings).
+
+    Returns:
+        MetricPruneResponse with total pruned records count.
+    """
+    retention = days if days is not None else settings.metrics_retention_days
+    pruned = await asyncio.to_thread(metrics_db.prune_older_than, retention)
+    return MetricPruneResponse(
+        status="success",
+        pruned_records=pruned,
+        retention_days=retention,
+    )

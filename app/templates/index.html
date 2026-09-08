@@ -63,6 +63,10 @@
         </div>
 
         <div class="flex items-center gap-2 ml-auto lg:ml-0">
+          <div id="userHeaderBadge" onclick="openLoginModal()" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-dark-800 hover:bg-slate-700 border border-slate-700 cursor-pointer transition text-[11px] sm:text-xs" title="Switch User or Authenticate">
+            <span class="text-indigo-400">👤</span>
+            <span id="headerUsernameText" class="font-bold text-slate-200">Admin</span>
+          </div>
           <button onclick="openRebootModal()" class="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 font-semibold transition text-[11px] sm:text-xs">
             🔄 Reboot
           </button>
@@ -77,6 +81,9 @@
       <button onclick="switchTab('metrics')" id="tab_metrics" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📊 Telemetry, Discovery & Security</button>
       <button onclick="switchTab('backups')" id="tab_backups" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">🕒 Snapshots & Backups</button>
       <button onclick="switchTab('logs')" id="tab_logs" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📜 Live Console</button>
+      <button onclick="switchTab('feedback')" id="tab_feedback" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📝 Feedback & Issues</button>
+      <button onclick="switchTab('users')" id="tab_users" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">🛡️ Users & Audit</button>
+      <a href="/observability" class="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-700/60 font-semibold transition whitespace-nowrap flex items-center gap-1" title="Open Prometheus-Style Observability Dashboard"><span>📈</span> Prometheus View ↗</a>
     </div>
   </header>
 
@@ -433,6 +440,118 @@
         </div>
       </div>
 
+      <!-- Section 2.5: 📈 Historical Telemetry & Performance Trends (Rolling 30 Days) -->
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4 font-mono">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div>
+            <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+              <span>📈</span> 30-Day Historical Telemetry & Performance
+            </h2>
+            <p class="text-xs text-slate-400 font-sans mt-0.5">
+              Dedicated time-series telemetry store with automated rolling 30-day retention pruning.
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="inline-flex rounded-lg bg-dark-950 p-1 border border-slate-800 text-xs">
+              <button onclick="setMetricsWindow('1h')" id="btn_window_1h" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-slate-200 transition">1h</button>
+              <button onclick="setMetricsWindow('24h')" id="btn_window_24h" class="px-2.5 py-1 rounded-md bg-brand-600 text-white font-bold transition">24h</button>
+              <button onclick="setMetricsWindow('7d')" id="btn_window_7d" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-slate-200 transition">7d</button>
+              <button onclick="setMetricsWindow('30d')" id="btn_window_30d" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-slate-200 transition">30d</button>
+            </div>
+            <button onclick="triggerMetricsPrune()" title="Purge records older than retention limit" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1">
+              <span>🧹</span> Prune
+            </button>
+          </div>
+        </div>
+
+        <!-- 30-Day Summary KPI Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          <div class="p-3 bg-dark-950 border border-slate-800/80 rounded-xl space-y-1">
+            <span class="text-slate-400 text-[10px] block uppercase tracking-wider">30d Peak Players</span>
+            <div class="text-emerald-400 text-xl font-bold font-mono" id="kpiPeakPlayers">--</div>
+            <span class="text-[10px] text-slate-500 block" id="kpiAvgPlayers">Avg: -- players</span>
+          </div>
+          <div class="p-3 bg-dark-950 border border-slate-800/80 rounded-xl space-y-1">
+            <span class="text-slate-400 text-[10px] block uppercase tracking-wider">30d Lowest Server FPS</span>
+            <div class="text-amber-400 text-xl font-bold font-mono" id="kpiLowestFps">--</div>
+            <span class="text-[10px] text-slate-500 block" id="kpiAvgFps">Avg: -- FPS</span>
+          </div>
+          <div class="p-3 bg-dark-950 border border-slate-800/80 rounded-xl space-y-1">
+            <span class="text-slate-400 text-[10px] block uppercase tracking-wider">30d Peak Host CPU</span>
+            <div class="text-indigo-400 text-xl font-bold font-mono" id="kpiPeakCpu">--%</div>
+            <span class="text-[10px] text-slate-500 block" id="kpiAvgCpu">Avg: --%</span>
+          </div>
+          <div class="p-3 bg-dark-950 border border-slate-800/80 rounded-xl space-y-1">
+            <span class="text-slate-400 text-[10px] block uppercase tracking-wider">30d Peak Host RAM</span>
+            <div class="text-purple-400 text-xl font-bold font-mono" id="kpiPeakRam">--%</div>
+            <span class="text-[10px] text-slate-500 block" id="kpiAvgRam">Avg: --%</span>
+          </div>
+        </div>
+
+        <!-- Historical Time-Series Interactive Charts -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <!-- Chart 1: Active Players Trend -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-2">
+            <div class="flex justify-between items-center text-xs">
+              <span class="text-slate-300 font-bold flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Active Players
+              </span>
+              <span id="chartPlayersPeakText" class="text-[10px] text-slate-400">Peak: --</span>
+            </div>
+            <div class="h-36 w-full relative flex items-end">
+              <svg id="svgPlayersChart" class="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 300 100">
+                <path id="pathPlayers" d="" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path id="areaPlayers" d="" fill="rgba(16, 185, 129, 0.1)"></path>
+              </svg>
+            </div>
+            <div class="flex justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/80">
+              <span id="chartPlayersStart">--</span>
+              <span id="chartPlayersEnd">--</span>
+            </div>
+          </div>
+
+          <!-- Chart 2: Server FPS & Tick Rate -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-2">
+            <div class="flex justify-between items-center text-xs">
+              <span class="text-slate-300 font-bold flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-amber-400"></span> Server Tick Rate (FPS)
+              </span>
+              <span id="chartFpsMinText" class="text-[10px] text-slate-400">Min: --</span>
+            </div>
+            <div class="h-36 w-full relative flex items-end">
+              <svg id="svgFpsChart" class="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 300 100">
+                <path id="pathFps" d="" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path id="areaFps" d="" fill="rgba(245, 158, 11, 0.1)"></path>
+              </svg>
+            </div>
+            <div class="flex justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/80">
+              <span id="chartFpsStart">--</span>
+              <span id="chartFpsEnd">--</span>
+            </div>
+          </div>
+
+          <!-- Chart 3: Memory & Resource Allocation -->
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-2">
+            <div class="flex justify-between items-center text-xs">
+              <span class="text-slate-300 font-bold flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-indigo-400"></span> Host RAM %
+              </span>
+              <span id="chartRamPeakText" class="text-[10px] text-slate-400">Peak: --%</span>
+            </div>
+            <div class="h-36 w-full relative flex items-end">
+              <svg id="svgRamChart" class="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 300 100">
+                <path id="pathRam" d="" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                <path id="areaRam" d="" fill="rgba(99, 102, 241, 0.1)"></path>
+              </svg>
+            </div>
+            <div class="flex justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/80">
+              <span id="chartRamStart">--</span>
+              <span id="chartRamEnd">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Section 3: 🔒 Access Control & Security Matrix (Dedicated Section - Option C) -->
       <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
         <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
@@ -602,6 +721,275 @@
 
       </div>
     </div>
+
+    <!-- Tab 6: Feedback & Issue Submissions -->
+    <div id="page_feedback" class="hidden space-y-6">
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-5">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
+              <span>📝</span> Feedback & Issue Dispatch
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Submit reports mapped 1:1 to repository issue templates with local SQLite persistence and GitHub issue export.</p>
+          </div>
+          <button onclick="loadFeedback()" class="px-3 py-1.5 rounded-lg bg-dark-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition text-xs font-mono flex items-center gap-1.5">
+            <span>🔄</span> Refresh Tickets
+          </button>
+        </div>
+
+        <!-- Issue Template Category Selector -->
+        <div>
+          <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-2">Select Issue Template</label>
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <button type="button" onclick="selectTemplateCategory('bug_report')" id="cat_bug_report" class="p-3 rounded-xl border border-brand-600 bg-brand-600/20 text-white font-semibold text-xs text-left transition flex items-center gap-2">
+              <span class="text-base">🐛</span>
+              <div>
+                <span class="block">Bug Report</span>
+                <span class="text-[10px] text-slate-400 font-normal">Defects, crashes, anomalies</span>
+              </div>
+            </button>
+            <button type="button" onclick="selectTemplateCategory('feature_request')" id="cat_feature_request" class="p-3 rounded-xl border border-slate-700 bg-dark-950 text-slate-300 hover:border-slate-600 font-semibold text-xs text-left transition flex items-center gap-2">
+              <span class="text-base">🚀</span>
+              <div>
+                <span class="block">Feature Request</span>
+                <span class="text-[10px] text-slate-400 font-normal">Enhancements & tools</span>
+              </div>
+            </button>
+            <button type="button" onclick="selectTemplateCategory('documentation_update')" id="cat_documentation_update" class="p-3 rounded-xl border border-slate-700 bg-dark-950 text-slate-300 hover:border-slate-600 font-semibold text-xs text-left transition flex items-center gap-2">
+              <span class="text-base">📝</span>
+              <div>
+                <span class="block">Documentation</span>
+                <span class="text-[10px] text-slate-400 font-normal">Docs & docstring updates</span>
+              </div>
+            </button>
+            <button type="button" onclick="selectTemplateCategory('security_report')" id="cat_security_report" class="p-3 rounded-xl border border-slate-700 bg-dark-950 text-slate-300 hover:border-slate-600 font-semibold text-xs text-left transition flex items-center gap-2">
+              <span class="text-base">🛡️</span>
+              <div>
+                <span class="block">Security Report</span>
+                <span class="text-[10px] text-slate-400 font-normal">Vulnerability reporting</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Dynamic Form Fields -->
+        <form id="feedbackForm" onsubmit="handleFeedbackSubmit(event)" class="space-y-4">
+          <input type="hidden" id="feedbackCategory" value="bug_report">
+
+          <div>
+            <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">Issue Title *</label>
+            <input type="text" id="feedbackTitle" required minlength="3" maxlength="200" placeholder="e.g. [BUG] Server countdown cancel returns 409 in IDLE phase"
+                   class="w-full bg-dark-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono">
+          </div>
+
+          <!-- Bug Report Section -->
+          <div id="fields_bug_report" class="space-y-3">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">🐛 Expected Behavior</label>
+                <textarea id="bug_expected" rows="2" placeholder="What should happen under normal conditions..." class="w-full bg-dark-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"></textarea>
+              </div>
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">💥 Current Behavior</label>
+                <textarea id="bug_current" rows="2" placeholder="What actually happened, including error outputs..." class="w-full bg-dark-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"></textarea>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">📋 Steps to Reproduce</label>
+              <textarea id="bug_steps" rows="2" placeholder="1. Go to...\n2. Click...\n3. Observe..." class="w-full bg-dark-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono"></textarea>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">🖥️ Host Environment & Diagnostics</label>
+                <input type="text" id="bug_env" placeholder="e.g. Debian 12 / Python 3.11 / v0.3.5 / systemd" class="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono">
+              </div>
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">🛠️ Proposed Solution / Root Cause (Optional)</label>
+                <input type="text" id="bug_solution" placeholder="Suggested code modification or architectural fix..." class="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block text-xs font-mono uppercase text-slate-400 font-semibold">📜 Diagnostic Logs & Tracebacks</label>
+                <button type="button" onclick="pasteConsoleLogsToFeedback()" class="text-[11px] text-brand-400 hover:text-brand-300 font-mono">📋 Paste Live Logs</button>
+              </div>
+              <textarea id="bug_logs" rows="3" placeholder="(Paste relevant log snippet here)" class="w-full bg-dark-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono text-[11px]"></textarea>
+            </div>
+          </div>
+
+          <!-- Feature Request Section -->
+          <div id="fields_feature_request" class="hidden space-y-3">
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">🚀 Feature Proposal</label>
+              <textarea id="feat_proposal" rows="2" placeholder="Clear and concise description of the feature..." class="w-full bg-dark-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">🎯 Problem / User Story</label>
+              <textarea id="feat_story" rows="2" placeholder="As a server administrator, I want [...] so that [...]" class="w-full bg-dark-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"></textarea>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">🧱 12-Factor Considerations</label>
+                <input type="text" id="feat_twelve" placeholder="Config, statelessness, backing services..." class="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">🔄 Alternatives Evaluated</label>
+                <input type="text" id="feat_alt" placeholder="Other workarounds or designs considered..." class="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              </div>
+            </div>
+          </div>
+
+          <!-- Documentation Update Section -->
+          <div id="fields_documentation_update" class="hidden space-y-3">
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">📝 Documentation Area</label>
+              <input type="text" id="doc_area" placeholder="e.g. README.md, Deployment Guide, or API Docstrings" class="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono">
+            </div>
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">🎯 Motivation & Missing Context</label>
+              <textarea id="doc_motivation" rows="2" placeholder="What information is outdated, missing, or unclear..." class="w-full bg-dark-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">✏️ Proposed Content / Diff</label>
+              <textarea id="doc_content" rows="3" placeholder="Suggested wording or markdown diff..." class="w-full bg-dark-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono text-[11px]"></textarea>
+            </div>
+          </div>
+
+          <!-- Security Report Section -->
+          <div id="fields_security_report" class="hidden space-y-3">
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">🛡️ Vulnerability Summary</label>
+              <textarea id="sec_summary" rows="2" placeholder="High-level vulnerability overview (e.g. CLI Argument Injection, ReDoS)..." class="w-full bg-dark-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"></textarea>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">Affected File & Line(s)</label>
+                <input type="text" id="sec_files" placeholder="e.g. app/api/schemas.py:120" class="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono">
+              </div>
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">CWE Identifier</label>
+                <input type="text" id="sec_cwe" placeholder="e.g. CWE-78" class="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono">
+              </div>
+              <div>
+                <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">Severity</label>
+                <select id="sec_severity" class="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+                  <option value="Medium">Medium</option>
+                  <option value="Critical">Critical</option>
+                  <option value="High">High</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">💣 Proof of Concept / Reproduction Path</label>
+              <textarea id="sec_poc" rows="2" placeholder="Reproduction path without weaponized payloads..." class="w-full bg-dark-950 border border-slate-700 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono text-[11px]"></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-mono uppercase text-slate-400 font-semibold mb-1">🛡️ Recommended Remediation</label>
+              <input type="text" id="sec_remediation" placeholder="Defensive sanitization, boundary checks, atomic swap..." class="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-2">
+            <button type="submit" id="feedbackSubmitBtn" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-brand-500/20">
+              <span>🚀</span> Dispatch Submission
+            </button>
+          </div>
+        </form>
+
+        <!-- Submissions Table -->
+        <div class="pt-6 border-t border-slate-800 space-y-3">
+          <h3 class="text-xs font-mono uppercase text-slate-400 font-semibold">📋 Recorded Feedback & Issue Tickets</h3>
+          <div class="overflow-x-auto rounded-xl border border-slate-800 bg-dark-950">
+            <table class="w-full text-left text-xs font-mono">
+              <thead class="bg-dark-900 border-b border-slate-800 text-[11px] text-slate-400">
+                <tr>
+                  <th class="py-2.5 px-3">Category</th>
+                  <th class="py-2.5 px-3">Title</th>
+                  <th class="py-2.5 px-3">Submitter</th>
+                  <th class="py-2.5 px-3">Status</th>
+                  <th class="py-2.5 px-3">GitHub Issue</th>
+                  <th class="py-2.5 px-3">Created</th>
+                </tr>
+              </thead>
+              <tbody id="feedbackTableBody" class="divide-y divide-slate-800/60 text-slate-300">
+                <tr><td colspan="6" class="py-4 text-center text-slate-500">Loading feedback records...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 7: Users & Audit Trail -->
+    <div id="page_users" class="hidden space-y-6">
+      <!-- Section 1: User Accounts -->
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-5">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
+              <span>👥</span> User Accounts & RBAC Permissions
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Manage system operators, assign fine-grained action permissions, and audit access.</p>
+          </div>
+          <button onclick="openNewUserModal()" class="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white transition text-xs font-mono font-semibold flex items-center gap-1.5 shadow-lg shadow-brand-500/20">
+            <span>➕</span> Add User
+          </button>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-slate-800 bg-dark-950">
+          <table class="w-full text-left text-xs font-mono">
+            <thead class="bg-dark-900 border-b border-slate-800 text-[11px] text-slate-400">
+              <tr>
+                <th class="py-2.5 px-3">ID</th>
+                <th class="py-2.5 px-3">Username</th>
+                <th class="py-2.5 px-3">Email</th>
+                <th class="py-2.5 px-3">Role</th>
+                <th class="py-2.5 px-3">Active</th>
+                <th class="py-2.5 px-3">Last Login</th>
+                <th class="py-2.5 px-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody" class="divide-y divide-slate-800/60 text-slate-300">
+              <tr><td colspan="7" class="py-4 text-center text-slate-500">Loading user roster...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 2: Login Audit Trail -->
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div>
+            <h3 class="text-sm sm:text-base font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
+              <span>🛡️</span> Security & Login Audit Trail
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">Immutable audit log recording authentication attempts, source IP addresses, and outcomes.</p>
+          </div>
+          <button onclick="loadLoginAudit()" class="px-3 py-1.5 rounded-lg bg-dark-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition text-xs font-mono flex items-center gap-1.5">
+            <span>🔄</span> Refresh Audit
+          </button>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-slate-800 bg-dark-950 max-h-96">
+          <table class="w-full text-left text-xs font-mono">
+            <thead class="bg-dark-900 border-b border-slate-800 text-[11px] text-slate-400 sticky top-0">
+              <tr>
+                <th class="py-2.5 px-3">Timestamp (UTC)</th>
+                <th class="py-2.5 px-3">Username</th>
+                <th class="py-2.5 px-3">Source IP</th>
+                <th class="py-2.5 px-3">Status</th>
+                <th class="py-2.5 px-3">Reason / Details</th>
+                <th class="py-2.5 px-3">User Agent</th>
+              </tr>
+            </thead>
+            <tbody id="auditTableBody" class="divide-y divide-slate-800/60 text-slate-300">
+              <tr><td colspan="6" class="py-4 text-center text-slate-500">Loading audit records...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </main>
 
   <!-- Reboot Modal with Customizable Message -->
@@ -768,6 +1156,99 @@
     </div>
   </div>
 
+  <!-- Login / Switch User Modal -->
+  <div id="loginModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-dark-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold flex items-center gap-2 text-slate-200">
+          <span>👤</span> Operator Authentication
+        </h3>
+        <button onclick="closeLoginModal()" class="text-slate-400 hover:text-white text-sm font-bold p-1">✕</button>
+      </div>
+      <p class="text-xs text-slate-400">
+        Authenticate to verify RBAC operator permissions or switch accounts.
+      </p>
+
+      <form id="loginForm" onsubmit="handleUserLogin(event)" class="space-y-3 font-mono text-xs">
+        <div>
+          <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Username</label>
+          <input type="text" id="loginUsername" required placeholder="admin"
+                 class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+        </div>
+        <div>
+          <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Password</label>
+          <input type="password" id="loginPassword" required placeholder="••••••••"
+                 class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+        </div>
+        <div id="loginErrorMsg" class="hidden text-xs text-red-400 bg-red-950/40 p-2 rounded-lg border border-red-800"></div>
+
+        <div class="flex justify-between items-center pt-2 border-t border-slate-800">
+          <button type="button" onclick="handleUserLogout()" id="loginLogoutBtn" class="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800 transition text-xs">
+            Sign Out
+          </button>
+          <div class="flex gap-2">
+            <button type="button" onclick="closeLoginModal()" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition">
+              Cancel
+            </button>
+            <button type="submit" id="loginSubmitBtn" class="px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-brand-500/20">
+              <span>🔓</span> Sign In
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Create User Modal -->
+  <div id="userCreateModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-dark-900 border border-slate-800 rounded-2xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold flex items-center gap-2 text-slate-200">
+          <span>➕</span> Create Operator Account
+        </h3>
+        <button onclick="closeNewUserModal()" class="text-slate-400 hover:text-white text-sm font-bold p-1">✕</button>
+      </div>
+      <p class="text-xs text-slate-400">
+        Register a new operator with assigned role and access privileges.
+      </p>
+
+      <form id="createUserForm" onsubmit="handleCreateUser(event)" class="space-y-3 font-mono text-xs">
+        <div>
+          <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Username *</label>
+          <input type="text" id="newUsername" required placeholder="e.g. jdoe"
+                 class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+        </div>
+        <div>
+          <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Email</label>
+          <input type="email" id="newEmail" placeholder="jdoe@example.com"
+                 class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+        </div>
+        <div>
+          <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Password * (min 4 chars)</label>
+          <input type="password" id="newPassword" required minlength="4" placeholder="••••••••"
+                 class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+        </div>
+        <div>
+          <label class="block text-[10px] text-slate-400 uppercase font-semibold mb-1">Role *</label>
+          <select id="newRole" class="w-full px-3 py-2 bg-dark-950 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:border-brand-500 text-xs">
+            <option value="operator" selected>Operator (Settings, Logs, Broadcast)</option>
+            <option value="admin">Administrator (Full Access)</option>
+            <option value="viewer">Viewer (Read-only)</option>
+          </select>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+          <button type="button" onclick="closeNewUserModal()" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition">
+            Cancel
+          </button>
+          <button type="submit" id="createUserSubmitBtn" class="px-4 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-brand-500/20">
+            <span>💾</span> Save Account
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     let settingsMetadata = {};
     let currentSettings = {};
@@ -779,7 +1260,7 @@
     let rawLogLinesCache = [];
 
     function switchTab(tab) {
-      ['settings', 'players', 'metrics', 'backups', 'logs'].forEach(t => {
+      ['settings', 'players', 'metrics', 'backups', 'logs', 'feedback', 'users'].forEach(t => {
         const p = document.getElementById(`page_${t}`);
         const b = document.getElementById(`tab_${t}`);
         if (p) p.classList.add('hidden');
@@ -798,6 +1279,20 @@
 
       if (tab === 'backups') {
         loadCommits();
+      }
+
+      if (tab === 'feedback') {
+        loadFeedback();
+      }
+
+      if (tab === 'metrics') {
+        loadMetricsSummary();
+        loadMetricsHistory(currentMetricsWindow);
+      }
+
+      if (tab === 'users') {
+        loadUsers();
+        loadLoginAudit();
       }
 
       if (tab === 'logs') {
@@ -1793,10 +2288,567 @@
       }
     }
 
+    // =========================================================================
+    // Feedback & Issue Submission Logic
+    // =========================================================================
+    let activeFeedbackCategory = 'bug_report';
+
+    function selectTemplateCategory(category) {
+      activeFeedbackCategory = category;
+      const catInput = document.getElementById('feedbackCategory');
+      if (catInput) catInput.value = category;
+
+      const categories = ['bug_report', 'feature_request', 'documentation_update', 'security_report'];
+      categories.forEach(cat => {
+        const btn = document.getElementById(`cat_${cat}`);
+        const fields = document.getElementById(`fields_${cat}`);
+        if (btn) {
+          if (cat === category) {
+            btn.className = "p-3 rounded-xl border-2 border-brand-500 bg-brand-950/40 text-brand-200 font-bold text-xs text-left transition flex items-center gap-2";
+          } else {
+            btn.className = "p-3 rounded-xl border border-slate-700 bg-dark-950 text-slate-300 hover:border-slate-600 font-semibold text-xs text-left transition flex items-center gap-2";
+          }
+        }
+        if (fields) {
+          if (cat === category) {
+            fields.classList.remove('hidden');
+          } else {
+            fields.classList.add('hidden');
+          }
+        }
+      });
+    }
+
+    async function pasteConsoleLogsToFeedback() {
+      const logsTextarea = document.getElementById('bug_logs');
+      if (!logsTextarea) return;
+
+      if (rawLogLinesCache && rawLogLinesCache.length > 0) {
+        logsTextarea.value = rawLogLinesCache.slice(-50).join('\n');
+        showAlert("Pasted last 50 console lines into feedback.");
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/logs?tail=50');
+        const data = await res.json();
+        if (data.status === 'success' && data.lines) {
+          logsTextarea.value = data.lines.join('\n');
+          showAlert("Fetched and pasted 50 log lines.");
+        }
+      } catch (err) {
+        console.debug("Log paste error:", err);
+        showAlert("Failed to retrieve console logs.", true);
+      }
+    }
+
+    async function handleFeedbackSubmit(event) {
+      event.preventDefault();
+      const submitBtn = document.getElementById('feedbackSubmitBtn');
+      if (submitBtn) submitBtn.disabled = true;
+
+      const category = activeFeedbackCategory;
+      const title = document.getElementById('feedbackTitle')?.value.trim() || '';
+
+      const payload = {
+        category: category,
+        title: title
+      };
+
+      if (category === 'bug_report') {
+        payload.expected_behavior = document.getElementById('bug_expected')?.value.trim() || null;
+        payload.current_behavior = document.getElementById('bug_current')?.value.trim() || null;
+        payload.steps_to_reproduce = document.getElementById('bug_steps')?.value.trim() || null;
+        payload.host_environment = document.getElementById('bug_env')?.value.trim() || null;
+        payload.proposed_solution = document.getElementById('bug_solution')?.value.trim() || null;
+        payload.diagnostic_logs = document.getElementById('bug_logs')?.value.trim() || null;
+      } else if (category === 'feature_request') {
+        payload.feature_proposal = document.getElementById('feat_proposal')?.value.trim() || null;
+        payload.problem_user_story = document.getElementById('feat_story')?.value.trim() || null;
+        payload.twelve_factor_considerations = document.getElementById('feat_twelve')?.value.trim() || null;
+        payload.alternatives_considered = document.getElementById('feat_alt')?.value.trim() || null;
+      } else if (category === 'documentation_update') {
+        payload.documentation_area = document.getElementById('doc_area')?.value.trim() || null;
+        payload.motivation_missing_context = document.getElementById('doc_motivation')?.value.trim() || null;
+        payload.proposed_content = document.getElementById('doc_content')?.value.trim() || null;
+      } else if (category === 'security_report') {
+        payload.vulnerability_summary = document.getElementById('sec_summary')?.value.trim() || null;
+        payload.affected_files_lines = document.getElementById('sec_files')?.value.trim() || null;
+        payload.cwe_identifier = document.getElementById('sec_cwe')?.value.trim() || null;
+        payload.severity = document.getElementById('sec_severity')?.value || 'Medium';
+        payload.poc_reproduction = document.getElementById('sec_poc')?.value.trim() || null;
+        payload.recommended_remediation = document.getElementById('sec_remediation')?.value.trim() || null;
+      }
+
+      try {
+        const res = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          let msg = `Feedback recorded (#${data.data.id}).`;
+          if (data.data.github_issue_number) {
+            msg += ` Dispatched GitHub Issue #${data.data.github_issue_number}!`;
+          }
+          showAlert(msg);
+          document.getElementById('feedbackForm')?.reset();
+          selectTemplateCategory('bug_report');
+          loadFeedback();
+        } else {
+          showAlert(data.detail || 'Failed to submit feedback.', true);
+        }
+      } catch (err) {
+        console.debug("Feedback error:", err);
+        showAlert("Failed to contact server feedback endpoint.", true);
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    }
+
+    async function loadFeedback() {
+      const tbody = document.getElementById('feedbackTableBody');
+      if (!tbody) return;
+
+      try {
+        const res = await fetch('/api/feedback');
+        const json = await res.json();
+        if (json.status === 'success' && json.data) {
+          if (json.data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">No feedback tickets recorded yet.</td></tr>`;
+            return;
+          }
+
+          tbody.innerHTML = json.data.map(item => {
+            let catBadge = "bg-slate-800 text-slate-300";
+            if (item.category === 'bug_report') catBadge = "bg-red-950 text-red-300 border border-red-800";
+            else if (item.category === 'feature_request') catBadge = "bg-indigo-950 text-indigo-300 border border-indigo-800";
+            else if (item.category === 'documentation_update') catBadge = "bg-amber-950 text-amber-300 border border-amber-800";
+            else if (item.category === 'security_report') catBadge = "bg-rose-950 text-rose-300 border border-rose-800";
+
+            let issueLink = '<span class="text-slate-500">Local Only</span>';
+            if (item.github_issue_number) {
+              issueLink = `<a href="https://github.com/theStygianArchitect/palworld_server_service/issues/${item.github_issue_number}" target="_blank" class="text-brand-400 hover:underline font-bold">#${item.github_issue_number}</a>`;
+            }
+
+            const createdDate = item.created_at ? item.created_at.replace('T', ' ').slice(0, 19) : '--';
+
+            return `
+              <tr class="hover:bg-dark-900/60 transition">
+                <td class="py-2.5 px-3 whitespace-nowrap"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${catBadge}">${item.category}</span></td>
+                <td class="py-2.5 px-3 font-semibold text-slate-200 max-w-xs truncate">${item.title}</td>
+                <td class="py-2.5 px-3 text-slate-400">${item.submitted_by}</td>
+                <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">${item.status}</span></td>
+                <td class="py-2.5 px-3">${issueLink}</td>
+                <td class="py-2.5 px-3 text-slate-500 text-[10px]">${createdDate}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      } catch (err) {
+        console.debug("Feedback load error:", err);
+        tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-red-400">Failed to load feedback records.</td></tr>`;
+      }
+    }
+
+    // =========================================================================
+    // User Accounts & RBAC Management Logic
+    // =========================================================================
+    async function loadUsers() {
+      const tbody = document.getElementById('usersTableBody');
+      if (!tbody) return;
+
+      try {
+        const res = await fetch('/api/users');
+        if (res.status === 401 || res.status === 403) {
+          tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-amber-400">Authentication required with 'users:manage' permission to view user roster.</td></tr>`;
+          return;
+        }
+        const json = await res.json();
+        if (json.status === 'success' && json.data) {
+          if (json.data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-slate-500">No registered users.</td></tr>`;
+            return;
+          }
+
+          tbody.innerHTML = json.data.map(u => {
+            let roleBadge = "bg-slate-800 text-slate-300";
+            if (u.role === 'admin') roleBadge = "bg-purple-950 text-purple-300 border border-purple-800";
+            else if (u.role === 'operator') roleBadge = "bg-indigo-950 text-indigo-300 border border-indigo-800";
+            else if (u.role === 'viewer') roleBadge = "bg-slate-900 text-slate-400 border border-slate-700";
+
+            const lastLogin = u.last_login ? u.last_login.replace('T', ' ').slice(0, 19) : 'Never';
+            const deleteBtn = u.id === 1 ? '<span class="text-slate-600 text-[10px]">Primary</span>' : `
+              <button onclick="deleteUserAccount(${u.id}, '${u.username}')" class="px-2 py-0.5 bg-red-950/60 hover:bg-red-900 text-red-300 border border-red-800 rounded text-[10px] transition">
+                Delete
+              </button>
+            `;
+
+            return `
+              <tr class="hover:bg-dark-900/60 transition">
+                <td class="py-2.5 px-3 text-slate-500 font-mono">#${u.id}</td>
+                <td class="py-2.5 px-3 font-bold text-slate-200">${u.username}</td>
+                <td class="py-2.5 px-3 text-slate-400">${u.email || '--'}</td>
+                <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${roleBadge}">${u.role}</span></td>
+                <td class="py-2.5 px-3">${u.is_active ? '<span class="text-emerald-400 font-bold">✓ Active</span>' : '<span class="text-red-400 font-bold">✗ Disabled</span>'}</td>
+                <td class="py-2.5 px-3 text-slate-400 text-[10px]">${lastLogin}</td>
+                <td class="py-2.5 px-3 text-right">${deleteBtn}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      } catch (err) {
+        console.debug("User roster error:", err);
+        tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-red-400">Failed to load user accounts.</td></tr>`;
+      }
+    }
+
+    function openNewUserModal() {
+      document.getElementById('userCreateModal')?.classList.remove('hidden');
+    }
+
+    function closeNewUserModal() {
+      document.getElementById('userCreateModal')?.classList.add('hidden');
+      document.getElementById('createUserForm')?.reset();
+    }
+
+    async function handleCreateUser(event) {
+      event.preventDefault();
+      const username = document.getElementById('newUsername')?.value.trim();
+      const email = document.getElementById('newEmail')?.value.trim();
+      const password = document.getElementById('newPassword')?.value;
+      const role = document.getElementById('newRole')?.value;
+
+      if (!username || !password) return;
+
+      try {
+        const res = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: username,
+            password: password,
+            email: email || '',
+            role: role
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          showAlert(`Created operator account '${username}'.`);
+          closeNewUserModal();
+          loadUsers();
+        } else {
+          showAlert(data.detail || 'Failed to create user account.', true);
+        }
+      } catch (err) {
+        console.debug("Create user error:", err);
+        showAlert("Failed to contact user creation endpoint.", true);
+      }
+    }
+
+    async function deleteUserAccount(userId, username) {
+      if (!confirm(`Permanently delete operator account '${username}' (ID #${userId})?`)) return;
+
+      try {
+        const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          showAlert(`User '${username}' deleted.`);
+          loadUsers();
+        } else {
+          showAlert(data.detail || 'Failed to delete user.', true);
+        }
+      } catch (err) {
+        console.debug("Delete user error:", err);
+        showAlert("Failed to contact server to delete user.", true);
+      }
+    }
+
+    async function loadLoginAudit() {
+      const tbody = document.getElementById('auditTableBody');
+      if (!tbody) return;
+
+      try {
+        const res = await fetch('/api/auth/audit');
+        if (res.status === 401 || res.status === 403) {
+          tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-amber-400">Authentication required with 'users:manage' permission to view audit logs.</td></tr>`;
+          return;
+        }
+        const json = await res.json();
+        if (json.status === 'success' && json.data) {
+          if (json.data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">No login attempts recorded yet.</td></tr>`;
+            return;
+          }
+
+          tbody.innerHTML = json.data.map(a => {
+            const isSuccess = a.status === 'SUCCESS';
+            const statusBadge = isSuccess
+              ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">SUCCESS</span>'
+              : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-950 text-red-300 border border-red-800">FAILED</span>';
+
+            const ts = a.timestamp ? a.timestamp.replace('T', ' ').slice(0, 19) : '--';
+            const cleanUa = (a.user_agent || '--').slice(0, 40);
+
+            return `
+              <tr class="hover:bg-dark-900/60 transition text-[11px]">
+                <td class="py-2 px-3 text-slate-400">${ts}</td>
+                <td class="py-2 px-3 font-semibold text-slate-200">${a.username}</td>
+                <td class="py-2 px-3 text-indigo-300 font-mono">${a.ip_address}</td>
+                <td class="py-2 px-3">${statusBadge}</td>
+                <td class="py-2 px-3 text-slate-400 truncate max-w-xs">${a.failure_reason || '--'}</td>
+                <td class="py-2 px-3 text-slate-500 truncate max-w-[140px]" title="${a.user_agent || ''}">${cleanUa}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      } catch (err) {
+        console.debug("Audit load error:", err);
+        tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-red-400">Failed to load login audit trail.</td></tr>`;
+      }
+    }
+
+    // =========================================================================
+    // Operator Authentication & Identity Logic
+    // =========================================================================
+    let currentAuthUser = null;
+
+    function openLoginModal() {
+      document.getElementById('loginModal')?.classList.remove('hidden');
+      const errEl = document.getElementById('loginErrorMsg');
+      if (errEl) errEl.classList.add('hidden');
+    }
+
+    function closeLoginModal() {
+      document.getElementById('loginModal')?.classList.add('hidden');
+    }
+
+    async function handleUserLogin(event) {
+      event.preventDefault();
+      const usernameInput = document.getElementById('loginUsername');
+      const passwordInput = document.getElementById('loginPassword');
+      const errEl = document.getElementById('loginErrorMsg');
+      const submitBtn = document.getElementById('loginSubmitBtn');
+
+      if (!usernameInput || !passwordInput) return;
+      if (submitBtn) submitBtn.disabled = true;
+      if (errEl) errEl.classList.add('hidden');
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: usernameInput.value.trim(),
+            password: passwordInput.value
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          showAlert(`Welcome back, ${data.username}! (${data.role})`);
+          closeLoginModal();
+          await checkAuthMe();
+          loadUsers();
+          loadLoginAudit();
+        } else {
+          if (errEl) {
+            errEl.innerText = data.detail || "Authentication failed. Invalid username or password.";
+            errEl.classList.remove('hidden');
+          }
+        }
+      } catch (err) {
+        console.debug("Login error:", err);
+        if (errEl) {
+          errEl.innerText = "Network failure while connecting to authentication endpoint.";
+          errEl.classList.remove('hidden');
+        }
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    }
+
+    async function handleUserLogout() {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        showAlert("Signed out successfully.");
+        closeLoginModal();
+        await checkAuthMe();
+      } catch (err) {
+        console.debug("Logout error:", err);
+      }
+    }
+
+    async function checkAuthMe() {
+      const headerText = document.getElementById('headerUsernameText');
+      const logoutBtn = document.getElementById('loginLogoutBtn');
+
+      try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.status === 'success' && json.user) {
+            currentAuthUser = json.user;
+            if (headerText) {
+              headerText.innerText = `${json.user.username} (${json.user.role})`;
+            }
+            if (logoutBtn) logoutBtn.classList.remove('hidden');
+            return;
+          }
+        }
+      } catch (err) {
+        console.debug("Auth check error:", err);
+      }
+
+      currentAuthUser = null;
+      if (headerText) headerText.innerText = "Admin (Localhost)";
+      if (logoutBtn) logoutBtn.classList.add('hidden');
+    }
+
+    let currentMetricsWindow = '24h';
+
+    function setMetricsWindow(w) {
+      currentMetricsWindow = w;
+      ['1h', '24h', '7d', '30d'].forEach(win => {
+        const btn = document.getElementById(`btn_window_${win}`);
+        if (btn) {
+          if (win === w) {
+            btn.className = 'px-2.5 py-1 rounded-md bg-brand-600 text-white font-bold transition';
+          } else {
+            btn.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-slate-200 transition';
+          }
+        }
+      });
+      loadMetricsHistory(w);
+    }
+
+    async function loadMetricsSummary() {
+      try {
+        const res = await fetch('/api/metrics/summary');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (document.getElementById('kpiPeakPlayers')) document.getElementById('kpiPeakPlayers').innerText = data.peak_players;
+        if (document.getElementById('kpiAvgPlayers')) document.getElementById('kpiAvgPlayers').innerText = `Avg: ${data.avg_players} players`;
+        if (document.getElementById('kpiLowestFps')) document.getElementById('kpiLowestFps').innerText = data.lowest_fps;
+        if (document.getElementById('kpiAvgFps')) document.getElementById('kpiAvgFps').innerText = `Avg: ${data.avg_fps} FPS`;
+        if (document.getElementById('kpiPeakCpu')) document.getElementById('kpiPeakCpu').innerText = `${data.peak_cpu_pct}%`;
+        if (document.getElementById('kpiAvgCpu')) document.getElementById('kpiAvgCpu').innerText = `Avg: ${data.avg_cpu_pct}%`;
+        if (document.getElementById('kpiPeakRam')) document.getElementById('kpiPeakRam').innerText = `${data.peak_ram_pct}%`;
+        if (document.getElementById('kpiAvgRam')) document.getElementById('kpiAvgRam').innerText = `Avg: ${data.avg_ram_pct}%`;
+      } catch (err) {
+        console.debug('Failed to load metrics summary:', err);
+      }
+    }
+
+    function buildSvgPath(dataPoints, maxValue, width = 300, height = 100) {
+      if (!dataPoints || !dataPoints.length) return { line: '', area: '' };
+      if (dataPoints.length === 1) {
+        const y = height - (dataPoints[0] / (maxValue || 1)) * (height - 10) - 5;
+        return {
+          line: `M 0,${y} L ${width},${y}`,
+          area: `M 0,${y} L ${width},${y} L ${width},${height} L 0,${height} Z`,
+        };
+      }
+      const step = width / (dataPoints.length - 1);
+      const points = dataPoints.map((val, idx) => {
+        const x = idx * step;
+        const safeMax = maxValue > 0 ? maxValue : 1;
+        const y = Math.max(4, Math.min(height - 4, height - (val / safeMax) * (height - 12) - 6));
+        return [x, y];
+      });
+
+      const lineD = points.reduce((acc, pt, i) => i === 0 ? `M ${pt[0]},${pt[1]}` : `${acc} L ${pt[0]},${pt[1]}`, '');
+      const areaD = `${lineD} L ${width},${height} L 0,${height} Z`;
+      return { line: lineD, area: areaD };
+    }
+
+    async function loadMetricsHistory(windowStr = '24h') {
+      try {
+        const res = await fetch(`/api/metrics/history?window=${encodeURIComponent(windowStr)}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        const buckets = json.buckets || [];
+
+        const startElem = document.getElementById('chartPlayersStart');
+        const endElem = document.getElementById('chartPlayersEnd');
+        if (buckets.length > 0) {
+          const firstTs = buckets[0].bucket_timestamp.replace('T', ' ').replace('Z', '').substring(5, 16);
+          const lastTs = buckets[buckets.length - 1].bucket_timestamp.replace('T', ' ').replace('Z', '').substring(5, 16);
+          if (startElem) startElem.innerText = firstTs;
+          if (endElem) endElem.innerText = lastTs;
+          if (document.getElementById('chartFpsStart')) document.getElementById('chartFpsStart').innerText = firstTs;
+          if (document.getElementById('chartFpsEnd')) document.getElementById('chartFpsEnd').innerText = lastTs;
+          if (document.getElementById('chartRamStart')) document.getElementById('chartRamStart').innerText = firstTs;
+          if (document.getElementById('chartRamEnd')) document.getElementById('chartRamEnd').innerText = lastTs;
+        } else {
+          if (startElem) startElem.innerText = '--';
+          if (endElem) endElem.innerText = '--';
+        }
+
+        // Render Players
+        const playerVals = buckets.map(b => b.avg_players);
+        const maxPlayers = Math.max(1, ...buckets.map(b => b.max_players));
+        if (document.getElementById('chartPlayersPeakText')) {
+          document.getElementById('chartPlayersPeakText').innerText = `Peak: ${maxPlayers}`;
+        }
+        const pPaths = buildSvgPath(playerVals, maxPlayers);
+        const pLine = document.getElementById('pathPlayers');
+        const pArea = document.getElementById('areaPlayers');
+        if (pLine) pLine.setAttribute('d', pPaths.line);
+        if (pArea) pArea.setAttribute('d', pPaths.area);
+
+        // Render FPS
+        const fpsVals = buckets.map(b => b.avg_fps);
+        const minFps = buckets.length ? Math.min(...buckets.map(b => b.min_fps)) : 0;
+        if (document.getElementById('chartFpsMinText')) {
+          document.getElementById('chartFpsMinText').innerText = `Min: ${minFps}`;
+        }
+        const fPaths = buildSvgPath(fpsVals, 65);
+        const fLine = document.getElementById('pathFps');
+        const fArea = document.getElementById('areaFps');
+        if (fLine) fLine.setAttribute('d', fPaths.line);
+        if (fArea) fArea.setAttribute('d', fPaths.area);
+
+        // Render RAM
+        const ramVals = buckets.map(b => b.avg_ram_pct);
+        const peakRam = buckets.length ? Math.max(...buckets.map(b => b.max_ram_pct)) : 0;
+        if (document.getElementById('chartRamPeakText')) {
+          document.getElementById('chartRamPeakText').innerText = `Peak: ${peakRam}%`;
+        }
+        const rPaths = buildSvgPath(ramVals, 100);
+        const rLine = document.getElementById('pathRam');
+        const rArea = document.getElementById('areaRam');
+        if (rLine) rLine.setAttribute('d', rPaths.line);
+        if (rArea) rArea.setAttribute('d', rPaths.area);
+      } catch (err) {
+        console.debug('Failed to load metrics history:', err);
+      }
+    }
+
+    async function triggerMetricsPrune() {
+      if (!confirm('Purge metrics records older than the 30-day retention window?')) return;
+      try {
+        const res = await fetch('/api/metrics/prune', { method: 'POST' });
+        if (!res.ok) {
+          alert('Failed to prune metrics.');
+          return;
+        }
+        const data = await res.json();
+        alert(`Pruned ${data.pruned_records} historical records older than ${data.retention_days} days.`);
+        loadMetricsSummary();
+        loadMetricsHistory(currentMetricsWindow);
+      } catch (err) {
+        alert('Error triggering prune: ' + err);
+      }
+    }
+
     window.onload = () => {
       loadSettings();
       connectWebSocket();
       pollTelemetryFallback();
+      checkAuthMe();
+      loadMetricsSummary();
+      loadMetricsHistory('24h');
       setInterval(() => {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
           pollTelemetryFallback();

@@ -8,7 +8,7 @@ the Google Style Guide and 3 AM defensive typing principles.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -271,3 +271,316 @@ class SettingsRestoreRequest(BaseModel):
         pattern=r"^[a-fA-F0-9]{4,64}$",
         description="Target Git commit hash to roll back to",
     )
+
+
+# =========================================================================
+# 3. User Authentication & RBAC Schemas
+# =========================================================================
+
+
+class UserLoginRequest(BaseModel):
+    """Payload for authenticating a user via username and password.
+
+    Attributes:
+        username (str): Registered login handle.
+        password (str): Plaintext secret password.
+    """
+
+    username: str = Field(..., min_length=1, max_length=64, description="User login handle")
+    password: str = Field(..., min_length=1, max_length=128, description="User secret password")
+
+
+class UserLoginResponse(BaseModel):
+    """Response payload returned upon successful user authentication.
+
+    Attributes:
+        status (str): Outcome indicator string ('success').
+        token (str): Cryptographically signed session token.
+        username (str): Authenticated user handle.
+        role (str): Primary assigned role ('admin', 'operator', 'viewer').
+        permissions (list[str]): List of granted fine-grained permission tokens.
+    """
+
+    status: str = Field(default="success")
+    token: str = Field(..., description="Signed session token string")
+    username: str = Field(..., description="Authenticated user handle")
+    role: str = Field(..., description="Assigned role identifier")
+    permissions: list[str] = Field(default_factory=list, description="Granted permission tokens")
+
+
+class UserCreateRequest(BaseModel):
+    """Payload for creating a new user account.
+
+    Attributes:
+        username (str): New user login handle.
+        password (str): Plaintext initial password.
+        email (str): Contact email address.
+        role (str): Initial role ('admin', 'operator', 'viewer').
+        permissions (list[str] | None): Optional list of custom granular permissions.
+    """
+
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+        description="Alphanumeric username",
+    )
+    password: str = Field(..., min_length=4, max_length=128, description="Initial secret password")
+    email: str = Field(default="", max_length=128, description="Optional contact email")
+    role: Literal["admin", "operator", "viewer"] = Field(default="viewer", description="Assigned role")
+    permissions: list[str] | None = Field(default=None, description="Optional custom permissions list")
+
+
+class UserUpdateRequest(BaseModel):
+    """Payload for updating an existing user record.
+
+    Attributes:
+        email (str | None): Updated email address.
+        role (Literal['admin', 'operator', 'viewer'] | None): Updated primary role.
+        is_active (bool | None): Updated active state.
+        password (str | None): Updated password.
+        permissions (list[str] | None): Updated granular permissions.
+    """
+
+    email: str | None = Field(default=None, max_length=128)
+    role: Literal["admin", "operator", "viewer"] | None = Field(default=None)
+    is_active: bool | None = Field(default=None)
+    password: str | None = Field(default=None, min_length=4, max_length=128)
+    permissions: list[str] | None = Field(default=None)
+
+
+class UserResponse(BaseModel):
+    """Public representation of a registered user record.
+
+    Attributes:
+        id (int): Primary key unique identifier.
+        username (str): Unique login handle.
+        email (str): Contact email.
+        role (str): Primary assigned role.
+        is_active (bool): Whether account is active.
+        created_at (str): ISO-8601 UTC creation timestamp.
+        last_login (str | None): ISO-8601 UTC last login timestamp.
+        permissions (list[str]): List of granted fine-grained permissions.
+    """
+
+    id: int = Field(..., description="Unique primary key identifier")
+    username: str = Field(..., description="Unique user handle")
+    email: str = Field(default="", description="Contact email address")
+    role: str = Field(..., description="Assigned primary role")
+    is_active: bool = Field(default=True, description="Account active status")
+    created_at: str = Field(..., description="ISO-8601 creation timestamp")
+    last_login: str | None = Field(default=None, description="Last successful login timestamp")
+    permissions: list[str] = Field(default_factory=list, description="Granted permission tokens")
+
+
+class LoginAuditResponse(BaseModel):
+    """Representation of an immutable login audit trail entry.
+
+    Attributes:
+        id (int): Primary key unique identifier.
+        username (str): Attempted username.
+        timestamp (str): ISO-8601 UTC timestamp of attempt.
+        ip_address (str): Remote client IP address.
+        user_agent (str): Inbound client User-Agent string.
+        status (str): Attempt outcome ('SUCCESS' or 'FAILED').
+        failure_reason (str): Diagnostic explanation if failed.
+    """
+
+    id: int = Field(..., description="Unique primary key identifier")
+    username: str = Field(..., description="Attempted user handle")
+    timestamp: str = Field(..., description="ISO-8601 UTC timestamp of attempt")
+    ip_address: str = Field(..., description="Client IP address")
+    user_agent: str = Field(..., description="Client User-Agent string")
+    status: str = Field(..., description="Attempt status (SUCCESS or FAILED)")
+    failure_reason: str = Field(default="", description="Diagnostic failure explanation")
+
+
+# =========================================================================
+# 4. Template-Driven Feedback & Issue Submission Schemas
+# =========================================================================
+
+
+# pylint: disable=too-many-instance-attributes
+# Rationale: Composite schema covers optional fields across all 4 repository issue templates.
+class FeedbackSubmitRequest(BaseModel):
+    """Payload for submitting feedback mapped 1:1 to repository issue templates.
+
+    Attributes:
+        category (str): Issue category matching GitHub templates.
+        title (str): Short summary title.
+        description (str): Custom markdown summary overview.
+    """
+
+    category: Literal["bug_report", "feature_request", "documentation_update", "security_report"] = Field(
+        ..., description="Target issue template category"
+    )
+    title: str = Field(..., min_length=3, max_length=200, description="Summary title of the issue")
+    description: str = Field(default="", max_length=5000, description="Optional custom markdown overview")
+
+    # 🐛 Bug Report Fields (.github/ISSUE_TEMPLATE/bug_report.md)
+    expected_behavior: str | None = Field(default=None, max_length=2000)
+    current_behavior: str | None = Field(default=None, max_length=2000)
+    steps_to_reproduce: str | None = Field(default=None, max_length=2000)
+    host_environment: str | None = Field(default=None, max_length=1000)
+    diagnostic_logs: str | None = Field(default=None, max_length=5000)
+    proposed_solution: str | None = Field(default=None, max_length=2000)
+
+    # 🚀 Feature Request Fields (.github/ISSUE_TEMPLATE/feature_request.md)
+    feature_proposal: str | None = Field(default=None, max_length=2000)
+    problem_user_story: str | None = Field(default=None, max_length=2000)
+    twelve_factor_considerations: str | None = Field(default=None, max_length=2000)
+    alternatives_considered: str | None = Field(default=None, max_length=2000)
+
+    # 📝 Documentation Update Fields (.github/ISSUE_TEMPLATE/documentation_update.md)
+    documentation_area: str | None = Field(default=None, max_length=500)
+    motivation_missing_context: str | None = Field(default=None, max_length=2000)
+    proposed_content: str | None = Field(default=None, max_length=5000)
+
+    # 🛡️ Security Report Fields (.github/ISSUE_TEMPLATE/security_report.md)
+    vulnerability_summary: str | None = Field(default=None, max_length=1000)
+    affected_files_lines: str | None = Field(default=None, max_length=500)
+    cwe_identifier: str | None = Field(default=None, max_length=100)
+    severity: Literal["Critical", "High", "Medium", "Low"] | None = Field(default=None)
+    poc_reproduction: str | None = Field(default=None, max_length=3000)
+    recommended_remediation: str | None = Field(default=None, max_length=2000)
+
+
+class FeedbackResponse(BaseModel):
+    """Response payload representing a recorded feedback submission.
+
+    Attributes:
+        id (int): Primary key unique identifier.
+        category (str): Issue category.
+        title (str): Summary title.
+        description (str): Rendered markdown description.
+        metadata (dict[str, Any]): Template-specific metadata dictionary.
+        submitted_by (str): Submitter username or client handle.
+        status (str): Lifecycle status ('OPEN', 'RESOLVED', 'CLOSED').
+        github_issue_number (int | None): Linked GitHub issue number.
+        created_at (str): ISO-8601 UTC creation timestamp.
+    """
+
+    id: int
+    category: str
+    title: str
+    description: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    submitted_by: str
+    status: str
+    github_issue_number: int | None = None
+    created_at: str
+
+
+# =========================================================================
+# 5. Time-Series Historical Metrics & Summary Schemas
+# =========================================================================
+
+
+# pylint: disable=too-many-instance-attributes
+# Rationale: Historical time-series bucket response models aggregate telemetry metrics for graphing.
+class MetricBucketResponse(BaseModel):
+    """Downsampled aggregated metrics data point for a time bucket.
+
+    Attributes:
+        bucket_timestamp (str): Start of the time bucket.
+        avg_fps (float): Average server tick rate.
+        min_fps (float): Minimum server tick rate.
+        max_fps (float): Maximum server tick rate.
+        avg_frame_time_ms (float): Average frame time in ms.
+        avg_players (float): Average concurrent players.
+        max_players (int): Peak concurrent players.
+        avg_cpu_pct (float): Average host CPU %.
+        max_cpu_pct (float): Peak host CPU %.
+        avg_ram_pct (float): Average host RAM %.
+        max_ram_pct (float): Peak host RAM %.
+        sample_count (int): Sample count in bucket.
+    """
+
+    bucket_timestamp: str = Field(..., description="ISO-8601 bucket start timestamp")
+    avg_fps: float = Field(..., description="Average tick rate in FPS")
+    min_fps: float = Field(..., description="Minimum tick rate in FPS")
+    max_fps: float = Field(..., description="Maximum tick rate in FPS")
+    avg_frame_time_ms: float = Field(..., description="Average frame time in milliseconds")
+    avg_players: float = Field(..., description="Average concurrent active players")
+    max_players: int = Field(..., description="Peak concurrent active players")
+    avg_cpu_pct: float = Field(..., description="Average host CPU utilization percentage")
+    max_cpu_pct: float = Field(..., description="Peak host CPU utilization percentage")
+    avg_ram_pct: float = Field(..., description="Average host RAM utilization percentage")
+    max_ram_pct: float = Field(..., description="Peak host RAM utilization percentage")
+    sample_count: int = Field(..., description="Number of samples aggregated in bucket")
+
+
+class MetricHistoryResponse(BaseModel):
+    """Historical telemetry series response for charting.
+
+    Attributes:
+        window (str): Requested time window ('1h', '24h', '7d', '30d').
+        total_buckets (int): Number of time buckets returned.
+        buckets (list[MetricBucketResponse]): Time-series bucket items.
+    """
+
+    window: str = Field(..., description="Requested time range filter")
+    total_buckets: int = Field(..., description="Total aggregation bucket count")
+    buckets: list[MetricBucketResponse] = Field(default_factory=list, description="Downsampled bucket points")
+
+
+# pylint: disable=too-many-instance-attributes
+# Rationale: Summary response delivers 30-day KPIs spanning performance, player activity, and resources.
+class MetricSummaryResponse(BaseModel):
+    """Statistical overview of metrics across a rolling 30-day window.
+
+    Attributes:
+        total_samples (int): Total recorded metric data points.
+        peak_players (int): Peak concurrent players over 30 days.
+        avg_players (float): Average concurrent players over 30 days.
+        lowest_fps (float): Minimum server FPS observed.
+        avg_fps (float): Average server FPS observed.
+        peak_cpu_pct (float): Highest CPU utilization percentage reached.
+        avg_cpu_pct (float): Average CPU utilization percentage.
+        peak_ram_pct (float): Highest RAM utilization percentage reached.
+        avg_ram_pct (float): Average RAM utilization percentage.
+        window_start (str): Timestamp of earliest metric sample in window.
+        window_end (str): Timestamp of latest metric sample in window.
+    """
+
+    total_samples: int = Field(..., description="Total samples recorded")
+    peak_players: int = Field(..., description="Maximum concurrent players recorded")
+    avg_players: float = Field(..., description="Mean concurrent players")
+    lowest_fps: float = Field(..., description="Minimum tick rate observed")
+    avg_fps: float = Field(..., description="Mean tick rate observed")
+    peak_cpu_pct: float = Field(..., description="Peak host CPU percentage")
+    avg_cpu_pct: float = Field(..., description="Mean host CPU percentage")
+    peak_ram_pct: float = Field(..., description="Peak host RAM percentage")
+    avg_ram_pct: float = Field(..., description="Mean host RAM percentage")
+    buffered_samples: int = Field(default=0, description="Current snapshots held in-memory before batch flush")
+    window_start: str = Field(..., description="Earliest timestamp in 30-day window")
+    window_end: str = Field(..., description="Latest timestamp in 30-day window")
+
+
+class MetricPruneResponse(BaseModel):
+    """Response payload for metrics retention pruning operation.
+
+    Attributes:
+        status (str): Outcome status indicator.
+        pruned_records (int): Number of records deleted older than retention limit.
+        retention_days (int): Configured retention window in days.
+    """
+
+    status: str = Field(default="success", description="Outcome status")
+    pruned_records: int = Field(..., description="Total deleted records count")
+    retention_days: int = Field(..., description="Retention duration applied in days")
+
+
+class MetricFlushResponse(BaseModel):
+    """Response payload for manual metrics buffer flush operation.
+
+    Attributes:
+        status (str): Outcome status indicator.
+        flushed_snapshots (int): Number of snapshots flushed from memory to disk.
+        buffered_remaining (int): Number of snapshots remaining in memory buffer.
+    """
+
+    status: str = Field(default="success", description="Outcome status")
+    flushed_snapshots: int = Field(..., description="Snapshots written to disk")
+    buffered_remaining: int = Field(default=0, description="Snapshots remaining in memory buffer")

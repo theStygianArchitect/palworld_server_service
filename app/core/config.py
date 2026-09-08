@@ -245,6 +245,41 @@ def _resolve_default_log_dir() -> str:
     except PermissionError as err:
         log.debug("Permission denied creating /var/log/palmanager (%s), using home dir fallback.", err)
         return str(Path.home() / ".palmanager" / "logs")
+    except OSError as err:
+        log.debug("OS error creating /var/log/palmanager (%s), using home dir fallback.", err)
+        return str(Path.home() / ".palmanager" / "logs")
+
+
+def _resolve_default_db_path() -> str:
+    """Returns a writable SQLite database path, falling back to home dir if unprivileged."""
+    if os.name == "nt":
+        return str(Path.home() / ".palmanager" / "palmanager.db")
+    var_lib = Path("/var/lib/palmanager")
+    try:
+        var_lib.mkdir(parents=True, exist_ok=True)
+        return str(var_lib / "palmanager.db")
+    except PermissionError as err:
+        log.debug("Permission denied creating /var/lib/palmanager (%s), using home dir fallback.", err)
+        return str(Path.home() / ".palmanager" / "palmanager.db")
+    except OSError as err:
+        log.debug("OS error creating /var/lib/palmanager (%s), using home dir fallback.", err)
+        return str(Path.home() / ".palmanager" / "palmanager.db")
+
+
+def _resolve_default_metrics_db_path() -> str:
+    """Returns a writable SQLite metrics database path, falling back to home dir if unprivileged."""
+    if os.name == "nt":
+        return str(Path.home() / ".palmanager" / "metrics.db")
+    var_lib = Path("/var/lib/palmanager")
+    try:
+        var_lib.mkdir(parents=True, exist_ok=True)
+        return str(var_lib / "metrics.db")
+    except PermissionError as err:
+        log.debug("Permission denied creating /var/lib/palmanager (%s), using home dir fallback.", err)
+        return str(Path.home() / ".palmanager" / "metrics.db")
+    except OSError as err:
+        log.debug("OS error creating /var/lib/palmanager (%s), using home dir fallback.", err)
+        return str(Path.home() / ".palmanager" / "metrics.db")
 
 
 def _resolve_default_host_ip() -> str:
@@ -275,6 +310,12 @@ class AppSettings(BaseSettings):
         service_name (str): Target systemd service name.
         backup_dir (str): Directory for server world save archives.
         log_dir (str): Directory for manager log files.
+        database_path (str): Filepath to SQLite database.
+        metrics_db_path (str): Filepath to SQLite time-series metrics database.
+        metrics_retention_days (int): Rolling retention window in days for telemetry metrics (default: 30).
+        metrics_sample_interval_seconds (int): In-memory telemetry sampling interval in seconds (default: 10).
+        metrics_flush_interval_seconds (int): Periodic disk flush interval in seconds for batched telemetry
+            snapshots (default: 300 / 5 minutes).
         duckdns_domain (str): Configured DuckDNS domain hostname.
         duckdns_token (str): Configured DuckDNS authentication token.
         host_ip (str): Host local/LAN IP address.
@@ -324,6 +365,36 @@ class AppSettings(BaseSettings):
     log_dir: str = Field(
         default_factory=_resolve_default_log_dir,
         alias="LOG_DIR",
+    )
+    database_path: str = Field(
+        default_factory=_resolve_default_db_path,
+        validation_alias=AliasChoices("PALWORLD_DATABASE_PATH", "DATABASE_PATH", "database_path"),
+    )
+    metrics_db_path: str = Field(
+        default_factory=_resolve_default_metrics_db_path,
+        validation_alias=AliasChoices("PALWORLD_METRICS_DB_PATH", "METRICS_DB_PATH", "metrics_db_path"),
+    )
+    metrics_retention_days: int = Field(
+        default=30,
+        validation_alias=AliasChoices(
+            "PALWORLD_METRICS_RETENTION_DAYS", "METRICS_RETENTION_DAYS", "metrics_retention_days"
+        ),
+    )
+    metrics_sample_interval_seconds: int = Field(
+        default=10,
+        validation_alias=AliasChoices(
+            "PALWORLD_METRICS_SAMPLE_INTERVAL_SECONDS",
+            "METRICS_SAMPLE_INTERVAL_SECONDS",
+            "metrics_sample_interval_seconds",
+        ),
+    )
+    metrics_flush_interval_seconds: int = Field(
+        default=300,
+        validation_alias=AliasChoices(
+            "PALWORLD_METRICS_FLUSH_INTERVAL_SECONDS",
+            "METRICS_FLUSH_INTERVAL_SECONDS",
+            "metrics_flush_interval_seconds",
+        ),
     )
     duckdns_domain: str = Field(
         default="yourdomain.duckdns.org",

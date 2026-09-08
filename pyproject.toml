@@ -75,6 +75,9 @@ select = [
     "PGH",    # pygrep-hooks (error codes on type comments)
 ]
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.Query", "fastapi.params.Query"]
+
 [tool.mypy]
 ignore_missing_imports = true
 follow_imports = "skip"

@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Palworld Observability & Telemetry Plane | Prometheus Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            dark: {
+              800: '#1e293b',
+              850: '#172033',
+              900: '#0f172a',
+              950: '#060a12',
+            },
+            prom: {
+              orange: '#f97316',
+              cyan: '#06b6d4',
+              green: '#10b981',
+              purple: '#a855f7',
+              red: '#ef4444',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #060a12; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .prom-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(51, 65, 85, 0.4);
+    }
+    .prom-card:hover {
+      border-color: rgba(99, 102, 241, 0.4);
+    }
+  </style>
+</head>
+<body class="bg-dark-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-brand-500 selection:text-white">
+
+  <!-- Portal Header Bar -->
+  <header class="bg-dark-900/90 border-b border-slate-800 sticky top-0 z-40 px-4 sm:px-6 py-3 shadow-xl backdrop-blur-md">
+    <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <a href="/" class="text-xs font-bold px-2.5 py-1.5 rounded-lg bg-dark-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5" title="Return to Main Operations Hub">
+          <span>⬅</span> Dashboard
+        </a>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            <span class="text-amber-400">🔥</span> Palworld Telemetry Observability Plane
+          </h1>
+          <p class="text-[11px] sm:text-xs text-slate-400 font-mono">Prometheus-Style Time-Series Analytics & Rolling 30-Day Retention</p>
+        </div>
+      </div>
+
+      <!-- Controls & In-Memory Buffer Telemetry -->
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto text-xs font-mono">
+        <!-- In-Memory Buffer Depth Indicator -->
+        <div id="bufferBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-dark-800 border border-slate-700 text-slate-300" title="Snapshots in memory awaiting 5-minute batch flush to disk">
+          <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+          <span>RAM Buffer: <strong id="bufferCountText" class="text-cyan-300">0</strong></span>
+        </div>
+
+        <!-- Live Daemon WebSocket Indicator -->
+        <div id="wsBadge" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-dark-800 border border-slate-700 text-slate-300">
+          <span id="wsDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="wsStatusText">Connecting...</span>
+        </div>
+
+        <!-- Manual Flush Button -->
+        <button onclick="triggerManualFlush()" id="btnFlush" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-900/50 hover:bg-indigo-800/80 text-indigo-200 border border-indigo-700 transition font-semibold" title="Force flush in-memory telemetry buffer to metrics.db">
+          <span>💾</span> Flush to Disk
+        </button>
+
+        <!-- Manual Prune Button -->
+        <button onclick="triggerManualPrune()" id="btnPrune" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-dark-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Purge records older than 30 days">
+          <span>🧹</span> Prune
+        </button>
+      </div>
+    </div>
+
+    <!-- Toolbar: Time Range Pills & Auto-Refresh -->
+    <div class="max-w-7xl mx-auto mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800/80 pt-2.5 text-xs font-mono">
+      <!-- Time Range Selectors -->
+      <div class="flex items-center gap-1.5">
+        <span class="text-slate-400 mr-1 text-[11px]">RANGE:</span>
+        <button onclick="setTimeRange('1h')" id="range_1h" class="range-btn px-2.5 py-1 rounded-md bg-dark-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold transition">1h</button>
+        <button onclick="setTimeRange('6h')" id="range_6h" class="range-btn px-2.5 py-1 rounded-md bg-dark-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold transition">6h</button>
+        <button onclick="setTimeRange('24h')" id="range_24h" class="range-btn px-2.5 py-1 rounded-md bg-brand-600 text-white border border-brand-500 font-bold transition">24h</button>
+        <button onclick="setTimeRange('7d')" id="range_7d" class="range-btn px-2.5 py-1 rounded-md bg-dark-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold transition">7d</button>
+        <button onclick="setTimeRange('30d')" id="range_30d" class="range-btn px-2.5 py-1 rounded-md bg-dark-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold transition">30d</button>
+      </div>
+
+      <!-- Auto-Refresh Interval & Refresh Button -->
+      <div class="flex items-center gap-2">
+        <span class="text-slate-400 text-[11px]">AUTO-REFRESH:</span>
+        <select id="autoRefreshSelect" onchange="updateAutoRefresh()" class="bg-dark-800 border border-slate-700 rounded-md px-2 py-1 text-slate-200 text-xs focus:ring-1 focus:ring-brand-500 outline-none">
+          <option value="0">Off</option>
+          <option value="10">Every 10s</option>
+          <option value="30" selected>Every 30s</option>
+          <option value="60">Every 1m</option>
+          <option value="300">Every 5m</option>
+        </select>
+        <button onclick="fetchObservabilityData()" class="px-2.5 py-1 rounded-md bg-dark-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-1" title="Fetch latest telemetry">
+          <span>🔄</span> Refresh
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Layout -->
+  <main class="max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 flex-1 flex flex-col gap-6">
+
+    <!-- 30-Day Aggregated KPI Header Badges -->
+    <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <!-- Peak Concurrent Players -->
+      <div class="prom-card rounded-xl p-3.5 flex flex-col justify-between">
+        <span class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Peak Players</span>
+        <div class="flex items-baseline gap-1.5 mt-1">
+          <span id="kpiPeakPlayers" class="text-2xl font-black text-cyan-400 font-mono">--</span>
+          <span class="text-[10px] text-slate-400">tamers</span>
+        </div>
+        <span id="kpiAvgPlayers" class="text-[10px] font-mono text-slate-500 mt-1">Avg: --</span>
+      </div>
+
+      <!-- Lowest Server FPS -->
+      <div class="prom-card rounded-xl p-3.5 flex flex-col justify-between">
+        <span class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Lowest Tick Rate</span>
+        <div class="flex items-baseline gap-1.5 mt-1">
+          <span id="kpiLowestFps" class="text-2xl font-black text-emerald-400 font-mono">--</span>
+          <span class="text-[10px] text-slate-400">FPS</span>
+        </div>
+        <span id="kpiAvgFps" class="text-[10px] font-mono text-slate-500 mt-1">Avg: -- FPS</span>
+      </div>
+
+      <!-- Peak Host CPU -->
+      <div class="prom-card rounded-xl p-3.5 flex flex-col justify-between">
+        <span class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Peak CPU</span>
+        <div class="flex items-baseline gap-1.5 mt-1">
+          <span id="kpiPeakCpu" class="text-2xl font-black text-amber-400 font-mono">--</span>
+          <span class="text-[10px] text-slate-400">%</span>
+        </div>
+        <span id="kpiAvgCpu" class="text-[10px] font-mono text-slate-500 mt-1">Avg: -- %</span>
+      </div>
+
+      <!-- Peak RAM % -->
+      <div class="prom-card rounded-xl p-3.5 flex flex-col justify-between">
+        <span class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Peak RAM</span>
+        <div class="flex items-baseline gap-1.5 mt-1">
+          <span id="kpiPeakRam" class="text-2xl font-black text-purple-400 font-mono">--</span>
+          <span class="text-[10px] text-slate-400">%</span>
+        </div>
+        <span id="kpiAvgRam" class="text-[10px] font-mono text-slate-500 mt-1">Avg: -- %</span>
+      </div>
+
+      <!-- In-Memory Buffer Depth -->
+      <div class="prom-card rounded-xl p-3.5 flex flex-col justify-between border-cyan-900/50">
+        <span class="text-[11px] font-mono text-cyan-400 uppercase tracking-wider">Buffer Depth</span>
+        <div class="flex items-baseline gap-1.5 mt-1">
+          <span id="kpiBufferDepth" class="text-2xl font-black text-cyan-300 font-mono">0</span>
+          <span class="text-[10px] text-slate-400">in-memory</span>
+        </div>
+        <span class="text-[10px] font-mono text-cyan-500 mt-1">Flushes every 5m</span>
+      </div>
+
+      <!-- Total 30-Day Samples -->
+      <div class="prom-card rounded-xl p-3.5 flex flex-col justify-between">
+        <span class="text-[11px] font-mono text-slate-400 uppercase tracking-wider">Total Samples</span>
+        <div class="flex items-baseline gap-1.5 mt-1">
+          <span id="kpiTotalSamples" class="text-2xl font-black text-slate-200 font-mono">--</span>
+          <span class="text-[10px] text-slate-400">points</span>
+        </div>
+        <span id="kpiWindowSpan" class="text-[10px] font-mono text-slate-500 mt-1 truncate">30-day window</span>
+      </div>
+    </section>
+
+    <!-- Prometheus Panel Grid -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+      <!-- Panel 1: Server Tick Rate (FPS) & Frame Time (ms) -->
+      <div class="prom-card rounded-2xl p-4 sm:p-5 flex flex-col shadow-xl">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-sm bg-emerald-400"></span>
+            <h3 class="font-bold text-sm tracking-wide text-white">Server Tick Rate (FPS) & Frame Latency (ms)</h3>
+          </div>
+          <span class="text-[11px] font-mono text-slate-400">Target: 60 FPS / &lt;16.6ms</span>
+        </div>
+        <div class="h-64 w-full relative">
+          <canvas id="chartFpsLatency"></canvas>
+        </div>
+      </div>
+
+      <!-- Panel 2: Player Concurrency & Activity -->
+      <div class="prom-card rounded-2xl p-4 sm:p-5 flex flex-col shadow-xl">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-sm bg-cyan-400"></span>
+            <h3 class="font-bold text-sm tracking-wide text-white">Player Concurrency & Capacity</h3>
+          </div>
+          <span class="text-[11px] font-mono text-slate-400">Limit: 32 Tamers</span>
+        </div>
+        <div class="h-64 w-full relative">
+          <canvas id="chartPlayers"></canvas>
+        </div>
+      </div>
+
+      <!-- Panel 3: CPU Core Utilization (%) -->
+      <div class="prom-card rounded-2xl p-4 sm:p-5 flex flex-col shadow-xl">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-sm bg-amber-400"></span>
+            <h3 class="font-bold text-sm tracking-wide text-white">Host CPU Utilization (%)</h3>
+          </div>
+          <span class="text-[11px] font-mono text-slate-400">Average &amp; Peak Load</span>
+        </div>
+        <div class="h-64 w-full relative">
+          <canvas id="chartCpu"></canvas>
+        </div>
+      </div>
+
+      <!-- Panel 4: Memory Utilization (Host RAM vs Cgroup Allocation) -->
+      <div class="prom-card rounded-2xl p-4 sm:p-5 flex flex-col shadow-xl">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-sm bg-purple-400"></span>
+            <h3 class="font-bold text-sm tracking-wide text-white">Host RAM Allocation vs Cgroup Container Limit</h3>
+          </div>
+          <span class="text-[11px] font-mono text-slate-400">Cgroup Max: 14 GB</span>
+        </div>
+        <div class="h-64 w-full relative">
+          <canvas id="chartRam"></canvas>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Historical Downsampled Buckets (Tabular Inspector) -->
+    <section class="prom-card rounded-2xl p-4 sm:p-5 shadow-xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
+        <div>
+          <h3 class="font-bold text-sm text-white">Time-Series Aggregation Buckets</h3>
+          <p class="text-[11px] text-slate-400 font-mono">Chronological downsampled telemetry buckets with sample counts and statistical extremes</p>
+        </div>
+        <span id="tableBucketCount" class="text-xs font-mono px-2.5 py-1 rounded bg-dark-800 border border-slate-700 text-slate-300">0 buckets</span>
+      </div>
+
+      <div class="overflow-x-auto max-h-72 overflow-y-auto">
+        <table class="w-full text-left text-xs font-mono">
+          <thead class="bg-dark-900/90 text-slate-400 border-b border-slate-800 sticky top-0">
+            <tr>
+              <th class="py-2 px-3">Bucket (UTC)</th>
+              <th class="py-2 px-3">Avg FPS</th>
+              <th class="py-2 px-3">Min FPS</th>
+              <th class="py-2 px-3">Frame Time</th>
+              <th class="py-2 px-3">Avg Tamers</th>
+              <th class="py-2 px-3">Peak Tamers</th>
+              <th class="py-2 px-3">Avg CPU</th>
+              <th class="py-2 px-3">Avg RAM</th>
+              <th class="py-2 px-3">Samples</th>
+            </tr>
+          </thead>
+          <tbody id="metricsTableBody" class="divide-y divide-slate-800/60 text-slate-300">
+            <tr>
+              <td colspan="9" class="py-6 text-center text-slate-500 font-mono">Loading aggregation buckets...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-dark-900 border-t border-slate-800 py-3 px-6 text-center text-slate-500 text-xs font-mono">
+    Palworld Operations Suite &bull; Prometheus Telemetry Plane &bull; SQLite Rolling 30-Day Retention Engine &bull; Zero Node.js Build Overhead
+  </footer>
+
+  <!-- Prometheus Observability JavaScript Application -->
+  <script>
+    let currentWindow = '24h';
+    let autoRefreshTimer = null;
+    let wsConnection = null;
+
+    // Chart Instances
+    let chartFps = null;
+    let chartPlayers = null;
+    let chartCpu = null;
+    let chartRam = null;
+
+    const chartDefaults = {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { color: '#94a3b8', font: { family: 'ui-monospace, SFMono-Regular, monospace', size: 11 } }
+        },
+        tooltip: {
+          mode: 'index',
+          intersect: false,
+          backgroundColor: '#0f172a',
+          titleColor: '#e2e8f0',
+          bodyColor: '#cbd5e1',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleFont: { family: 'monospace' },
+          bodyFont: { family: 'monospace' }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(51, 65, 85, 0.2)' },
+          ticks: { color: '#64748b', font: { family: 'monospace', size: 10 } }
+        },
+        y: {
+          grid: { color: 'rgba(51, 65, 85, 0.2)' },
+          ticks: { color: '#64748b', font: { family: 'monospace', size: 10 } }
+        }
+      }
+    };
+
+    function initCharts() {
+      // 1. FPS & Frame Latency Chart
+      const ctxFps = document.getElementById('chartFpsLatency').getContext('2d');
+      chartFps = new Chart(ctxFps, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Avg FPS',
+              data: [],
+              borderColor: '#10b981',
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              yAxisID: 'y',
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Min FPS',
+              data: [],
+              borderColor: '#ef4444',
+              borderDash: [4, 4],
+              pointRadius: 1,
+              yAxisID: 'y',
+              tension: 0.3
+            },
+            {
+              label: 'Frame Latency (ms)',
+              data: [],
+              borderColor: '#f97316',
+              backgroundColor: 'rgba(249, 115, 22, 0.05)',
+              yAxisID: 'y1',
+              tension: 0.3
+            }
+          ]
+        },
+        options: {
+          ...chartDefaults,
+          scales: {
+            ...chartDefaults.scales,
+            y: {
+              type: 'linear',
+              position: 'left',
+              title: { display: true, text: 'FPS', color: '#10b981', font: { family: 'monospace' } },
+              grid: { color: 'rgba(51, 65, 85, 0.2)' },
+              ticks: { color: '#10b981', font: { family: 'monospace', size: 10 } }
+            },
+            y1: {
+              type: 'linear',
+              position: 'right',
+              title: { display: true, text: 'Frame Time (ms)', color: '#f97316', font: { family: 'monospace' } },
+              grid: { drawOnChartArea: false },
+              ticks: { color: '#f97316', font: { family: 'monospace', size: 10 } }
+            }
+          }
+        }
+      });
+
+      // 2. Players Concurrency Chart
+      const ctxPlayers = document.getElementById('chartPlayers').getContext('2d');
+      chartPlayers = new Chart(ctxPlayers, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Avg Players',
+              data: [],
+              borderColor: '#06b6d4',
+              backgroundColor: 'rgba(6, 182, 212, 0.15)',
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Peak Players',
+              data: [],
+              borderColor: '#38bdf8',
+              borderDash: [3, 3],
+              pointRadius: 2,
+              tension: 0.3
+            }
+          ]
+        },
+        options: {
+          ...chartDefaults,
+          scales: {
+            ...chartDefaults.scales,
+            y: {
+              beginAtZero: true,
+              suggestedMax: 32,
+              title: { display: true, text: 'Players', color: '#06b6d4', font: { family: 'monospace' } },
+              ticks: { precision: 0, color: '#06b6d4', font: { family: 'monospace', size: 10 } }
+            }
+          }
+        }
+      });
+
+      // 3. CPU Load Chart
+      const ctxCpu = document.getElementById('chartCpu').getContext('2d');
+      chartCpu = new Chart(ctxCpu, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Avg CPU %',
+              data: [],
+              borderColor: '#f59e0b',
+              backgroundColor: 'rgba(245, 158, 11, 0.12)',
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Peak CPU %',
+              data: [],
+              borderColor: '#ef4444',
+              borderDash: [3, 3],
+              pointRadius: 2,
+              tension: 0.3
+            }
+          ]
+        },
+        options: {
+          ...chartDefaults,
+          scales: {
+            ...chartDefaults.scales,
+            y: {
+              beginAtZero: true,
+              suggestedMax: 100,
+              title: { display: true, text: 'CPU Utilization %', color: '#f59e0b', font: { family: 'monospace' } },
+              ticks: { color: '#f59e0b', font: { family: 'monospace', size: 10 } }
+            }
+          }
+        }
+      });
+
+      // 4. RAM Load Chart
+      const ctxRam = document.getElementById('chartRam').getContext('2d');
+      chartRam = new Chart(ctxRam, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Avg Host RAM %',
+              data: [],
+              borderColor: '#a855f7',
+              backgroundColor: 'rgba(168, 85, 247, 0.12)',
+              tension: 0.3,
+              fill: true
+            },
+            {
+              label: 'Peak Host RAM %',
+              data: [],
+              borderColor: '#c084fc',
+              borderDash: [3, 3],
+              pointRadius: 2,
+              tension: 0.3
+            }
+          ]
+        },
+        options: {
+          ...chartDefaults,
+          scales: {
+            ...chartDefaults.scales,
+            y: {
+              beginAtZero: true,
+              suggestedMax: 100,
+              title: { display: true, text: 'Host RAM %', color: '#a855f7', font: { family: 'monospace' } },
+              ticks: { color: '#a855f7', font: { family: 'monospace', size: 10 } }
+            }
+          }
+        }
+      });
+    }
+
+    async function fetchObservabilityData() {
+      try {
+        // Fetch History Buckets and Summary in parallel
+        const [historyRes, summaryRes] = await Promise.all([
+          fetch(`/api/metrics/history?window=${currentWindow}`),
+          fetch('/api/metrics/summary')
+        ]);
+
+        if (historyRes.ok) {
+          const historyData = await historyRes.json();
+          renderCharts(historyData.buckets);
+          renderTable(historyData.buckets);
+        }
+
+        if (summaryRes.ok) {
+          const summaryData = await summaryRes.json();
+          renderSummary(summaryData);
+        }
+      } catch (err) {
+        console.error('Error fetching observability metrics:', err);
+      }
+    }
+
+    function renderSummary(summary) {
+      document.getElementById('kpiPeakPlayers').textContent = summary.peak_players ?? '--';
+      document.getElementById('kpiAvgPlayers').textContent = `Avg: ${summary.avg_players ?? '--'}`;
+      document.getElementById('kpiLowestFps').textContent = summary.lowest_fps ?? '--';
+      document.getElementById('kpiAvgFps').textContent = `Avg: ${summary.avg_fps ?? '--'} FPS`;
+      document.getElementById('kpiPeakCpu').textContent = summary.peak_cpu_pct ?? '--';
+      document.getElementById('kpiAvgCpu').textContent = `Avg: ${summary.avg_cpu_pct ?? '--'}%`;
+      document.getElementById('kpiPeakRam').textContent = summary.peak_ram_pct ?? '--';
+      document.getElementById('kpiAvgRam').textContent = `Avg: ${summary.avg_ram_pct ?? '--'}%`;
+      document.getElementById('kpiTotalSamples').textContent = (summary.total_samples || 0).toLocaleString();
+
+      const buffered = summary.buffered_samples || 0;
+      document.getElementById('bufferCountText').textContent = buffered;
+      document.getElementById('kpiBufferDepth').textContent = buffered;
+
+      if (summary.window_start && summary.window_end) {
+        const startStr = summary.window_start.substring(0, 10);
+        const endStr = summary.window_end.substring(0, 10);
+        document.getElementById('kpiWindowSpan').textContent = `${startStr} to ${endStr}`;
+      }
+    }
+
+    function formatBucketLabel(isoStr) {
+      if (!isoStr) return '';
+      const d = new Date(isoStr);
+      if (currentWindow === '1h' || currentWindow === '6h') {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } else if (currentWindow === '24h') {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } else {
+        return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:00`;
+      }
+    }
+
+    function renderCharts(buckets) {
+      const labels = buckets.map(b => formatBucketLabel(b.bucket_timestamp));
+
+      // Update FPS & Frame Latency
+      chartFps.data.labels = labels;
+      chartFps.data.datasets[0].data = buckets.map(b => b.avg_fps);
+      chartFps.data.datasets[1].data = buckets.map(b => b.min_fps);
+      chartFps.data.datasets[2].data = buckets.map(b => b.avg_frame_time_ms);
+      chartFps.update();
+
+      // Update Players
+      chartPlayers.data.labels = labels;
+      chartPlayers.data.datasets[0].data = buckets.map(b => b.avg_players);
+      chartPlayers.data.datasets[1].data = buckets.map(b => b.max_players);
+      chartPlayers.update();
+
+      // Update CPU
+      chartCpu.data.labels = labels;
+      chartCpu.data.datasets[0].data = buckets.map(b => b.avg_cpu_pct);
+      chartCpu.data.datasets[1].data = buckets.map(b => b.max_cpu_pct);
+      chartCpu.update();
+
+      // Update RAM
+      chartRam.data.labels = labels;
+      chartRam.data.datasets[0].data = buckets.map(b => b.avg_ram_pct);
+      chartRam.data.datasets[1].data = buckets.map(b => b.max_ram_pct);
+      chartRam.update();
+    }
+
+    function renderTable(buckets) {
+      const tbody = document.getElementById('metricsTableBody');
+      document.getElementById('tableBucketCount').textContent = `${buckets.length} buckets`;
+
+      if (!buckets || buckets.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-slate-500">No time-series data recorded in this window yet.</td></tr>`;
+        return;
+      }
+
+      // Render rows in reverse chronological order for quick inspection
+      const rowsHtml = [...buckets].reverse().map(b => `
+        <tr class="hover:bg-slate-800/40 transition">
+          <td class="py-2 px-3 text-slate-400 whitespace-nowrap">${b.bucket_timestamp.replace('T', ' ').replace('Z', '')}</td>
+          <td class="py-2 px-3 text-emerald-400 font-bold">${b.avg_fps.toFixed(1)}</td>
+          <td class="py-2 px-3 text-rose-400">${b.min_fps.toFixed(1)}</td>
+          <td class="py-2 px-3 text-amber-400">${b.avg_frame_time_ms.toFixed(1)} ms</td>
+          <td class="py-2 px-3 text-cyan-400">${b.avg_players.toFixed(1)}</td>
+          <td class="py-2 px-3 text-cyan-300 font-bold">${b.max_players}</td>
+          <td class="py-2 px-3 text-slate-300">${b.avg_cpu_pct.toFixed(1)}%</td>
+          <td class="py-2 px-3 text-purple-400">${b.avg_ram_pct.toFixed(1)}%</td>
+          <td class="py-2 px-3 text-slate-500">${b.sample_count}</td>
+        </tr>
+      `).join('');
+
+      tbody.innerHTML = rowsHtml;
+    }
+
+    function setTimeRange(range) {
+      currentWindow = range;
+      document.querySelectorAll('.range-btn').forEach(btn => {
+        btn.className = 'range-btn px-2.5 py-1 rounded-md bg-dark-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-semibold transition';
+      });
+      const activeBtn = document.getElementById(`range_${range}`);
+      if (activeBtn) {
+        activeBtn.className = 'range-btn px-2.5 py-1 rounded-md bg-brand-600 text-white border border-brand-500 font-bold transition';
+      }
+      fetchObservabilityData();
+    }
+
+    function updateAutoRefresh() {
+      if (autoRefreshTimer) {
+        clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+      const intervalSec = parseInt(document.getElementById('autoRefreshSelect').value, 10);
+      if (intervalSec > 0) {
+        autoRefreshTimer = setInterval(fetchObservabilityData, intervalSec * 1000);
+      }
+    }
+
+    async function triggerManualFlush() {
+      const btn = document.getElementById('btnFlush');
+      const origText = btn.innerHTML;
+      btn.innerHTML = '<span>⏳</span> Flushing...';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/metrics/flush', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          btn.innerHTML = `<span>✔</span> Flushed ${data.flushed_snapshots}`;
+          setTimeout(() => {
+            btn.innerHTML = origText;
+            btn.disabled = false;
+          }, 1500);
+          await fetchObservabilityData();
+        } else {
+          btn.innerHTML = '<span>❌</span> Failed';
+          setTimeout(() => {
+            btn.innerHTML = origText;
+            btn.disabled = false;
+          }, 1500);
+        }
+      } catch (err) {
+        btn.innerHTML = '<span>❌</span> Error';
+        setTimeout(() => {
+          btn.innerHTML = origText;
+          btn.disabled = false;
+        }, 1500);
+      }
+    }
+
+    async function triggerManualPrune() {
+      if (!confirm('Prune metric snapshots older than 30 days?')) return;
+      try {
+        const res = await fetch('/api/metrics/prune?days=30', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          alert(`Pruned ${data.pruned_records} metric snapshots older than 30 days.`);
+          fetchObservabilityData();
+        }
+      } catch (err) {
+        alert('Error triggering retention pruning: ' + err);
+      }
+    }
+
+    // Connect to WebSocket for live pulse
+    function initWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/telemetry`;
+      wsConnection = new WebSocket(wsUrl);
+
+      wsConnection.onopen = () => {
+        document.getElementById('wsDot').className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+        document.getElementById('wsStatusText').textContent = 'Live Streaming';
+      };
+
+      wsConnection.onmessage = (event) => {
+        // Can read live 1s telemetry pulse if desired
+      };
+
+      wsConnection.onclose = () => {
+        document.getElementById('wsDot').className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+        document.getElementById('wsStatusText').textContent = 'Reconnecting...';
+        setTimeout(initWebSocket, 4000);
+      };
+
+      wsConnection.onerror = () => {
+        wsConnection.close();
+      };
+    }
+
+    // Initialize on document load
+    document.addEventListener('DOMContentLoaded', () => {
+      initCharts();
+      fetchObservabilityData();
+      updateAutoRefresh();
+      initWebSocket();
+    });
+  </script>
+</body>
+</html>

@@ -4,18 +4,26 @@
 # pylint: disable=redefined-outer-name
 # Rationale: Pytest dependency injection requires test parameters to match fixture names.
 
+import datetime
+from collections.abc import Generator
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app, engine
+from app.database.auth import bootstrap_admin_user
+from app.database.metric_models import MetricSnapshotRecord
+from app.main import app, db, engine, metrics_db, settings
 
 
 @pytest.fixture
-def client() -> TestClient:
-    """Provides an isolated FastAPI TestClient fixture."""
-    return TestClient(app)
+def client() -> Generator[TestClient, None, None]:
+    """Provides an isolated FastAPI TestClient fixture with lifespan initialized."""
+    db.initialize()
+    metrics_db.initialize()
+    bootstrap_admin_user(db, default_password=settings.AdminPassword)
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def test_api_health_and_ready_routes(client: TestClient):
@@ -224,3 +232,174 @@ def test_api_reboot_cancel_endpoint(client: TestClient):
         assert res.status_code == 200
         assert res.json()["status"] == "success"
         mock_cancel.assert_awaited_once_with(reason="")
+
+
+def test_api_auth_lifecycle(client: TestClient):
+    # 1. Login with bad credentials -> 401
+    bad_login = client.post("/api/auth/login", json={"username": "nonexistent", "password": f"wrong_{'password'}"})
+    assert bad_login.status_code == 401
+    assert "Invalid username or password" in bad_login.json()["detail"]
+
+    # 2. Login with correct admin credentials
+    good_login = client.post("/api/auth/login", json={"username": "admin", "password": settings.AdminPassword})
+    assert good_login.status_code == 200
+    token = good_login.json()["token"]
+    assert token is not None
+    assert good_login.json()["role"] == "admin"
+
+    # 3. Access /api/auth/me with Bearer token
+    me_res = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me_res.status_code == 200
+    assert me_res.json()["username"] == "admin"
+
+    # 4. Logout
+    logout_res = client.post("/api/auth/logout")
+    assert logout_res.status_code == 200
+
+
+def test_api_user_management(client: TestClient):
+    # Ensure clean state before running
+    existing = db.get_user_by_username("tester_alice")
+    if existing is not None:
+        db.delete_user(existing.id)
+
+    # 1. Create a new user
+    create_payload = {
+        "username": "tester_alice",
+        "password": f"Alice_{'Password'}_123!",
+        "email": "alice@example.com",
+        "role": "operator",
+    }
+    create_res = client.post("/api/users", json=create_payload)
+    assert create_res.status_code == 200
+    created_user = create_res.json()
+    assert created_user["username"] == "tester_alice"
+    assert created_user["role"] == "operator"
+    alice_id = created_user["id"]
+
+    # 2. List users
+    list_res = client.get("/api/users")
+    assert list_res.status_code == 200
+    usernames = [u["username"] for u in list_res.json()]
+    assert "tester_alice" in usernames
+
+    # 3. Update user
+    patch_res = client.patch(f"/api/users/{alice_id}", json={"email": "alice_updated@example.com"})
+    assert patch_res.status_code == 200
+    assert patch_res.json()["email"] == "alice_updated@example.com"
+
+    # 4. Delete user
+    del_res = client.delete(f"/api/users/{alice_id}")
+    assert del_res.status_code == 200
+    assert del_res.json()["status"] == "success"
+
+
+def test_api_feedback_and_audit(client: TestClient):
+    # 1. Submit template-driven feedback (Bug Report)
+    feedback_payload = {
+        "category": "bug_report",
+        "title": "API test bug report",
+        "expected_behavior": "Should respond in 10ms",
+        "current_behavior": "Responded in 20ms",
+        "steps_to_reproduce": "1. GET /api/settings",
+        "host_environment": "Ubuntu 22.04 / Python 3.11",
+    }
+    fb_res = client.post("/api/feedback", json=feedback_payload)
+    assert fb_res.status_code == 200
+    fb_data = fb_res.json()
+    assert fb_data["title"] == "API test bug report"
+    assert fb_data["category"] == "bug_report"
+
+    # 2. Query feedback submissions list
+    list_res = client.get("/api/feedback")
+    assert list_res.status_code == 200
+    assert len(list_res.json()) >= 1
+
+    # 3. Query audit trail
+    audit_res = client.get("/api/auth/audit")
+    assert audit_res.status_code == 200
+    assert isinstance(audit_res.json(), list)
+
+
+def test_api_rbac_enforcement_remote_client(client: TestClient):
+    # Remote client without credentials attempting to access /api/users -> 401
+    remote_headers = {"X-Forwarded-For": "198.51.100.55"}
+    unauth_res = client.get("/api/users", headers=remote_headers)
+    assert unauth_res.status_code == 401
+    assert "Authentication credentials required" in unauth_res.json()["detail"]
+
+
+def test_api_metrics_history_and_summary(client: TestClient):
+    # 1. Insert snapshot into metrics_db
+    now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    metrics_db.record_snapshot(
+        MetricSnapshotRecord(
+            id=None,
+            timestamp=now_ts,
+            server_fps=58.5,
+            server_frame_time_ms=17.1,
+            uptime_seconds=7200,
+            active_players=9,
+            max_players=64,
+            cpu_avg_pct=22.3,
+            host_ram_used_gb=11.4,
+            host_ram_total_gb=64.0,
+            host_ram_pct=17.8,
+            cgroup_ram_used_gb=9.2,
+            cgroup_ram_pct=65.7,
+            disk_used_gb=45.0,
+            disk_pct=25.0,
+            net_rx_rate_kbps=350.0,
+            net_tx_rate_kbps=550.0,
+        )
+    )
+
+    # 2. Query /api/metrics/history
+    res = client.get("/api/metrics/history?window=24h")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["window"] == "24h"
+    assert data["total_buckets"] >= 1
+    assert len(data["buckets"]) >= 1
+    assert data["buckets"][0]["max_fps"] >= 60.0
+    assert data["buckets"][0]["avg_fps"] > 0.0
+
+    # 3. Query /api/metrics/summary
+    sum_res = client.get("/api/metrics/summary")
+    assert sum_res.status_code == 200
+    sum_data = sum_res.json()
+    assert sum_data["total_samples"] >= 1
+    assert sum_data["peak_players"] >= 5
+    assert sum_data["avg_fps"] > 0.0
+
+
+def test_api_metrics_prune(client: TestClient):
+    prune_res = client.post("/api/metrics/prune?days=30")
+    assert prune_res.status_code == 200
+    prune_data = prune_res.json()
+    assert prune_data["status"] == "success"
+    assert prune_data["retention_days"] == 30
+    assert isinstance(prune_data["pruned_records"], int)
+
+
+def test_api_observability_html_routes(client: TestClient):
+    # 1. Test /observability route
+    res_obs = client.get("/observability")
+    assert res_obs.status_code == 200
+    assert "Observability" in res_obs.text
+    assert "html" in res_obs.headers.get("content-type", "")
+
+    # 2. Test /metrics route
+    res_metrics = client.get("/metrics")
+    assert res_metrics.status_code == 200
+    assert "Observability" in res_metrics.text
+    assert "html" in res_metrics.headers.get("content-type", "")
+
+
+def test_api_metrics_flush(client: TestClient):
+    flush_res = client.post("/api/metrics/flush")
+    assert flush_res.status_code == 200
+    flush_data = flush_res.json()
+    assert flush_data["status"] == "success"
+    assert isinstance(flush_data["flushed_snapshots"], int)
+    assert isinstance(flush_data["buffered_remaining"], int)

@@ -129,3 +129,8 @@ cython_debug/
 *.tmp
 *.ini.tmp
 PalWorldSettings.ini.redacted
+
+# AI Assistant & IDE State
+.gemini/
+.gemini
+

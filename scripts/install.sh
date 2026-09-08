@@ -43,9 +43,12 @@ fi
 echo "[ OK ]"
 
 # 2. Service Account Provisioning
-echo -n "[2/8] Provisioning dedicated system user '${APP_USER}'... "
+echo -n "[2/8] Provisioning dedicated system users '${APP_USER}' and '${STEAM_USER}'... "
 if ! id -u "${APP_USER}" >/dev/null 2>&1; then
     useradd -r -s /usr/sbin/nologin -d "${APP_DIR}" -M "${APP_USER}"
+fi
+if ! id -u "${STEAM_USER}" >/dev/null 2>&1; then
+    useradd -m -s /bin/bash -d "${STEAM_HOME}" "${STEAM_USER}"
 fi
 echo "[ OK ]"
 
@@ -104,7 +107,9 @@ ${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *, /usr/bin/
 ${APP_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status
 SUDO_EOF
 chmod 0440 "${SUDOERS_FILE}"
-visudo -cf "${SUDOERS_FILE}" > /dev/null
+if command -v visudo > /dev/null 2>&1; then
+    visudo -cf "${SUDOERS_FILE}" > /dev/null
+fi
 echo "[ OK ]"
 
 # 5. Service Files & Maintenance Scripts
@@ -142,14 +147,16 @@ echo "[ OK ]"
 
 # 8. Reload and Start Daemons
 echo -n "[8/8] Reloading systemd and starting Palworld Manager... "
-systemctl daemon-reload
+systemctl daemon-reload 2>/dev/null || true
 
-if ! systemctl is-active --quiet palworld.service; then
+if systemctl is-active --quiet palworld.service 2>/dev/null; then
+    :
+else
     systemctl start palworld.service > /dev/null 2>&1 || true
 fi
 
-systemctl restart palworld-manager.service > /dev/null 2>&1
-systemctl enable palworld-manager.service > /dev/null 2>&1
+systemctl restart palworld-manager.service > /dev/null 2>&1 || true
+systemctl enable palworld-manager.service > /dev/null 2>&1 || true
 echo "[ OK ]"
 
 ETH0_DETECTED=$(ip -4 -o addr show dev eth0 2>/dev/null | awk -F '[ /]+' '{print $4}' || true)

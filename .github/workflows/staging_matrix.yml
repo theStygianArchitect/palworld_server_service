@@ -1,0 +1,106 @@
+name: Staging Multi-Python Matrix & Production Promotion
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  multi-python-matrix:
+    name: Staging Matrix Verification (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install uv and Set up Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Sync Dependencies with uv
+        run: uv sync --all-groups
+
+      - name: Run Ruff Lint & Format Verification
+        run: uv run ruff check .
+
+      - name: Run Strict Mypy Type Analysis
+        run: uv run mypy app scripts tests
+
+      - name: Run Test Suite on Python ${{ matrix.python-version }}
+        run: uv run pytest --cov=app --cov-report=term-missing tests
+
+  auto-promote-to-main:
+    name: Auto-Promote dev -> main (Production Release)
+    needs: [multi-python-matrix]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git Committer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fast-Forward / Merge dev into main
+        run: |
+          set -euo pipefail
+          echo ">>> Fetching main branch..."
+          git fetch origin main:main || git checkout -b main origin/main
+          git checkout main
+          DIFF_COUNT=$(git rev-list --count main..origin/dev || echo 0)
+          if [ "${DIFF_COUNT}" -eq 0 ]; then
+            echo "[*] main is already up to date with dev. No production promotion needed."
+            exit 0
+          fi
+          echo ">>> Merging dev into main..."
+          git merge --ff-only origin/dev || git merge --no-ff origin/dev -m "chore(release): promote dev to main [production release passed matrix]"
+          git push origin main
+          echo "[+] Successfully promoted dev -> main (Production)."
+
+  log-bug-on-failure:
+    name: Log Automated Bug Report on Matrix Failure
+    needs: [multi-python-matrix]
+    if: failure() && (github.ref == 'refs/heads/dev' || github.base_ref == 'dev')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: File Automated GitHub Issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "[BUG] Staging Matrix Failure on commit ${GITHUB_SHA::8}" \
+            --label "bug" \
+            --body "### 🚨 Automated Staging Multi-Python Matrix Failure
+          
+          One or more Python matrix jobs (3.10, 3.11, 3.12, 3.13) failed on staging branch \`${GITHUB_REF_NAME}\`.
+          
+          - **Trigger Event:** \`${GITHUB_EVENT_NAME}\`
+          - **Commit SHA:** \`${GITHUB_SHA}\`
+          - **Run ID:** [View GitHub Actions Run](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})
+          
+          ### 🛠️ Required Action
+          1. Create a patch branch: \`bugfix/matrix-${GITHUB_SHA::8}\`
+          2. Troubleshoot Python version differences locally using \`uv run --python <version> pytest tests\`
+          3. Promote the patch through \`./scripts/gitflow.sh promote-to-test\`" || true
