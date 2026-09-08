@@ -6,10 +6,14 @@ Exports database management engine, data records, and authentication utilities.
 from __future__ import annotations
 
 from app.database.auth import (
+    BootstrapState,
+    acknowledge_bootstrap,
     bootstrap_admin_user,
     generate_session_token,
+    get_bootstrap_state,
     has_permission,
     hash_password,
+    set_bootstrap_pending,
     verify_password,
     verify_session_token,
 )
@@ -33,6 +37,7 @@ from app.database.models import (
 __all__ = [
     "ALL_PERMISSIONS",
     "DEFAULT_ROLE_PERMISSIONS",
+    "BootstrapState",
     "DatabaseManager",
     "FeedbackRecord",
     "LoginAuditRecord",
@@ -43,10 +48,13 @@ __all__ = [
     "RoleType",
     "UserPermissionRecord",
     "UserRecord",
+    "acknowledge_bootstrap",
     "bootstrap_admin_user",
     "generate_session_token",
+    "get_bootstrap_state",
     "has_permission",
     "hash_password",
+    "set_bootstrap_pending",
     "verify_password",
     "verify_session_token",
 ]

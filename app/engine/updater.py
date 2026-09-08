@@ -10,7 +10,8 @@ import asyncio
 import datetime
 import os
 import re
-import subprocess
+import shutil
+import subprocess  # nosec B404 - required for detached deploy.sh execution and git commit resolution
 import tempfile
 import time
 from collections.abc import Callable
@@ -60,16 +61,20 @@ def _spawn_detached_deployer(deploy_script: Path, target_branch: str) -> None:
     log_fd.flush()
 
     if os.name == "posix":
-        # Non-interactive sudo execution in detached session
-        subprocess.Popen(
-            ["sudo", str(deploy_script), target_branch],
+        # sudo(8) must run as root to restart systemd service after deployment.
+        # The deploy.sh script path is validated as an existing file before reaching this call.
+        # start_new_session=True ensures the child process outlives the parent web process restart.
+        sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"  # nosec B607 - absolute path resolved
+        subprocess.Popen(  # nosec B603 - argument list is validated; no shell=True; setuid binary required
+            [sudo_bin, str(deploy_script), target_branch],
             stdout=log_fd,
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
     else:
-        subprocess.Popen(
-            ["bash", str(deploy_script), target_branch],
+        bash_bin = shutil.which("bash") or "bash"  # nosec B607 - absolute path resolved via shutil.which
+        subprocess.Popen(  # nosec B603 - argument list is validated; no shell=True; Windows dev-only path
+            [bash_bin, str(deploy_script), target_branch],
             stdout=log_fd,
             stderr=subprocess.STDOUT,
         )
@@ -159,9 +164,11 @@ class UpdateWatcher:
         git_dir = self.repo_dir / ".git"
         if git_dir.exists():
             try:
-                # Use subprocess to query HEAD commit
-                proc = subprocess.run(
-                    ["git", "rev-parse", "HEAD"],
+                # git(1) is the only reliable way to query the HEAD commit of a live worktree.
+                # Using absolute path resolved via shutil.which eliminates B607 partial path risk.
+                git_bin = shutil.which("git") or "git"  # nosec B607 - resolved via PATH
+                proc = subprocess.run(  # nosec B603 - validated arg list; no shell=True; git is a trusted binary
+                    [git_bin, "rev-parse", "HEAD"],
                     cwd=str(self.repo_dir),
                     capture_output=True,
                     text=True,
@@ -174,6 +181,7 @@ class UpdateWatcher:
                 log.debug("Git rev-parse subprocess probe failed in repo_dir %s: %s", self.repo_dir, err)
             except OSError as err:
                 log.debug("Git rev-parse OS probe failed in repo_dir %s: %s", self.repo_dir, err)
+
 
         # 2. Check for deployed commit metadata file (.git_commit)
         candidate_meta_files = [

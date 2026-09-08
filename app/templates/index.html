@@ -3063,12 +3063,13 @@
 
     async function handleUserLogout() {
       try {
-        await fetch('/api/auth/logout', { method: 'POST' });
-        showAlert("Signed out successfully.");
-        closeLoginModal();
-        await checkAuthMe();
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
       } catch (err) {
         console.debug("Logout error:", err);
+      } finally {
+        // Belt-and-suspenders: clear session cookie client-side before navigating
+        document.cookie = 'pal_session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+        window.location.href = '/login';
       }
     }
 

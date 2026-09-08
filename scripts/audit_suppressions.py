@@ -110,6 +110,15 @@ def audit_pyproject_toml(config_path: Path) -> list[str]:
     if mypy_section.get("ignore_errors", False):
         violations.append("[MYPY SUPPRESSION] pyproject.toml has 'ignore_errors = true'")
 
+    # 4. Check Bandit project-wide skips — must be empty or absent
+    bandit_section = tool_section.get("bandit", {})
+    bandit_skips = bandit_section.get("skips", [])
+    if bandit_skips:
+        violations.append(
+            f"[BANDIT SUPPRESSION] pyproject.toml has project-wide Bandit skips: {bandit_skips}. "
+            "All Bandit suppressions must be inline `# nosec BXXX` annotations with justification comments."
+        )
+
     return violations
 
 

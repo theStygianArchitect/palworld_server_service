@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Palworld Server Operations Suite — Sign In</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eef2ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' },
+            dark: { 800: '#1e293b', 900: '#0f172a', 950: '#020617' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .tab-active { border-bottom: 2px solid #6366f1; color: #6366f1; }
+    .tab-inactive { border-bottom: 2px solid transparent; color: #94a3b8; }
+    .tab-inactive:hover { color: #e2e8f0; }
+    .password-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; letter-spacing: 0.05em; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.25s ease-out; }
+    @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); } 70% { box-shadow: 0 0 0 10px rgba(99,102,241,0); } 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); } }
+    .pulse-ring { animation: pulse-ring 1.5s cubic-bezier(0.4,0,0.6,1) infinite; }
+  </style>
+</head>
+<body class="bg-dark-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-brand-500 selection:text-white">
+
+  <!-- Header -->
+  <header class="bg-dark-900 border-b border-slate-800 sticky top-0 z-40 px-4 sm:px-6 py-3.5 shadow-xl backdrop-blur-md bg-opacity-90">
+    <div class="max-w-7xl mx-auto flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-brand-600/40">P</div>
+      <span class="text-slate-100 font-semibold tracking-tight text-base">Palworld Operations Suite</span>
+      <div class="ml-auto flex items-center gap-2">
+        <div id="setupBadge" class="hidden items-center gap-1.5 bg-amber-900/40 border border-amber-600/50 text-amber-300 text-xs px-2.5 py-1 rounded-full">
+          <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+          First-Spin Setup
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 flex items-center justify-center px-4 py-12">
+    <div class="w-full max-w-md space-y-4">
+
+      <!-- First-Spin Setup Credential Card -->
+      <div id="setupCard" class="hidden fade-in bg-amber-950/50 border border-amber-600/60 rounded-xl p-5 shadow-lg shadow-amber-900/20">
+        <div class="flex items-start gap-3">
+          <div class="w-9 h-9 rounded-lg bg-amber-700/40 border border-amber-600/50 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h3 class="text-amber-200 font-semibold text-sm leading-tight mb-1">First-Spin Administrator Setup</h3>
+            <p class="text-amber-300/80 text-xs leading-relaxed mb-3">A secure password was generated for your <strong>admin</strong> account. Save it now &mdash; this is the only time it will be displayed here.</p>
+            <div class="mb-2">
+              <label class="block text-amber-400/70 text-xs font-medium mb-1">Username</label>
+              <div class="bg-dark-900/70 border border-amber-700/40 rounded-md px-3 py-2 text-amber-100 text-sm password-mono" id="setupUsername">admin</div>
+            </div>
+            <div class="mb-3">
+              <label class="block text-amber-400/70 text-xs font-medium mb-1">Generated Password</label>
+              <div class="relative">
+                <div class="bg-dark-900/70 border border-amber-600/50 rounded-md px-3 py-2.5 pr-10 text-amber-200 text-sm password-mono tracking-wider select-all" id="setupPassword">&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;</div>
+                <button type="button" onclick="toggleSetupPassword()" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-amber-400/60 hover:text-amber-300 transition-colors" aria-label="Toggle password visibility" id="togglePasswordBtn">
+                  <svg id="eyeIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="flex gap-2 mb-3">
+              <button type="button" onclick="copyPasswordToClipboard()" id="copyBtn" class="flex-1 flex items-center justify-center gap-1.5 bg-amber-700/40 hover:bg-amber-700/60 border border-amber-600/50 text-amber-200 text-xs font-medium px-3 py-2 rounded-lg transition-all">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg>
+                <span id="copyBtnText">Copy Password</span>
+              </button>
+              <button type="button" onclick="autoFillAndLogin()" class="flex-1 flex items-center justify-center gap-1.5 bg-brand-600/40 hover:bg-brand-600/60 border border-brand-500/50 text-brand-200 text-xs font-medium px-3 py-2 rounded-lg transition-all">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
+                Auto-Fill &amp; Login
+              </button>
+            </div>
+            <p class="text-amber-400/50 text-xs mb-3" id="clipboardFallback" style="display:none;">Click the password field above to select it, then press Ctrl+C / Cmd+C to copy.</p>
+            <button type="button" onclick="acknowledgeBootstrap()" id="ackBtn" class="w-full bg-green-800/40 hover:bg-green-700/50 border border-green-600/50 text-green-300 text-xs font-medium px-3 py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              I Saved It &mdash; Seal Credentials
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Login / Register Card -->
+      <div class="bg-dark-900 border border-slate-800 rounded-xl shadow-2xl shadow-black/50 overflow-hidden">
+        <div class="flex border-b border-slate-800">
+          <button type="button" onclick="switchTab('signin')" id="tab-signin" class="flex-1 py-3.5 text-sm font-medium transition-colors tab-active">Sign In</button>
+          <button type="button" onclick="switchTab('register')" id="tab-register" class="flex-1 py-3.5 text-sm font-medium transition-colors tab-inactive">Create Account</button>
+        </div>
+
+        <!-- Sign In Panel -->
+        <div id="panel-signin" class="p-6">
+          <div class="mb-5">
+            <h2 class="text-lg font-semibold text-slate-100">Welcome back</h2>
+            <p class="text-slate-400 text-sm mt-0.5">Sign in to access the operations console.</p>
+          </div>
+          <div id="signinError" class="hidden mb-4 bg-red-900/40 border border-red-700/60 text-red-300 text-sm rounded-lg px-4 py-3"></div>
+          <div id="signinSuccess" class="hidden mb-4 bg-green-900/40 border border-green-700/60 text-green-300 text-sm rounded-lg px-4 py-3"></div>
+          <form id="signinForm" onsubmit="handleSignIn(event)" novalidate class="space-y-4">
+            <div>
+              <label for="signinUsername" class="block text-sm font-medium text-slate-300 mb-1.5">Username</label>
+              <input type="text" id="signinUsername" name="username" autocomplete="username" required placeholder="admin" class="w-full bg-dark-800 border border-slate-700 rounded-lg px-3.5 py-2.5 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all">
+            </div>
+            <div>
+              <label for="signinPassword" class="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
+              <div class="relative">
+                <input type="password" id="signinPassword" name="password" autocomplete="current-password" required placeholder="Enter password" class="w-full bg-dark-800 border border-slate-700 rounded-lg px-3.5 py-2.5 pr-10 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all">
+                <button type="button" onclick="toggleFieldVisibility('signinPassword','signinEye')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors" aria-label="Toggle password visibility">
+                  <svg id="signinEye" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <button type="submit" id="signinBtn" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-all shadow-lg shadow-brand-600/30 flex items-center justify-center gap-2 text-sm">
+              <span id="signinBtnText">Sign In</span>
+              <svg id="signinSpinner" class="hidden animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </form>
+        </div>
+
+        <!-- Register Panel -->
+        <div id="panel-register" class="hidden p-6">
+          <div class="mb-5">
+            <h2 class="text-lg font-semibold text-slate-100">Create an account</h2>
+            <p class="text-slate-400 text-sm mt-0.5">New accounts start with viewer access. An admin can promote your role.</p>
+          </div>
+          <div id="registerError" class="hidden mb-4 bg-red-900/40 border border-red-700/60 text-red-300 text-sm rounded-lg px-4 py-3"></div>
+          <div id="registerSuccess" class="hidden mb-4 bg-green-900/40 border border-green-700/60 text-green-300 text-sm rounded-lg px-4 py-3"></div>
+          <form id="registerForm" onsubmit="handleRegister(event)" novalidate class="space-y-4">
+            <div>
+              <label for="regUsername" class="block text-sm font-medium text-slate-300 mb-1.5">Username</label>
+              <input type="text" id="regUsername" name="username" autocomplete="username" required minlength="3" maxlength="32" pattern="^[a-zA-Z0-9_-]+$" placeholder="your_handle" class="w-full bg-dark-800 border border-slate-700 rounded-lg px-3.5 py-2.5 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all">
+              <p class="text-slate-500 text-xs mt-1">3-32 characters: letters, numbers, dash, underscore.</p>
+            </div>
+            <div>
+              <label for="regEmail" class="block text-sm font-medium text-slate-300 mb-1.5">Email</label>
+              <input type="email" id="regEmail" name="email" autocomplete="email" required placeholder="you@example.com" class="w-full bg-dark-800 border border-slate-700 rounded-lg px-3.5 py-2.5 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all">
+            </div>
+            <div>
+              <label for="regPassword" class="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
+              <div class="relative">
+                <input type="password" id="regPassword" name="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters" class="w-full bg-dark-800 border border-slate-700 rounded-lg px-3.5 py-2.5 pr-10 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all">
+                <button type="button" onclick="toggleFieldVisibility('regPassword','regEye')" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors" aria-label="Toggle password visibility">
+                  <svg id="regEye" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.8">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <button type="submit" id="registerBtn" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold py-2.5 px-4 rounded-lg transition-all shadow-lg shadow-brand-600/30 flex items-center justify-center gap-2 text-sm">
+              <span id="registerBtnText">Create Account</span>
+              <svg id="registerSpinner" class="hidden animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <p class="text-center text-slate-600 text-xs">Palworld Operations Suite &mdash; Internal Management Console</p>
+    </div>
+  </main>
+
+  <script>
+    'use strict';
+    let _ephemeralPassword = null;
+    let _passwordVisible = false;
+    const _nextUrl = new URLSearchParams(window.location.search).get('next') || '/';
+
+    (async function checkBootstrapState() {
+      try {
+        const resp = await fetch('/api/auth/bootstrap-credentials', { method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.is_pending && data.username && data.password) {
+            _ephemeralPassword = data.password;
+            document.getElementById('setupUsername').textContent = data.username;
+            document.getElementById('setupPassword').textContent = '\u2022'.repeat(data.password.length);
+            document.getElementById('setupCard').classList.remove('hidden');
+            document.getElementById('setupCard').classList.add('flex');
+            document.getElementById('setupBadge').classList.remove('hidden');
+            document.getElementById('setupBadge').classList.add('flex');
+          }
+        }
+      } catch (_e) {}
+    })();
+
+    function switchTab(tab) {
+      ['signin','register'].forEach(t => {
+        document.getElementById('tab-' + t).className = 'flex-1 py-3.5 text-sm font-medium transition-colors ' + (t === tab ? 'tab-active' : 'tab-inactive');
+        document.getElementById('panel-' + t).classList.toggle('hidden', t !== tab);
+      });
+    }
+
+    function toggleSetupPassword() {
+      if (!_ephemeralPassword) return;
+      _passwordVisible = !_passwordVisible;
+      const el = document.getElementById('setupPassword');
+      el.textContent = _passwordVisible ? _ephemeralPassword : '\u2022'.repeat(_ephemeralPassword.length);
+    }
+
+    async function copyPasswordToClipboard() {
+      if (!_ephemeralPassword) return;
+      const btnText = document.getElementById('copyBtnText');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try { await navigator.clipboard.writeText(_ephemeralPassword); showCopySuccess(btnText); return; } catch (_e) {}
+      }
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = _ephemeralPassword; ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        if (document.execCommand('copy')) { document.body.removeChild(ta); showCopySuccess(btnText); return; }
+        document.body.removeChild(ta);
+      } catch (_e) {}
+      document.getElementById('clipboardFallback').style.display = 'block';
+      document.getElementById('setupPassword').textContent = _ephemeralPassword;
+      _passwordVisible = true;
+      btnText.textContent = 'Select the text above';
+    }
+
+    function showCopySuccess(el) { el.textContent = '\u2713 Copied!'; setTimeout(() => { el.textContent = 'Copy Password'; }, 2000); }
+
+    function autoFillAndLogin() {
+      if (!_ephemeralPassword) return;
+      document.getElementById('signinUsername').value = 'admin';
+      document.getElementById('signinPassword').value = _ephemeralPassword;
+      switchTab('signin');
+      const btn = document.getElementById('signinBtn');
+      btn.classList.add('pulse-ring');
+      setTimeout(() => { btn.classList.remove('pulse-ring'); document.getElementById('signinForm').dispatchEvent(new Event('submit')); }, 600);
+    }
+
+    async function acknowledgeBootstrap() {
+      const ackBtn = document.getElementById('ackBtn');
+      ackBtn.disabled = true; ackBtn.textContent = 'Sealing credentials...';
+      try {
+        const resp = await fetch('/api/auth/ack-bootstrap', { method: 'POST', credentials: 'same-origin' });
+        if (resp.ok || resp.status === 409) {
+          _ephemeralPassword = null;
+          document.getElementById('setupCard').classList.add('hidden');
+          document.getElementById('setupBadge').classList.add('hidden');
+          showSignInSuccess('Credentials sealed. Sign in with your saved password.');
+        } else { ackBtn.disabled = false; ackBtn.textContent = 'I Saved It \u2014 Seal Credentials'; }
+      } catch (_e) { ackBtn.disabled = false; ackBtn.textContent = 'I Saved It \u2014 Seal Credentials'; }
+    }
+
+    async function handleSignIn(event) {
+      event.preventDefault();
+      const username = document.getElementById('signinUsername').value.trim();
+      const password = document.getElementById('signinPassword').value;
+      if (!username || !password) { showSignInError('Please enter your username and password.'); return; }
+      setSignInLoading(true);
+      try {
+        const resp = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ username, password }) });
+        if (resp.ok) { showSignInSuccess('Login successful! Redirecting...'); setTimeout(() => { window.location.href = _nextUrl; }, 300); }
+        else { const data = await resp.json().catch(() => ({})); showSignInError(data.detail || 'Invalid username or password.'); setSignInLoading(false); }
+      } catch (_e) { showSignInError('Network error. Please check your connection.'); setSignInLoading(false); }
+    }
+
+    function setSignInLoading(loading) {
+      document.getElementById('signinBtn').disabled = loading;
+      document.getElementById('signinBtnText').textContent = loading ? 'Signing in...' : 'Sign In';
+      document.getElementById('signinSpinner').classList.toggle('hidden', !loading);
+    }
+
+    function showSignInError(msg) { const el = document.getElementById('signinError'); el.textContent = msg; el.classList.remove('hidden'); document.getElementById('signinSuccess').classList.add('hidden'); }
+    function showSignInSuccess(msg) { const el = document.getElementById('signinSuccess'); el.textContent = msg; el.classList.remove('hidden'); document.getElementById('signinError').classList.add('hidden'); }
+
+    async function handleRegister(event) {
+      event.preventDefault();
+      const username = document.getElementById('regUsername').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+      const password = document.getElementById('regPassword').value;
+      if (!/^[a-zA-Z0-9_-]{3,32}$/.test(username)) { showRegisterError('Username must be 3-32 characters: letters, numbers, dash, underscore only.'); return; }
+      if (!email.includes('@')) { showRegisterError('Please enter a valid email address.'); return; }
+      if (password.length < 8) { showRegisterError('Password must be at least 8 characters.'); return; }
+      setRegisterLoading(true);
+      try {
+        const resp = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ username, email, password }) });
+        if (resp.ok) { showRegisterSuccess('Account created! Switch to Sign In to log in.'); document.getElementById('registerForm').reset(); setRegisterLoading(false); }
+        else { const data = await resp.json().catch(() => ({})); showRegisterError(data.detail || 'Registration failed. Try a different username.'); setRegisterLoading(false); }
+      } catch (_e) { showRegisterError('Network error. Please check your connection.'); setRegisterLoading(false); }
+    }
+
+    function setRegisterLoading(loading) {
+      document.getElementById('registerBtn').disabled = loading;
+      document.getElementById('registerBtnText').textContent = loading ? 'Creating account...' : 'Create Account';
+      document.getElementById('registerSpinner').classList.toggle('hidden', !loading);
+    }
+
+    function showRegisterError(msg) { const el = document.getElementById('registerError'); el.textContent = msg; el.classList.remove('hidden'); document.getElementById('registerSuccess').classList.add('hidden'); }
+    function showRegisterSuccess(msg) { const el = document.getElementById('registerSuccess'); el.textContent = msg; el.classList.remove('hidden'); document.getElementById('registerError').classList.add('hidden'); }
+
+    function toggleFieldVisibility(fieldId, iconId) {
+      const field = document.getElementById(fieldId);
+      field.type = field.type === 'password' ? 'text' : 'password';
+    }
+  </script>
+</body>
+</html>

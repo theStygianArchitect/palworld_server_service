@@ -96,19 +96,9 @@ disable = []
 max-line-length = 120
 
 [tool.bandit]
-# Security Scanner Skips:
-# B104: Web management plane intentionally binds to 0.0.0.0 or LAN IP for remote dashboard access
-# B110: Benign fallback checks (e.g. non-fatal directory checks) where failure has no operational impact
-# B404: Subprocess module is required to interact with systemctl, steamcmd, ping, and OS utilities
-# B603: Subprocess calls use explicit argument lists without shell=True for secure execution
-# B607: System binaries (systemctl, ping, ip, journalctl) are discovered dynamically via PATH / shutil.which
-skips = [
-    "B104", # hardcoded_bind_all_interfaces: Web interface binds to 0.0.0.0 / eth0 IP for admin dashboard access
-    "B110", # try_except_pass: Benign fallback checks where failure has zero operational security impact
-    "B404", # blacklist:import_subprocess: Subprocess required for systemctl, steamcmd, and network diagnostic utilities
-    "B603", # subprocess_without_shell_equals_true: Subprocess invocations use validated argument lists without shell=True
-    "B607", # start_process_with_partial_path: System utilities (systemctl, ping, ip) are resolved via PATH
-]
+# All Bandit suppressions are scoped to individual code lines via inline
+# `# nosec BXXX` annotations with explicit engineering justifications.
+# Zero project-wide skips are permitted — see scripts/audit_suppressions.py.
 
 [tool.bandit.assert_used]
 # Assertions are standard testing idioms and are safe in pytest suites

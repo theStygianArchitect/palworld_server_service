@@ -750,3 +750,45 @@ class UpdateApplyResponse(BaseModel):
     message: str = Field(..., description="Status description")
     target_branch: str = Field(..., description="Branch being deployed")
     triggered_at: str = Field(..., description="ISO-8601 UTC timestamp when triggered")
+
+
+# =========================================================================
+# 8. System Bootstrap & Initial Setup Schemas
+# =========================================================================
+
+
+class BootstrapCredentialsResponse(BaseModel):
+    """Response payload for initial system bootstrap credential presentation.
+
+    Returned by GET /api/auth/bootstrap-credentials when the system is in
+    first-spin setup mode and the initial admin credentials have not yet
+    been acknowledged. Once acknowledged via POST /api/auth/ack-bootstrap,
+    this endpoint permanently returns HTTP 404.
+
+    Attributes:
+        is_pending (bool): True if bootstrap acknowledgment is still outstanding.
+        username (str | None): The bootstrapped admin account username.
+        password (str | None): The plaintext generated admin password (ephemeral).
+        message (str): Operator guidance and security warning text.
+    """
+
+    is_pending: bool = Field(..., description="True if bootstrap acknowledgment is still outstanding")
+    username: str | None = Field(default=None, description="Bootstrapped admin account username")
+    password: str | None = Field(default=None, description="Plaintext generated admin password (ephemeral)")
+    message: str = Field(..., description="Operator guidance and security warning text")
+
+
+class BootstrapAckResponse(BaseModel):
+    """Response payload confirming bootstrap credential acknowledgment.
+
+    Returned by POST /api/auth/ack-bootstrap. After this response is issued,
+    the ephemeral plaintext password is zeroed from memory and GET /api/auth/bootstrap-credentials
+    permanently returns HTTP 404.
+
+    Attributes:
+        status (str): Operation status ('success').
+        message (str): Confirmation that credentials have been locked.
+    """
+
+    status: str = Field(..., description="Operation status ('success')")
+    message: str = Field(..., description="Confirmation that credentials have been locked and wiped from memory")

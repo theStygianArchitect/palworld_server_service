@@ -25,6 +25,37 @@ from app.database.models import DEFAULT_ROLE_PERMISSIONS, UserRecord
 
 PBKDF2_ITERATIONS = 100_000
 
+# ---------------------------------------------------------------------------
+# Bootstrap State: Ephemeral in-memory singleton for first-spin setup
+# ---------------------------------------------------------------------------
+# Holds the plaintext generated admin password until the operator explicitly
+# acknowledges saving it via POST /api/auth/ack-bootstrap or completes the
+# first successful admin login. At that point, `_bootstrap_state.password`
+# is overwritten with None to permanently erase it from memory.
+# ---------------------------------------------------------------------------
+
+
+class BootstrapState:  # pylint: disable=too-few-public-methods
+    """Thread-safe ephemeral holder for first-spin administrator credentials.
+
+    Attributes:
+        is_pending (bool): True if bootstrap acknowledgment is still outstanding.
+        username (str | None): The bootstrapped admin account username.
+        password (str | None): Ephemeral plaintext generated admin password.
+    """
+
+    def __init__(self) -> None:
+        """Initializes the bootstrap state as unresolved and empty."""
+        self.is_pending: bool = False
+        self.username: str | None = None
+        self.password: str | None = None
+
+
+# Module-level singleton — initialized during application lifespan startup.
+_bootstrap_state: BootstrapState = BootstrapState()
+
+
+
 
 def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
     """Generates a PBKDF2-HMAC-SHA256 digest with a cryptographically secure random salt.
@@ -191,6 +222,10 @@ def bootstrap_admin_user(
     hashes it, stores the admin user, and writes the credentials out-of-band to export_path
     with strict POSIX 0600 file permissions.
 
+    When a random password is generated and the system is in first-spin mode (bootstrap
+    not yet completed per db metadata), also populates the in-memory BootstrapState so
+    the setup UI can present credentials to the operator without file system access.
+
     Args:
         db: Initialized DatabaseManager instance.
         default_password: Optional password to assign. If None or empty, generates random token.
@@ -225,6 +260,12 @@ def bootstrap_admin_user(
             resolved_export = resolve_admin_credential_export_path(export_path)
             _export_credentials_to_file(resolved_export, password_to_use)
 
+        # Populate in-memory bootstrap state so the setup UI can present the credential
+        # without requiring the operator to access the filesystem out-of-band.
+        # Only mark pending if bootstrap has not been previously acknowledged (first-spin only).
+        if is_generated and db.get_meta("bootstrap_completed") is None:
+            set_bootstrap_pending(username="admin", password=password_to_use)
+
         return admin_user
 
     # If users exist but 'admin' does not, return first available user or create admin
@@ -258,3 +299,44 @@ def _export_credentials_to_file(export_path: Path, password: str) -> None:
         log.info("Initial admin credentials exported out-of-band to %s", export_path)
     except OSError as err:
         log.warning("Could not export initial admin credentials to %s: %s", export_path, err)
+
+
+def get_bootstrap_state() -> BootstrapState:
+    """Returns the module-level ephemeral bootstrap credential state.
+
+    Returns:
+        BootstrapState: Current bootstrap lifecycle state. If is_pending is False,
+            the system has been initialized and the credential endpoint is sealed.
+    """
+    return _bootstrap_state
+
+
+def set_bootstrap_pending(username: str, password: str) -> None:
+    """Marks the bootstrap state as pending with the given ephemeral credentials.
+
+    Called during application lifespan startup when a new admin is bootstrapped.
+    The plaintext password is held in-memory until acknowledged or first admin login.
+
+    Args:
+        username (str): The bootstrapped admin account username.
+        password (str): The plaintext generated admin password (ephemeral).
+    """
+    _bootstrap_state.is_pending = True
+    _bootstrap_state.username = username
+    _bootstrap_state.password = password
+
+
+def acknowledge_bootstrap(db: DatabaseManager) -> None:
+    """Permanently acknowledges and seals the first-spin bootstrap state.
+
+    Writes bootstrap_completed = 'true' to the SQLite metadata table, then
+    zeroes the in-memory plaintext password to prevent future retrieval.
+
+    Args:
+        db (DatabaseManager): Initialized database manager instance.
+    """
+    _bootstrap_state.is_pending = False
+    _bootstrap_state.username = None
+    _bootstrap_state.password = None
+    db.set_meta("bootstrap_completed", "true")
+    log.info("Bootstrap acknowledgment recorded — ephemeral credentials wiped from memory.")

@@ -18,7 +18,7 @@ import logging
 import os
 import shutil
 import sqlite3
-import subprocess
+import subprocess  # nosec B404 - required for systemctl is-active liveness probe; no Python-native systemd API
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -40,6 +40,8 @@ from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.schemas import (
+    BootstrapAckResponse,
+    BootstrapCredentialsResponse,
     FeedbackResponse,
     FeedbackSubmitRequest,
     GameplaySettingsSchema,
@@ -76,8 +78,10 @@ from app.database import (
     MetricsDatabaseManager,
     MetricSnapshotRecord,
     UserRecord,
+    acknowledge_bootstrap,
     bootstrap_admin_user,
     generate_session_token,
+    get_bootstrap_state,
     has_permission,
     hash_password,
     verify_password,
@@ -147,9 +151,11 @@ async def telemetry_streamer() -> None:
             liveness = False
             if os.name != "nt":
                 try:
-                    systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"
+                    systemctl_bin = (  # nosec B607
+                        shutil.which("systemctl") or "/bin/systemctl"
+                    )
                     proc = await asyncio.to_thread(
-                        subprocess.run,
+                        subprocess.run,  # nosec B603 - validated arg list; systemctl is-active is read-only probe
                         [systemctl_bin, "is-active", settings.service_name],
                         capture_output=True,
                         text=True,
@@ -723,13 +729,25 @@ async def readiness_check() -> dict[str, Any]:
     }
 
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_dashboard() -> HTMLResponse:
+@app.get("/", response_class=HTMLResponse, response_model=None)
+async def serve_dashboard(request: Request) -> HTMLResponse | RedirectResponse:
     """Serves the reactive Tailwind Web management dashboard.
 
+    Authenticated users (valid session cookie or Bearer token) are served the dashboard.
+    Unauthenticated requests are redirected to /login, preserving the request URI via ?next=.
+    Users present in a first-spin bootstrap state see the setup credential modal automatically
+    when they land on /login.
+
+    Args:
+        request (Request): Inbound FastAPI HTTP request.
+
     Returns:
-        HTMLResponse: Rendered dashboard HTML content.
+        HTMLResponse | RedirectResponse: Dashboard HTML or redirect to /login with next= param.
     """
+    user = get_current_user_optional(request)
+    if user is None:
+        # Preserve deep-link so the login page can redirect back after successful sign-in.
+        return RedirectResponse(url="/login?next=/", status_code=302)
     template_path = Path(__file__).parent / "templates" / "index.html"
     if template_path.exists():
         try:
@@ -737,6 +755,122 @@ async def serve_dashboard() -> HTMLResponse:
         except OSError as err:
             log.warning("Error reading template file at %s: %s", template_path, err)
     return HTMLResponse("<h2>Palworld Operations Suite Dashboard</h2><p>Template loading...</p>")
+
+
+@app.get("/login", response_class=HTMLResponse, response_model=None)
+async def serve_login_page(request: Request) -> HTMLResponse | RedirectResponse:
+    """Serves the login / first-spin setup credential page.
+
+    If the user is already authenticated, redirects to the ?next= param or /.
+    Presents the bootstrap credential card automatically when bootstrap is still pending.
+
+    Args:
+        request (Request): Inbound FastAPI HTTP request.
+
+    Returns:
+        HTMLResponse | RedirectResponse: Login/setup HTML or redirect to dashboard.
+    """
+    user = get_current_user_optional(request)
+    if user is not None:
+        next_url = request.query_params.get("next", "/")
+        return RedirectResponse(url=next_url, status_code=302)
+    template_path = Path(__file__).parent / "templates" / "login.html"
+    if template_path.exists():
+        try:
+            return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
+        except OSError as err:
+            log.warning("Error reading login template at %s: %s", template_path, err)
+    # Fallback minimal page — template creation is covered in Task 3.5
+    return HTMLResponse(
+        "<h2>Palworld Manager — Login</h2><p>Login template not found. Please redeploy.</p>",
+        status_code=200,
+    )
+
+
+@app.get("/setup", response_class=HTMLResponse, response_model=None)
+async def serve_setup_page(_request: Request) -> HTMLResponse | RedirectResponse:
+    """Redirects to /login which hosts the setup credential presentation tab.
+
+    Args:
+        request (Request): Inbound FastAPI HTTP request.
+
+    Returns:
+        RedirectResponse: Redirect to /login for unified entry point.
+    """
+    return RedirectResponse(url="/login", status_code=302)
+
+
+@app.get("/api/auth/bootstrap-credentials", response_model=BootstrapCredentialsResponse)
+async def get_bootstrap_credentials(
+    _request: Request,
+) -> BootstrapCredentialsResponse:
+    """Returns the ephemeral first-spin admin credentials if bootstrap is still pending.
+
+    This endpoint is **unauthenticated** by design so operators can retrieve credentials
+    on a fresh install without logging in first. Once POST /api/auth/ack-bootstrap is called
+    (or the first admin login occurs), this endpoint permanently returns 404.
+
+    The response includes the plaintext password **exactly once**. After acknowledgment,
+    the password is wiped from memory and cannot be recovered from this API.
+
+    Returns:
+        BootstrapCredentialsResponse: Current bootstrap lifecycle state with ephemeral password.
+
+    Raises:
+        HTTPException: 404 if bootstrap has already been acknowledged.
+    """
+    state = get_bootstrap_state()
+    if not state.is_pending:
+        raise HTTPException(
+            status_code=404,
+            detail="System setup is complete. Bootstrap credentials are no longer available.",
+        )
+    return BootstrapCredentialsResponse(
+        is_pending=True,
+        username=state.username,
+        password=state.password,
+        message=(
+            "⚠️ FIRST-SPIN SETUP: Save this password now — it will never be shown again after you click 'I Saved It'. "
+            "You can also find it at /etc/palmanager/initial_admin_credential.txt on the server."
+        ),
+    )
+
+
+@app.post("/api/auth/ack-bootstrap", response_model=BootstrapAckResponse)
+async def acknowledge_bootstrap_credentials(request: Request) -> BootstrapAckResponse:
+    """Acknowledges the first-spin bootstrap credentials and permanently seals them.
+
+    After this call, GET /api/auth/bootstrap-credentials returns 404 forever and the
+    ephemeral plaintext password is wiped from server memory. This action is irreversible.
+
+    This endpoint is **unauthenticated** because it is called from the setup modal before
+    the operator has logged in. Authorization is implicit — calling this endpoint means the
+    operator has confirmed they have saved the password.
+
+    Args:
+        request (Request): Inbound FastAPI HTTP request.
+
+    Returns:
+        BootstrapAckResponse: Confirmation that credentials are permanently sealed.
+
+    Raises:
+        HTTPException: 409 if bootstrap was already acknowledged.
+    """
+    state = get_bootstrap_state()
+    if not state.is_pending:
+        raise HTTPException(
+            status_code=409,
+            detail="Bootstrap has already been acknowledged. Nothing to confirm.",
+        )
+    await asyncio.to_thread(acknowledge_bootstrap, db)
+    log.info("Bootstrap acknowledged by client at %s", request.client)
+    return BootstrapAckResponse(
+        status="success",
+        message=(
+            "Initial credentials have been acknowledged and permanently wiped from memory. "
+            "Please log in with your saved administrator password."
+        ),
+    )
 
 
 @app.get("/observability", response_class=HTMLResponse)
@@ -1199,6 +1333,14 @@ async def login(req: UserLoginRequest, request: Request, response: Response) -> 
     )
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     db.update_user_last_login(user.id, now_iso)
+
+    # Auto-seal bootstrap credentials upon first successful login by any admin.
+    # This ensures the ephemeral password is removed from memory even if the operator
+    # skips the "I Saved It" button on the setup modal and logs in directly.
+    bootstrap_state = get_bootstrap_state()
+    if bootstrap_state.is_pending and user.role == "admin":
+        await asyncio.to_thread(acknowledge_bootstrap, db)
+        log.info("Bootstrap auto-acknowledged on first admin login by '%s'.", user.username)
 
     # Issue session cookie
     response.set_cookie(
