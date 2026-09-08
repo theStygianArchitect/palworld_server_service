@@ -36,13 +36,14 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.schemas import (
     FeedbackResponse,
     FeedbackSubmitRequest,
     GameplaySettingsSchema,
+    IssueCategory,
     LoginAuditResponse,
     MetricBucketResponse,
     MetricFlushResponse,
@@ -59,6 +60,7 @@ from app.api.schemas import (
     UserLoginResponse,
     UserResponse,
     UserUpdateRequest,
+    build_github_issue_url,
 )
 from app.config_manager.parser import SETTING_METADATA
 from app.config_manager.pipeline import ConfigPipeline
@@ -514,6 +516,22 @@ def get_current_user(request: Request) -> UserRecord:
     raise HTTPException(status_code=401, detail="Authentication credentials required.")
 
 
+def get_current_user_optional(request: Request) -> UserRecord | None:
+    """Attempts to resolve the active user session without raising 401.
+
+    Args:
+        request: Inbound FastAPI HTTP request.
+
+    Returns:
+        UserRecord or None if unauthenticated or credentials invalid.
+    """
+    try:
+        return get_current_user(request)
+    except HTTPException as err:
+        log.debug("Optional authentication resolution deferred for unauthenticated client: %s", err)
+        return None
+
+
 def require_permission(permission: str):
     """Factory creating FastAPI route dependencies that enforce granular RBAC permissions.
 
@@ -707,6 +725,59 @@ async def serve_observability_dashboard() -> HTMLResponse:
         except OSError as err:
             log.warning("Error reading template file at %s: %s", template_path, err)
     return HTMLResponse("<h2>Palworld Observability Dashboard</h2><p>Template loading...</p>")
+
+
+@app.get("/feedback", response_class=HTMLResponse)
+async def serve_feedback_page() -> HTMLResponse:
+    """Serves the standalone feedback submission and issue tracker page.
+
+    Returns:
+        HTMLResponse: Rendered feedback page HTML content.
+    """
+    template_path = Path(__file__).parent / "templates" / "feedback.html"
+    if template_path.exists():
+        try:
+            return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
+        except OSError as err:
+            log.warning("Error reading template file at %s: %s", template_path, err)
+    return HTMLResponse("<h2>Feedback & Issue Tracker</h2><p>Template loading...</p>")
+
+
+REDIRECT_CATEGORY_MAP: dict[str, IssueCategory] = {
+    "bug": "bug_report",
+    "bug_report": "bug_report",
+    "feature": "feature_request",
+    "feature_request": "feature_request",
+    "docs": "documentation_update",
+    "documentation": "documentation_update",
+    "documentation_update": "documentation_update",
+    "security": "security_report",
+    "security_report": "security_report",
+}
+
+
+@app.get("/feedback/{category_shortcut}")
+async def redirect_to_github_template(category_shortcut: str) -> RedirectResponse:
+    """Redirects clients to the corresponding GitHub issue template or security advisory.
+
+    Args:
+        category_shortcut: Shortcut string ('bug', 'feature', 'docs', 'security').
+
+    Returns:
+        RedirectResponse: HTTP 307 temporary redirect to upstream GitHub repository.
+
+    Raises:
+        HTTPException: 404 Not Found if template shortcut is unrecognized.
+    """
+    category = REDIRECT_CATEGORY_MAP.get(category_shortcut.lower())
+    if category is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unrecognized feedback category '{category_shortcut}'. "
+            f"Valid categories: {sorted(REDIRECT_CATEGORY_MAP.keys())}",
+        )
+    target_url = build_github_issue_url(settings.github_repo_url, category)
+    return RedirectResponse(url=target_url, status_code=307)
 
 
 @app.websocket("/ws/telemetry")
@@ -1400,21 +1471,52 @@ async def submit_feedback(
     )
 
 
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+# Rationale: API endpoint supports multi-field filtering, pagination, and user scoping.
 @app.get("/api/feedback", response_model=list[FeedbackResponse])
 async def list_feedback_submissions(
+    request: Request,
+    mine: bool = False,
+    submitted_by: str | None = None,
+    category: IssueCategory | None = None,
+    status: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[FeedbackResponse]:
-    """Lists historical feedback submissions.
+    """Lists historical feedback submissions with optional filtering.
 
     Args:
+        request: Inbound FastAPI HTTP request.
+        mine: Filter for tickets created by the active authenticated user.
+        submitted_by: Optional filter for tickets submitted by a specific user handle.
+        category: Optional filter for issue template category.
+        status: Optional filter for ticket status ('OPEN', 'RESOLVED', 'CLOSED').
         limit: Max entries to return.
         offset: Query offset.
 
     Returns:
         List of FeedbackResponse items.
+
+    Raises:
+        HTTPException: 401 Unauthorized if mine=True and user is unauthenticated.
     """
-    records = db.list_feedbacks(limit=limit, offset=offset)
+    filter_user: str | None = submitted_by
+    if mine:
+        user = get_current_user_optional(request)
+        if user is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required to filter submissions by current user.",
+            )
+        filter_user = user.username
+
+    records = db.list_feedbacks(
+        limit=limit,
+        offset=offset,
+        submitted_by=filter_user,
+        category=category,
+        status=status,
+    )
     result: list[FeedbackResponse] = []
     for rec in records:
         try:

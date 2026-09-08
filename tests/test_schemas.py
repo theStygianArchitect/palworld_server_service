@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.api.schemas import (
+    FeedbackFilterParams,
     GameplaySettingsSchema,
     PlayerBanRequest,
     PlayerKickRequest,
@@ -15,6 +16,7 @@ from app.api.schemas import (
     RebootCancelRequest,
     RebootRequest,
     SettingsRestoreRequest,
+    build_github_issue_url,
 )
 
 
@@ -149,3 +151,65 @@ def test_domain_types_instantiation():
         "net_traffic_status": "HEALTHY",
     }
     assert hw["host_ram_pct"] == 25.0
+
+
+def test_build_github_issue_url():
+    repo = "https://github.com/theStygianArchitect/palworld_server_service"
+
+    # 1. Bug report template url
+    bug_url = build_github_issue_url(repo, "bug_report")
+    assert bug_url == f"{repo}/issues/new?template=bug_report.md"
+
+    # 2. Feature request template url
+    feat_url = build_github_issue_url(repo, "feature_request")
+    assert feat_url == f"{repo}/issues/new?template=feature_request.md"
+
+    # 3. Documentation update template url
+    docs_url = build_github_issue_url(repo, "documentation_update")
+    assert docs_url == f"{repo}/issues/new?template=documentation_update.md"
+
+    # 4. Security report goes to security advisory
+    sec_url = build_github_issue_url(repo, "security_report")
+    assert sec_url == f"{repo}/security/advisories/new"
+
+    # 5. Trailing slash on repo is handled
+    clean_url = build_github_issue_url(f"{repo}/", "bug_report")
+    assert clean_url == f"{repo}/issues/new?template=bug_report.md"
+
+    # 6. Pre-filled title and body with special characters are URL-encoded
+    prefill = build_github_issue_url(
+        repo,
+        "bug_report",
+        title="[BUG] Server crashed & failed",
+        body="Line 1\nLine 2 & <tag>",
+    )
+    assert "template=bug_report.md" in prefill
+    assert "%5BBUG%5D%20Server%20crashed%20%26%20failed" in prefill
+    assert "Line%201%0ALine%202%20%26%20%3Ctag%3E" in prefill
+
+
+def test_feedback_filter_params():
+    # Defaults
+    params = FeedbackFilterParams()
+    assert params.mine is False
+    assert params.submitted_by is None
+    assert params.category is None
+    assert params.status is None
+    assert params.limit == 50
+    assert params.offset == 0
+
+    # Custom
+    custom = FeedbackFilterParams(
+        mine=True,
+        submitted_by="admin",
+        category="feature_request",
+        status="OPEN",
+        limit=25,
+        offset=10,
+    )
+    assert custom.mine is True
+    assert custom.submitted_by == "admin"
+    assert custom.category == "feature_request"
+    assert custom.status == "OPEN"
+    assert custom.limit == 25
+    assert custom.offset == 10

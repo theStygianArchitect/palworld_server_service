@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS feedback_submissions (
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_login_audit_timestamp ON login_audit(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback_submissions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_filter ON feedback_submissions(submitted_by, category, status, created_at DESC);
 """
 
 
@@ -555,23 +556,50 @@ class DatabaseManager:
             created_at=created_at,
         )
 
-    def list_feedbacks(self, limit: int = 50, offset: int = 0) -> list[FeedbackRecord]:
-        """Returns recorded feedback submissions ordered by timestamp descending.
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    # Rationale: Filtered query requires pagination bounds and criteria for submitted_by, category, status.
+    def list_feedbacks(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        submitted_by: str | None = None,
+        category: str | None = None,
+        status: str | None = None,
+    ) -> list[FeedbackRecord]:
+        """Returns recorded feedback submissions ordered by timestamp descending with optional filtering.
 
         Args:
             limit: Maximum number of rows to return.
             offset: Query pagination offset.
+            submitted_by: Optional filter for submissions by a specific user handle.
+            category: Optional filter for issue template category.
+            status: Optional filter for ticket lifecycle status.
 
         Returns:
-            List of FeedbackRecord instances.
+            List of FeedbackRecord instances matching filter criteria.
         """
+        query = (
+            "SELECT id, category, title, description, metadata_json, submitted_by, status, "
+            "github_issue_number, created_at FROM feedback_submissions WHERE "
+            "(? IS NULL OR submitted_by = ?) AND "
+            "(? IS NULL OR category = ?) AND "
+            "(? IS NULL OR status = ?) "
+            "ORDER BY id DESC LIMIT ? OFFSET ?"
+        )
+        params = (
+            submitted_by,
+            submitted_by,
+            category,
+            category,
+            status,
+            status,
+            limit,
+            offset,
+        )
+
         with self._lock:
             conn = self.get_connection()
-            cursor = conn.execute(
-                "SELECT id, category, title, description, metadata_json, submitted_by, status, "
-                "github_issue_number, created_at FROM feedback_submissions ORDER BY id DESC LIMIT ? OFFSET ?",
-                (limit, offset),
-            )
+            cursor = conn.execute(query, params)
             records: list[FeedbackRecord] = []
             for row in cursor.fetchall():
                 records.append(
