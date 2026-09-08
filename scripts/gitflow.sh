@@ -24,6 +24,7 @@ Commands:
   link-issue <issue#>         Link active branch to a GitHub issue number
   close-issue [issue#] [msg]  Close GitHub issue via gh CLI and clear link
   promote-to-test             Verify quality gate & merge current branch into 'test'
+  open-pr [title]             Push branch & open Pull Request targeting 'test' via gh CLI
   promote-to-dev              Verify staging & merge 'test' into 'dev'
   promote-to-main             Verify multi-python matrix & merge 'dev' into 'main'
   log-bug <title> [desc]      Log a bug report file + GitHub issue & branch into bugfix/
@@ -225,6 +226,40 @@ BUG_EOF
         echo "[+] Branch '${current_branch}' deleted after successful promotion."
         ;;
 
+    open-pr|pr)
+        pr_title="${2:-}"
+        current_branch=$(git rev-parse --abbrev-ref HEAD)
+        if [ "${current_branch}" = "test" ] || [ "${current_branch}" = "dev" ] || [ "${current_branch}" = "main" ]; then
+            echo "[-] Cannot open a PR from protected branch '${current_branch}'. Checkout your feature or bugfix branch first."
+            exit 1
+        fi
+        echo "========================================================================="
+        echo " [PULL REQUEST] Pushing and Creating PR: ${current_branch} -> test"
+        echo "========================================================================="
+        echo ">>> Pushing ${current_branch} to origin..."
+        git push -u origin "${current_branch}"
+
+        default_title="${pr_title}"
+        if [ -z "${default_title}" ]; then
+            default_title=$(git log -1 --pretty=%s)
+        fi
+
+        active_issue=$(get_active_issue)
+        if [ -n "${active_issue}" ]; then
+            default_title="${default_title} (Ref #${active_issue})"
+        fi
+
+        if command -v gh >/dev/null 2>&1; then
+            echo ">>> Creating GitHub Pull Request targeting 'test'..."
+            gh pr create --base test --head "${current_branch}" --title "${default_title}" --fill || true
+            echo "[+] Pull request created or already active."
+        else
+            echo "[!] gh CLI not found. Please open PR manually targeting 'test':"
+            repo_url=$(git remote get-url origin | sed 's/\.git$//')
+            echo "    ${repo_url}/compare/test...${current_branch}?expand=1"
+        fi
+        ;;
+
     promote-to-dev)
         echo "========================================================================="
         echo " [GATE 2] Promoting 'test' into 'dev' (Staging Environment)"
@@ -261,7 +296,7 @@ BUG_EOF
         for py_ver in 3.10 3.11 3.12 3.13; do
             if command -v uv >/dev/null 2>&1; then
                 echo "  Checking test suite on Python ${py_ver}..."
-                uv run --python "${py_ver}" pytest -q tests > /dev/null 2>&1 || {
+                uv run --isolated --python "${py_ver}" pytest -q tests > /dev/null 2>&1 || {
                     echo "[-] Failed Python ${py_ver} verification. Aborting production promotion."
                     exit 1
                 }

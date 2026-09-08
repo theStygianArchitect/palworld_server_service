@@ -1,0 +1,35 @@
+name: PR Target Policy Enforcement
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  reject-invalid-target:
+    name: Reject PRs Targeting Protected Branches
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify PR Target Branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          echo "::error title=Governance Violation::Pull Requests targeting '${BASE_REF}' are prohibited. All Pull Requests must target the 'test' branch."
+          echo "========================================================================="
+          echo "[-] REPOSITORY POLICY VIOLATION: Invalid Pull Request Target Branch"
+          echo "[-] Target Branch: '${BASE_REF}'"
+          echo "[-] In this repository, 'dev' and 'main' are protected branches updated"
+          echo "    exclusively by automated CI/CD processes."
+          echo "[-] All external and developer Pull Requests must target the 'test' branch."
+          echo "[-] To resolve this:"
+          echo "    1. Navigate to the PR overview on GitHub."
+          echo "    2. Click 'Edit' next to the PR title."
+          echo "    3. Change the 'base' branch from '${BASE_REF}' to 'test'."
+          echo "========================================================================="
+          exit 1
