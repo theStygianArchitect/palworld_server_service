@@ -194,23 +194,50 @@ uv run uvicorn app.main:app --reload --port 8080
 
 ---
 
-## 🖥️ Production Server Deployment
+## 🖥️ Production Server Deployment & Universal Installation
 
-### Initial Installation (Linux Server)
-Run the root installation script as root / sudo:
+The operations suite supports multi-distribution deployment across Debian/Ubuntu, RHEL/Rocky Linux/CentOS/AlmaLinux, Arch Linux, openSUSE, and Alpine Linux.
+
+### 1. Standalone Single Binary Compilation (Recommended for Zero Runtime Dependencies)
+To eliminate Python runtime dependencies, package managers, and virtualenvs on production hosts, compile the operations suite into a standalone single ELF executable using PyInstaller:
+
+```bash
+# Compiles app/main.py and all ASGI/FastAPI assets into dist/palworld-manager
+./scripts/build_binary.sh
+```
+
+When `dist/palworld-manager` is present:
+- `scripts/install.sh` automatically installs it directly to `/usr/local/bin/palworld-manager`.
+- `palworld-manager.service` prioritizes executing `/usr/local/bin/palworld-manager`, achieving instant startup without an active Python virtual environment.
+
+### 2. Universal Multi-Distro Installation (Linux Server)
+Run the automated installation script as root or with sudo:
+
 ```bash
 chmod +x palworld-run.sh
 sudo ./palworld-run.sh
 ```
 
-This will automatically:
-1. Install system prerequisites and `uv`.
-2. Provision the isolated `palmanager` service user and POSIX ACLs.
-3. Configure scoped `sudoers` privileges.
-4. Install systemd services (`palworld-manager.service` on port 8080 and hardened `palworld.service`).
-5. Register maintenance crontabs for DuckDNS and automated reboot cycles.
+The installer automatically adapts to the host operating system:
+1. **Multi-Package Manager Detection**: Identifies and provisions native C build tools and runtime dependencies across:
+   - **Debian / Ubuntu**: `apt-get`
+   - **RHEL / Rocky / CentOS / Fedora / AlmaLinux**: `dnf` / `yum`
+   - **Arch Linux**: `pacman`
+   - **openSUSE**: `zypper`
+   - **Alpine Linux**: `apk`
+2. **Dual Execution Runtime**:
+   - If a standalone binary (`dist/palworld-manager`) is present, installs it to `/usr/local/bin/palworld-manager`.
+   - If deploying from source, builds an isolated virtualenv under `/opt/palworld-web-manager/.venv`. If `uv` is unavailable, it automatically falls back to standard library `python3 -m venv` and compiles C-extensions natively using system `gcc` and `make` (zero third-party binary curl downloads).
+3. **Security & Privilege Isolation**:
+   - Provisions the dedicated unprivileged service account `palmanager`.
+   - Applies strict POSIX Access Control Lists (ACLs) across `/home/steam` and DuckDNS.
+   - Configures granular `/etc/sudoers.d/palworld_manager_palmanager` scoped only to `systemctl` actions on `palworld.service` and `ufw status`.
+4. **Daemon Deployment & Crontab Registration**:
+   - Installs dual-mode `palworld-manager.service` (port 8080).
+   - Configures DuckDNS dynamic DNS synchronization (every 5 minutes).
+   - Configures automated 4-hour reboot cycles with graceful HUD countdown notifications.
 
-### Zero-Drift Server Updates
+### 3. Zero-Drift Server Updates
 To update the server to the latest production release without disrupting in-game players:
 ```bash
 sudo ./scripts/deploy.sh main
