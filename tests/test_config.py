@@ -90,3 +90,23 @@ def test_admin_credential_export_path_custom(tmp_path: Path, monkeypatch):
     resolved = resolve_admin_credential_export_path(s.admin_credential_export_path)
     assert resolved == Path(custom_target).resolve()
     assert resolved.parent.exists()
+
+
+def test_updater_settings_defaults():
+    s = AppSettings(ini_path="/non/existent.ini")
+    assert s.updater_enabled is True
+    assert s.update_check_interval_seconds == 600
+    assert s.update_branch == "main"
+    assert s.deploy_script_path == "/opt/palworld-web-manager/scripts/deploy.sh"
+
+
+def test_updater_settings_env_overrides(monkeypatch):
+    monkeypatch.setenv("PALWORLD_UPDATER_ENABLED", "false")
+    monkeypatch.setenv("PALWORLD_UPDATE_CHECK_INTERVAL_SECONDS", "300")
+    monkeypatch.setenv("PALWORLD_UPDATE_BRANCH", "develop")
+    monkeypatch.setenv("PALWORLD_DEPLOY_SCRIPT_PATH", "/custom/deploy.sh")
+    s = AppSettings(ini_path="/non/existent.ini")
+    assert s.updater_enabled is False
+    assert s.update_check_interval_seconds == 300
+    assert s.update_branch == "develop"
+    assert s.deploy_script_path == "/custom/deploy.sh"

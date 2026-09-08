@@ -87,6 +87,30 @@
     </div>
   </header>
 
+  <!-- Upstream Software Update Notification Banner -->
+  <div id="updateBanner" class="hidden max-w-7xl mx-auto w-full px-4 sm:px-6 pt-3">
+    <div class="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 border border-indigo-500/40 rounded-2xl p-4 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div class="flex items-start sm:items-center gap-3">
+        <span class="text-2xl animate-bounce">🚀</span>
+        <div>
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-bold text-white tracking-tight">Operations Suite Update Available</h3>
+            <span id="updateCommitsBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">0 commits behind</span>
+          </div>
+          <p id="updateMessageText" class="text-xs text-slate-300 font-mono mt-0.5 truncate max-w-xl">A newer version is available from upstream.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 ml-auto sm:ml-0">
+        <button id="updateNowBtn" onclick="openUpdateModal()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs font-mono shadow-lg transition flex items-center gap-1.5">
+          <span>⚡</span> View &amp; Update
+        </button>
+        <button onclick="dismissUpdateBanner()" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 transition" title="Dismiss banner">
+          ✕
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Quick Connection Info Box (Copy-Paste Bar) -->
   <section class="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-4">
     <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
@@ -1342,6 +1366,94 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Self-Updater Confirmation Modal -->
+  <div id="updateModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="bg-dark-900 border border-slate-800 rounded-2xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold flex items-center gap-2 text-slate-200">
+          <span class="text-indigo-400">🚀</span> Deploy Upstream Portal Update
+        </h3>
+        <button onclick="closeUpdateModal()" class="text-slate-400 hover:text-white text-sm font-bold p-1">✕</button>
+      </div>
+      <div class="space-y-3 text-xs text-slate-300 font-mono">
+        <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl space-y-2">
+          <div class="flex justify-between items-center text-[11px]">
+            <span class="text-slate-400">Current Commit:</span>
+            <span id="modalCurrentSha" class="text-slate-200 font-bold">unknown</span>
+          </div>
+          <div class="flex justify-between items-center text-[11px]">
+            <span class="text-slate-400">Target Upstream:</span>
+            <span id="modalRemoteSha" class="text-indigo-400 font-bold">unknown</span>
+          </div>
+          <div class="flex justify-between items-center text-[11px]">
+            <span class="text-slate-400">Target Branch:</span>
+            <span id="modalTargetBranch" class="text-slate-200 font-bold">main</span>
+          </div>
+          <div class="border-t border-slate-800 pt-2 text-[11px]">
+            <span class="text-slate-400 block mb-1">Latest Commit Message:</span>
+            <p id="modalCommitMsg" class="text-slate-300 italic bg-dark-900 p-2 rounded border border-slate-800 break-words"></p>
+          </div>
+        </div>
+
+        <div class="p-3 bg-amber-950/40 border border-amber-800/50 rounded-xl text-amber-300/90 text-[11px] space-y-1">
+          <div class="font-bold flex items-center gap-1">
+            <span>⚠️</span> Service Restart Warning
+          </div>
+          <p>
+            Applying an update will execute <code class="bg-amber-900/50 px-1 py-0.5 rounded text-amber-200">deploy.sh</code>, sync code, install any updated dependencies, and safely restart the portal daemon (<code class="bg-amber-900/50 px-1 py-0.5 rounded text-amber-200">palworld-manager.service</code>).
+          </p>
+          <p>
+            The game server itself will <strong>not</strong> be interrupted, but this management web portal will briefly disconnect while restarting.
+          </p>
+        </div>
+
+        <div id="updateModalError" class="hidden p-2.5 bg-rose-950/60 border border-rose-800 text-rose-300 rounded-lg text-xs font-mono"></div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+        <button type="button" onclick="closeUpdateModal()" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition">
+          Cancel
+        </button>
+        <button type="button" id="confirmUpdateBtn" onclick="confirmApplyUpdate()" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold font-mono transition flex items-center gap-1.5 shadow-lg shadow-indigo-500/20">
+          <span>⚡</span> Confirm &amp; Apply Update
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reconnecting Fullscreen Overlay -->
+  <div id="updateOverlay" class="hidden fixed inset-0 bg-dark-950/95 z-[100] flex flex-col items-center justify-center p-6 text-center backdrop-blur-md">
+    <div class="max-w-md w-full p-8 bg-dark-900 border border-indigo-500/30 rounded-3xl shadow-2xl space-y-6">
+      <div class="relative w-16 h-16 mx-auto">
+        <div class="absolute inset-0 rounded-full border-4 border-indigo-500/20"></div>
+        <div class="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
+      </div>
+      <div>
+        <h2 class="text-xl font-bold text-white tracking-tight">Updating Operations Suite</h2>
+        <p id="updateOverlayStatus" class="text-xs text-slate-400 font-mono mt-2">
+          Executing deploy.sh in detached session...
+        </p>
+      </div>
+      <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl text-left text-[11px] font-mono text-slate-400 space-y-1">
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+          <span>Git pull &amp; branch synchronization</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+          <span>Dependency check &amp; database migrations</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="inline-block w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+          <span>Daemon service restart &amp; portal recovery</span>
+        </div>
+      </div>
+      <p class="text-[11px] text-slate-500 font-mono">
+        Please do not close this window. The portal will automatically reload once healthy.
+      </p>
     </div>
   </div>
 
@@ -3124,6 +3236,172 @@
       }
     }
 
+    let latestUpdateStatus = null;
+    let updateBannerDismissed = false;
+
+    async function checkSystemUpdateStatus(force = false) {
+      try {
+        const url = force ? '/api/system/update/status?force=true' : '/api/system/update/status';
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        latestUpdateStatus = data;
+
+        const banner = document.getElementById('updateBanner');
+        const badge = document.getElementById('updateCommitsBadge');
+        const msgText = document.getElementById('updateMessageText');
+
+        if (data.update_available && !updateBannerDismissed) {
+          if (badge) {
+            badge.innerText = data.commits_behind > 0 
+              ? `${data.commits_behind} commit${data.commits_behind > 1 ? 's' : ''} behind`
+              : 'Update Available';
+          }
+          if (msgText) {
+            const shortSha = data.remote_commit ? data.remote_commit.substring(0, 7) : '';
+            const msg = data.remote_commit_message || 'A new update is available upstream.';
+            msgText.innerText = shortSha ? `[${shortSha}] ${msg}` : msg;
+          }
+          if (banner) banner.classList.remove('hidden');
+        } else {
+          if (banner) banner.classList.add('hidden');
+        }
+      } catch (err) {
+        console.debug('Failed to check system update status:', err);
+      }
+    }
+
+    function dismissUpdateBanner() {
+      updateBannerDismissed = true;
+      const banner = document.getElementById('updateBanner');
+      if (banner) banner.classList.add('hidden');
+    }
+
+    function openUpdateModal() {
+      const modal = document.getElementById('updateModal');
+      const errBox = document.getElementById('updateModalError');
+      if (errBox) {
+        errBox.classList.add('hidden');
+        errBox.innerText = '';
+      }
+
+      if (latestUpdateStatus) {
+        const curSha = document.getElementById('modalCurrentSha');
+        const remSha = document.getElementById('modalRemoteSha');
+        const branch = document.getElementById('modalTargetBranch');
+        const msg = document.getElementById('modalCommitMsg');
+        const confirmBtn = document.getElementById('confirmUpdateBtn');
+
+        if (curSha) curSha.innerText = latestUpdateStatus.current_commit ? latestUpdateStatus.current_commit.substring(0, 7) : 'unknown';
+        if (remSha) remSha.innerText = latestUpdateStatus.remote_commit ? latestUpdateStatus.remote_commit.substring(0, 7) : 'unknown';
+        if (branch) branch.innerText = latestUpdateStatus.target_branch || 'main';
+        if (msg) msg.innerText = latestUpdateStatus.remote_commit_message || 'No commit message available.';
+
+        if (confirmBtn) {
+          if (currentAuthUser && currentAuthUser.role === 'viewer') {
+            confirmBtn.disabled = true;
+            confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            confirmBtn.title = 'Viewers cannot apply updates. Operator or Admin role required.';
+          } else {
+            confirmBtn.disabled = false;
+            confirmBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            confirmBtn.title = '';
+          }
+        }
+      }
+
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeUpdateModal() {
+      const modal = document.getElementById('updateModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    async function confirmApplyUpdate() {
+      const confirmBtn = document.getElementById('confirmUpdateBtn');
+      const errBox = document.getElementById('updateModalError');
+      if (confirmBtn) confirmBtn.disabled = true;
+
+      try {
+        const targetBranch = latestUpdateStatus ? latestUpdateStatus.target_branch : 'main';
+        const res = await fetch('/api/system/update/apply', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ branch: targetBranch || 'main' })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.detail || `Update failed with HTTP ${res.status}`;
+          if (errBox) {
+            errBox.innerText = errMsg;
+            errBox.classList.remove('hidden');
+          } else {
+            alert(errMsg);
+          }
+          if (confirmBtn) confirmBtn.disabled = false;
+          return;
+        }
+
+        closeUpdateModal();
+        showUpdateOverlay();
+        pollReconnection();
+      } catch (err) {
+        if (errBox) {
+          errBox.innerText = 'Network error while dispatching update: ' + err;
+          errBox.classList.remove('hidden');
+        } else {
+          alert('Network error: ' + err);
+        }
+        if (confirmBtn) confirmBtn.disabled = false;
+      }
+    }
+
+    function showUpdateOverlay() {
+      const overlay = document.getElementById('updateOverlay');
+      if (overlay) overlay.classList.remove('hidden');
+    }
+
+    function pollReconnection() {
+      const statusText = document.getElementById('updateOverlayStatus');
+      let attempts = 0;
+      const maxAttempts = 90;
+
+      setTimeout(() => {
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          if (statusText) {
+            statusText.innerText = `Waiting for portal restart and recovery (attempt ${attempts}/${maxAttempts})...`;
+          }
+
+          try {
+            const res = await fetch('/api/system/update/status', { cache: 'no-store' });
+            if (res.ok) {
+              if (statusText) {
+                statusText.innerText = 'Portal is online! Reloading interface...';
+              }
+              clearInterval(pollInterval);
+              setTimeout(() => {
+                window.location.reload();
+              }, 1200);
+            }
+          } catch (e) {
+            // Service still restarting, ignore network errors
+          }
+
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            if (statusText) {
+              statusText.innerText = 'Update took longer than expected. Please check system logs or refresh manually.';
+            }
+          }
+        }, 2000);
+      }, 3000);
+    }
+
     window.onload = () => {
       loadSettings();
       connectWebSocket();
@@ -3131,6 +3409,10 @@
       checkAuthMe();
       loadMetricsSummary();
       loadMetricsHistory('24h');
+      checkSystemUpdateStatus();
+      setInterval(() => {
+        checkSystemUpdateStatus();
+      }, 60000);
       setInterval(() => {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
           pollTelemetryFallback();

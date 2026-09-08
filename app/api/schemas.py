@@ -694,3 +694,59 @@ class MetricFlushResponse(BaseModel):
     status: str = Field(default="success", description="Outcome status")
     flushed_snapshots: int = Field(..., description="Snapshots written to disk")
     buffered_remaining: int = Field(default=0, description="Snapshots remaining in memory buffer")
+
+
+class UpdateStatusResponse(BaseModel):
+    """Telemetry status response for upstream repository updates.
+
+    Attributes:
+        update_available (bool): Whether newer commits exist upstream.
+        current_commit (str): Local active commit SHA or identifier.
+        latest_commit (str): Remote upstream commit SHA or identifier.
+        commits_behind (int): Number of commits remote is ahead of local.
+        latest_commit_message (str): Summary title/message of latest remote commit.
+        last_checked (str): ISO-8601 UTC timestamp of last probe.
+        update_in_progress (bool): Whether an update deployment is currently executing.
+        error (str | None): Detailed error description if probe failed, else None.
+    """
+
+    update_available: bool = Field(..., description="Whether upstream changes are available")
+    current_commit: str = Field(..., description="Active deployed git commit SHA")
+    latest_commit: str = Field(..., description="Latest upstream git commit SHA on branch")
+    commits_behind: int = Field(default=0, ge=0, description="Commit count difference")
+    latest_commit_message: str = Field(default="", description="Summary of newest upstream commit")
+    last_checked: str = Field(..., description="ISO-8601 UTC timestamp of latest probe")
+    update_in_progress: bool = Field(default=False, description="Whether deployment lock is active")
+    error: str | None = Field(default=None, description="Diagnostic error message if probe failed")
+
+
+class UpdateApplyRequest(BaseModel):
+    """Request payload to trigger upstream software deployment.
+
+    Attributes:
+        branch (str): Target git branch to pull and deploy.
+    """
+
+    branch: str = Field(
+        default="main",
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9_.-]+$",
+        description="Target git branch to pull and deploy",
+    )
+
+
+class UpdateApplyResponse(BaseModel):
+    """Response payload returned upon initiating software deployment.
+
+    Attributes:
+        status (str): Outcome status indicator.
+        message (str): Explanatory message for operator.
+        target_branch (str): Branch targeted for deployment.
+        triggered_at (str): ISO-8601 UTC timestamp of invocation.
+    """
+
+    status: str = Field(default="applying", description="Execution lifecycle status")
+    message: str = Field(..., description="Status description")
+    target_branch: str = Field(..., description="Branch being deployed")
+    triggered_at: str = Field(..., description="ISO-8601 UTC timestamp when triggered")

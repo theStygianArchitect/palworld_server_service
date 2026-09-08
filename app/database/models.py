@@ -21,6 +21,7 @@ ALL_PERMISSIONS: list[str] = [
     "logs:view",
     "feedback:submit",
     "users:manage",
+    "system:update",
 ]
 
 DEFAULT_ROLE_PERMISSIONS: dict[str, list[str]] = {
@@ -33,6 +34,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, list[str]] = {
         "player:broadcast",
         "logs:view",
         "feedback:submit",
+        "system:update",
     ],
     "viewer": [
         "logs:view",

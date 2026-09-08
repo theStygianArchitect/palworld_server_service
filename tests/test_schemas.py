@@ -16,6 +16,9 @@ from app.api.schemas import (
     RebootCancelRequest,
     RebootRequest,
     SettingsRestoreRequest,
+    UpdateApplyRequest,
+    UpdateApplyResponse,
+    UpdateStatusResponse,
     UserRegisterRequest,
     UserRoleUpdateRequest,
     build_github_issue_url,
@@ -256,3 +259,44 @@ def test_user_register_and_role_schemas():
     # Invalid role
     with pytest.raises(ValidationError):
         UserRoleUpdateRequest(role="superadmin")  # type: ignore[arg-type]
+
+
+def test_update_schemas():
+    # UpdateStatusResponse valid
+    status_resp = UpdateStatusResponse(
+        update_available=True,
+        current_commit="abc1234",
+        latest_commit="def5678",
+        commits_behind=3,
+        latest_commit_message="feat(core): new capability",
+        last_checked="2026-09-08T20:00:00Z",
+        update_in_progress=False,
+        error=None,
+    )
+    assert status_resp.update_available is True
+    assert status_resp.commits_behind == 3
+    assert status_resp.current_commit == "abc1234"
+    assert status_resp.error is None
+
+    # UpdateApplyRequest default and custom
+    apply_default = UpdateApplyRequest()
+    assert apply_default.branch == "main"
+
+    apply_custom = UpdateApplyRequest(branch="develop")
+    assert apply_custom.branch == "develop"
+
+    with pytest.raises(ValidationError):
+        UpdateApplyRequest(branch="")
+
+    with pytest.raises(ValidationError):
+        UpdateApplyRequest(branch="invalid branch; rm -rf /")
+
+    # UpdateApplyResponse
+    apply_resp = UpdateApplyResponse(
+        status="applying",
+        message="Update initiated successfully.",
+        target_branch="main",
+        triggered_at="2026-09-08T20:00:00Z",
+    )
+    assert apply_resp.status == "applying"
+    assert apply_resp.target_branch == "main"
