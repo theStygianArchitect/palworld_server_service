@@ -1,7 +1,11 @@
 ---
 name: Documentation Update
-about: Propose changes or additions to documentation, docstrings, or architectural guides
+about: Propose changes or additions to documentation, docstrings, or architectural
+  guides
+title: ''
 labels: documentation
+assignees: ''
+
 ---
 
 ## 📝 Documentation Area

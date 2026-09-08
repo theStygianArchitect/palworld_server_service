@@ -1,7 +1,10 @@
 ---
 name: Bug Report
 about: Report a defect, unexpected behavior, or crash in Palworld Operations Suite
+title: ''
 labels: bug
+assignees: ''
+
 ---
 
 <!--- Provide a clear, concise summary of the issue in the title above -->
