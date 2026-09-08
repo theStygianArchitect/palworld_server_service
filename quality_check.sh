@@ -3,12 +3,24 @@
 # Palworld Dedicated Server Operations Suite - Quality & Security Runner
 # ==============================================================================
 
-app_directory_list=(
-  app/*.py
-  app/*/*.py
-  scripts/*.py
-  tests/*.py
-)
+# Dynamically discover all Python source files across all project directories,
+# strictly excluding virtual environments, hidden folders, and build caches.
+app_directory_list=()
+while IFS= read -r file; do
+  [ -n "${file}" ] && app_directory_list+=("${file}")
+done < <(find . -maxdepth 4 -type f -name "*.py" ! -path "*/.*/*" ! -path "./.venv/*" 2>/dev/null | sed 's|^\./||' | sort)
+
+if [ ${#app_directory_list[@]} -eq 0 ]; then
+  app_directory_list=(
+    app/*.py
+    app/*/*.py
+    scripts/*.py
+    tests/*.py
+  )
+fi
+
+test_directory="tests"
+
 run_ast_exception_audit() {
   echo ">>> Starting AST exception and diagnostic logging audit..."
   uv run python scripts/audit_exceptions.py app scripts tests
@@ -18,6 +30,17 @@ run_ast_exception_audit() {
     exit ${exit_code}
   fi
   echo "[+] Passed AST exception audit."
+}
+
+run_project_wide_suppression_audit() {
+  echo ">>> Starting project-wide suppression & passphrase authorization audit..."
+  uv run python scripts/audit_suppressions.py
+  exit_code=$?
+  if [ ${exit_code} -ne 0 ]; then
+    echo "[-] Project-wide suppression audit failed: unauthorized suppressions detected."
+    exit ${exit_code}
+  fi
+  echo "[+] Passed project-wide suppression audit."
 }
 
 run_secret_scan() {
@@ -196,6 +219,7 @@ run_security_check() {
   echo " Running Security Checks"
   echo "========================================================================="
   run_secret_scan
+  run_project_wide_suppression_audit
   run_bandit_check
   run_dependency_check
 }
@@ -216,6 +240,7 @@ quality_check() {
   echo " Running Master Quality Suite"
   echo "========================================================================="
   run_secret_scan
+  run_project_wide_suppression_audit
   run_ast_exception_audit
   run_dependency_check
   run_bandit_check

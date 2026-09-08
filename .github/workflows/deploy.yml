@@ -4,30 +4,43 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Staging Multi-Python Matrix & Production Promotion"]
+    types: [completed]
+    branches: [dev]
 
 jobs:
   validate-gate:
     name: Verify Quality & Security Gate
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/quality_gate.yml
+    secrets: inherit
+
 
   deploy:
     name: Deploy to Production Linux Host
     needs: validate-gate
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_run') && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
 
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Check Deployment Configuration
-        if: ${{ secrets.PROD_HOST == '' }}
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+        if: ${{ env.PROD_HOST == '' }}
         run: |
           echo "[*] No PROD_HOST secret configured in repository settings."
           echo "[*] Skipping automated SSH deployment to host. Quality Gate passed successfully."
 
       - name: Deploy to Host via SSH
-        if: ${{ secrets.PROD_HOST != '' }}
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+        if: ${{ env.PROD_HOST != '' }}
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.PROD_HOST }}
@@ -51,8 +64,10 @@ jobs:
             echo "[+] Deployment successful. Daemon is active."
 
       - name: Post-Deployment Liveness & Health Probe
-        if: ${{ secrets.PROD_PUBLIC_URL != '' }}
+        env:
+          PROD_PUBLIC_URL: ${{ secrets.PROD_PUBLIC_URL }}
+        if: ${{ env.PROD_PUBLIC_URL != '' }}
         run: |
-          echo ">>> Probing ${{ secrets.PROD_PUBLIC_URL }}/health..."
-          curl -f -s -m 10 "${{ secrets.PROD_PUBLIC_URL }}/health" || (echo "Health check failed" && exit 1)
+          echo ">>> Probing ${{ env.PROD_PUBLIC_URL }}/health..."
+          curl -f -s -m 10 "${{ env.PROD_PUBLIC_URL }}/health" || (echo "Health check failed" && exit 1)
           echo "[+] Production health check passed! Production service is online."
