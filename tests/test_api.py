@@ -346,6 +346,102 @@ def test_api_rbac_enforcement_remote_client(client: TestClient):
     assert "Authentication credentials required" in unauth_res.json()["detail"]
 
 
+def test_feedback_filtering_and_mine(client: TestClient):
+    # 1. Create a submission
+    payload = {
+        "category": "feature_request",
+        "title": "Add Discord Bot alerts",
+        "feature_proposal": "Mirror logs to Discord",
+    }
+    create_res = client.post("/api/feedback", json=payload)
+    assert create_res.status_code == 200
+
+    # 2. Query with mine=true as authenticated localhost user (resolves to admin)
+    mine_res = client.get("/api/feedback?mine=true")
+    assert mine_res.status_code == 200
+    items = mine_res.json()
+    assert len(items) >= 1
+    assert all(i["submitted_by"] == "admin" for i in items)
+
+    # 3. Filter by category
+    feat_res = client.get("/api/feedback?category=feature_request")
+    assert feat_res.status_code == 200
+    assert all(i["category"] == "feature_request" for i in feat_res.json())
+
+    bug_res = client.get("/api/feedback?category=bug_report")
+    assert bug_res.status_code == 200
+    assert all(i["category"] == "bug_report" for i in bug_res.json())
+
+    # 4. Filter by status
+    status_res = client.get("/api/feedback?status=OPEN")
+    assert status_res.status_code == 200
+    assert all(i["status"] == "OPEN" for i in status_res.json())
+
+    # 5. Remote unauthenticated client requesting mine=true gets 401
+    remote_headers = {"X-Forwarded-For": "198.51.100.88"}
+    unauth_mine = client.get("/api/feedback?mine=true", headers=remote_headers)
+    assert unauth_mine.status_code == 401
+    assert "Authentication required" in unauth_mine.json()["detail"]
+
+    # 6. Remote unauthenticated client can still view public feedback list
+    remote_list = client.get("/api/feedback", headers=remote_headers)
+    assert remote_list.status_code == 200
+    assert isinstance(remote_list.json(), list)
+
+
+def test_feedback_redirect_endpoints(client: TestClient):
+    repo = "https://github.com/theStygianArchitect/palworld_server_service"
+
+    # 1. Bug report redirect
+    r_bug = client.get("/feedback/bug", follow_redirects=False)
+    assert r_bug.status_code == 307
+    assert r_bug.headers["location"] == f"{repo}/issues/new?template=bug_report.md"
+
+    # 2. Feature request redirect
+    r_feat = client.get("/feedback/feature", follow_redirects=False)
+    assert r_feat.status_code == 307
+    assert r_feat.headers["location"] == f"{repo}/issues/new?template=feature_request.md"
+
+    # 3. Documentation redirect
+    r_docs = client.get("/feedback/docs", follow_redirects=False)
+    assert r_docs.status_code == 307
+    assert r_docs.headers["location"] == f"{repo}/issues/new?template=documentation_update.md"
+
+    # 4. Security advisory redirect
+    r_sec = client.get("/feedback/security", follow_redirects=False)
+    assert r_sec.status_code == 307
+    assert r_sec.headers["location"] == f"{repo}/security/advisories/new"
+
+    # 5. Invalid shortcut -> 404
+    r_invalid = client.get("/feedback/unknown_invalid_template", follow_redirects=False)
+    assert r_invalid.status_code == 404
+
+
+def test_standalone_feedback_page(client: TestClient):
+    res = client.get("/feedback")
+    assert res.status_code == 200
+    assert "text/html" in res.headers["content-type"]
+    body = res.text
+    assert "Feedback &amp; Issue Tracker" in body or "Feedback & Issue Tracker" in body
+    assert "Direct GitHub Issue Templates" in body
+    assert "Created by Me" in body
+    assert "All Submissions" in body
+
+
+def test_feedback_portal_ui(client: TestClient):
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "text/html" in res.headers["content-type"]
+    body = res.text
+    assert "tab_feedback" in body
+    assert "page_feedback" in body
+    assert "portalScopeMineBtn" in body
+    assert "portalFilterCategory" in body
+    assert "portalFilterStatus" in body
+    assert "exportPortalFeedbackToGitHub" in body
+    assert "Standalone View" in body
+
+
 def test_api_metrics_history_and_summary(client: TestClient):
     # 1. Insert snapshot into metrics_db
     now_ts = datetime.datetime.now(datetime.timezone.utc).isoformat()

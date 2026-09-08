@@ -5,6 +5,9 @@
 import os
 import tempfile
 
+import pytest
+from pydantic import ValidationError
+
 from app.core.config import AppSettings, PalWorldIniSettingsSource, get_settings
 
 SAMPLE_INI = (
@@ -47,3 +50,19 @@ def test_app_settings_custom_ini_source():
 def test_get_settings_helper():
     s = get_settings()
     assert isinstance(s, AppSettings)
+
+
+def test_github_repo_url_default():
+    s = AppSettings(ini_path="/non/existent.ini")
+    assert s.github_repo_url == "https://github.com/theStygianArchitect/palworld_server_service"
+
+
+def test_github_repo_url_env_override(monkeypatch):
+    monkeypatch.setenv("PALWORLD_GITHUB_REPO_URL", "https://github.com/custom/repo/")
+    s = AppSettings(ini_path="/non/existent.ini")
+    assert s.github_repo_url == "https://github.com/custom/repo"
+
+
+def test_github_repo_url_validation():
+    with pytest.raises(ValidationError):
+        AppSettings(ini_path="/non/existent.ini", github_repo_url="ftp://invalid.url")

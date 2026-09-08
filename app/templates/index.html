@@ -732,9 +732,14 @@
             </h2>
             <p class="text-xs text-slate-400 mt-1">Submit reports mapped 1:1 to repository issue templates with local SQLite persistence and GitHub issue export.</p>
           </div>
-          <button onclick="loadFeedback()" class="px-3 py-1.5 rounded-lg bg-dark-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition text-xs font-mono flex items-center gap-1.5">
-            <span>🔄</span> Refresh Tickets
-          </button>
+          <div class="flex items-center gap-2">
+            <a href="/feedback" target="_blank" class="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-700/60 transition text-xs font-mono flex items-center gap-1.5" title="Open Dedicated Standalone Feedback Page">
+              <span>↗</span> Standalone View
+            </a>
+            <button onclick="loadFeedback()" class="px-3 py-1.5 rounded-lg bg-dark-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition text-xs font-mono flex items-center gap-1.5">
+              <span>🔄</span> Refresh Tickets
+            </button>
+          </div>
         </div>
 
         <!-- Issue Template Category Selector -->
@@ -891,6 +896,9 @@
           </div>
 
           <div class="flex items-center justify-end gap-2 pt-2">
+            <button type="button" onclick="exportPortalFeedbackToGitHub()" class="px-3.5 py-2 rounded-xl bg-dark-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition flex items-center gap-1.5 shadow-sm" title="Pre-fill and open GitHub issue composer in new tab">
+              <span>🐙</span> Export & Open on GitHub
+            </button>
             <button type="submit" id="feedbackSubmitBtn" class="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-lg shadow-brand-500/20">
               <span>🚀</span> Dispatch Submission
             </button>
@@ -899,7 +907,40 @@
 
         <!-- Submissions Table -->
         <div class="pt-6 border-t border-slate-800 space-y-3">
-          <h3 class="text-xs font-mono uppercase text-slate-400 font-semibold">📋 Recorded Feedback & Issue Tickets</h3>
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+            <h3 class="text-xs font-mono uppercase text-slate-400 font-semibold">📋 Recorded Feedback & Issue Tickets</h3>
+            <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+              <!-- Scope Toggle -->
+              <div class="flex items-center rounded-xl bg-dark-950 border border-slate-800 p-1">
+                <button type="button" id="portalScopeAllBtn" onclick="setPortalScope('all')" class="px-2.5 py-1 rounded-lg bg-brand-600 text-white font-bold transition text-[11px]">
+                  All Submissions
+                </button>
+                <button type="button" id="portalScopeMineBtn" onclick="setPortalScope('mine')" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-slate-200 transition text-[11px]">
+                  Created by Me
+                </button>
+              </div>
+
+              <!-- Category Filter -->
+              <select id="portalFilterCategory" onchange="loadFeedback()" class="px-2.5 py-1 rounded-lg bg-dark-950 border border-slate-800 text-slate-200 text-[11px] font-mono focus:outline-none focus:border-brand-500">
+                <option value="">All Categories</option>
+                <option value="bug_report">🐛 Bugs</option>
+                <option value="feature_request">🚀 Features</option>
+                <option value="documentation_update">📝 Docs</option>
+                <option value="security_report">🛡️ Security</option>
+              </select>
+
+              <!-- Status Filter -->
+              <select id="portalFilterStatus" onchange="loadFeedback()" class="px-2.5 py-1 rounded-lg bg-dark-950 border border-slate-800 text-slate-200 text-[11px] font-mono focus:outline-none focus:border-brand-500">
+                <option value="">All Statuses</option>
+                <option value="OPEN">🟢 OPEN</option>
+                <option value="RESOLVED">🟣 RESOLVED</option>
+                <option value="CLOSED">⚪ CLOSED</option>
+              </select>
+
+              <span id="portalTicketCount" class="text-[10px] text-slate-500 font-mono"></span>
+            </div>
+          </div>
+
           <div class="overflow-x-auto rounded-xl border border-slate-800 bg-dark-950">
             <table class="w-full text-left text-xs font-mono">
               <thead class="bg-dark-900 border-b border-slate-800 text-[11px] text-slate-400">
@@ -2407,45 +2448,122 @@
       }
     }
 
+    let portalFeedbackScope = 'all';
+
+    function setPortalScope(scope) {
+      portalFeedbackScope = scope;
+      const allBtn = document.getElementById('portalScopeAllBtn');
+      const mineBtn = document.getElementById('portalScopeMineBtn');
+      if (scope === 'mine') {
+        if (mineBtn) mineBtn.className = 'px-2.5 py-1 rounded-lg bg-brand-600 text-white font-bold transition text-[11px]';
+        if (allBtn) allBtn.className = 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-slate-200 transition text-[11px]';
+      } else {
+        if (allBtn) allBtn.className = 'px-2.5 py-1 rounded-lg bg-brand-600 text-white font-bold transition text-[11px]';
+        if (mineBtn) mineBtn.className = 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-slate-200 transition text-[11px]';
+      }
+      loadFeedback();
+    }
+
+    function exportPortalFeedbackToGitHub() {
+      const catInput = document.getElementById('feedbackCategory');
+      const cat = catInput ? catInput.value : 'bug_report';
+      const title = document.getElementById('feedbackTitle')?.value.trim() || '';
+      const base = "https://github.com/theStygianArchitect/palworld_server_service";
+
+      if (cat === 'security_report') {
+        window.open(`${base}/security/advisories/new`, '_blank');
+        return;
+      }
+
+      const templates = {
+        'bug_report': 'bug_report.md',
+        'feature_request': 'feature_request.md',
+        'documentation_update': 'documentation_update.md',
+      };
+
+      let body = '';
+      if (cat === 'bug_report') {
+        const exp = document.getElementById('bug_expected')?.value || '';
+        const cur = document.getElementById('bug_current')?.value || '';
+        const steps = document.getElementById('bug_steps')?.value || '';
+        body = `## 🐛 Expected Behavior\n${exp}\n\n## 💥 Current Behavior\n${cur}\n\n## 📋 Steps to Reproduce\n${steps}`;
+      } else if (cat === 'feature_request') {
+        const prop = document.getElementById('feat_proposal')?.value || '';
+        const sol = document.getElementById('feat_solution')?.value || '';
+        body = `## 🚀 Feature Proposal\n${prop}\n\n## 💡 Proposed Solution\n${sol}`;
+      } else if (cat === 'documentation_update') {
+        const area = document.getElementById('doc_area')?.value || '';
+        const content = document.getElementById('doc_content')?.value || '';
+        body = `## 📝 Documentation Area\n${area}\n\n## ✏️ Proposed Content\n${content}`;
+      }
+
+      const params = new URLSearchParams();
+      params.set('template', templates[cat] || 'bug_report.md');
+      if (title) params.set('title', title);
+      if (body) params.set('body', body);
+
+      window.open(`${base}/issues/new?${params.toString()}`, '_blank');
+    }
+
     async function loadFeedback() {
       const tbody = document.getElementById('feedbackTableBody');
+      const countBadge = document.getElementById('portalTicketCount');
       if (!tbody) return;
 
+      const catFilter = document.getElementById('portalFilterCategory')?.value || '';
+      const statusFilter = document.getElementById('portalFilterStatus')?.value || '';
+
+      const query = new URLSearchParams();
+      if (portalFeedbackScope === 'mine') query.set('mine', 'true');
+      if (catFilter) query.set('category', catFilter);
+      if (statusFilter) query.set('status', statusFilter);
+
       try {
-        const res = await fetch('/api/feedback');
-        const json = await res.json();
-        if (json.status === 'success' && json.data) {
-          if (json.data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">No feedback tickets recorded yet.</td></tr>`;
+        const res = await fetch('/api/feedback?' + query.toString());
+        if (!res.ok) {
+          if (res.status === 401 && portalFeedbackScope === 'mine') {
+            tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-amber-400">Please authenticate to view your personal submissions.</td></tr>`;
+            if (countBadge) countBadge.textContent = 'Auth required';
             return;
           }
-
-          tbody.innerHTML = json.data.map(item => {
-            let catBadge = "bg-slate-800 text-slate-300";
-            if (item.category === 'bug_report') catBadge = "bg-red-950 text-red-300 border border-red-800";
-            else if (item.category === 'feature_request') catBadge = "bg-indigo-950 text-indigo-300 border border-indigo-800";
-            else if (item.category === 'documentation_update') catBadge = "bg-amber-950 text-amber-300 border border-amber-800";
-            else if (item.category === 'security_report') catBadge = "bg-rose-950 text-rose-300 border border-rose-800";
-
-            let issueLink = '<span class="text-slate-500">Local Only</span>';
-            if (item.github_issue_number) {
-              issueLink = `<a href="https://github.com/theStygianArchitect/palworld_server_service/issues/${item.github_issue_number}" target="_blank" class="text-brand-400 hover:underline font-bold">#${item.github_issue_number}</a>`;
-            }
-
-            const createdDate = item.created_at ? item.created_at.replace('T', ' ').slice(0, 19) : '--';
-
-            return `
-              <tr class="hover:bg-dark-900/60 transition">
-                <td class="py-2.5 px-3 whitespace-nowrap"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${catBadge}">${item.category}</span></td>
-                <td class="py-2.5 px-3 font-semibold text-slate-200 max-w-xs truncate">${item.title}</td>
-                <td class="py-2.5 px-3 text-slate-400">${item.submitted_by}</td>
-                <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">${item.status}</span></td>
-                <td class="py-2.5 px-3">${issueLink}</td>
-                <td class="py-2.5 px-3 text-slate-500 text-[10px]">${createdDate}</td>
-              </tr>
-            `;
-          }).join('');
+          tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-red-400">Failed to load feedback records.</td></tr>`;
+          return;
         }
+
+        const rawData = await res.json();
+        const list = Array.isArray(rawData) ? rawData : (rawData.data || []);
+        if (countBadge) countBadge.textContent = `${list.length} ticket(s)`;
+
+        if (list.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-slate-500">No feedback tickets recorded yet.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = list.map(item => {
+          let catBadge = "bg-slate-800 text-slate-300";
+          if (item.category === 'bug_report') catBadge = "bg-red-950 text-red-300 border border-red-800";
+          else if (item.category === 'feature_request') catBadge = "bg-indigo-950 text-indigo-300 border border-indigo-800";
+          else if (item.category === 'documentation_update') catBadge = "bg-amber-950 text-amber-300 border border-amber-800";
+          else if (item.category === 'security_report') catBadge = "bg-rose-950 text-rose-300 border border-rose-800";
+
+          let issueLink = '<span class="text-slate-500">Local Only</span>';
+          if (item.github_issue_number) {
+            issueLink = `<a href="https://github.com/theStygianArchitect/palworld_server_service/issues/${item.github_issue_number}" target="_blank" class="text-brand-400 hover:underline font-bold">#${item.github_issue_number}</a>`;
+          }
+
+          const createdDate = item.created_at ? item.created_at.replace('T', ' ').slice(0, 19) : '--';
+
+          return `
+            <tr class="hover:bg-dark-900/60 transition">
+              <td class="py-2.5 px-3 whitespace-nowrap"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${catBadge}">${item.category}</span></td>
+              <td class="py-2.5 px-3 font-semibold text-slate-200 max-w-xs truncate">${item.title}</td>
+              <td class="py-2.5 px-3 text-slate-400">${item.submitted_by}</td>
+              <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">${item.status}</span></td>
+              <td class="py-2.5 px-3">${issueLink}</td>
+              <td class="py-2.5 px-3 text-slate-500 text-[10px]">${createdDate}</td>
+            </tr>
+          `;
+        }).join('');
       } catch (err) {
         console.debug("Feedback load error:", err);
         tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-red-400">Failed to load feedback records.</td></tr>`;

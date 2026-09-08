@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import psutil
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -327,6 +327,7 @@ class AppSettings(BaseSettings):
         discord_webhook_url (str | None): Discord incoming webhook URL for notifications.
         discord_log_level (str): Log level threshold for Discord mirroring (default: ERROR).
         discord_critical_ping (str): User/role mention for CRITICAL alerts (default: @thestygianarchitect).
+        github_repo_url (str): Upstream GitHub repository URL for template issues and feedback redirects.
     """
 
     model_config = SettingsConfigDict(
@@ -448,6 +449,23 @@ class AppSettings(BaseSettings):
             "discord_critical_ping",
         ),
     )
+    github_repo_url: str = Field(
+        default="https://github.com/theStygianArchitect/palworld_server_service",
+        validation_alias=AliasChoices(
+            "PALWORLD_GITHUB_REPO_URL",
+            "GITHUB_REPO_URL",
+            "github_repo_url",
+        ),
+    )
+
+    @field_validator("github_repo_url")
+    @classmethod
+    def validate_github_repo_url(cls, v: str) -> str:
+        """Validates that github_repo_url starts with http:// or https:// and strips trailing slashes."""
+        cleaned = v.strip()
+        if not cleaned.startswith(("http://", "https://")):
+            raise ValueError("github_repo_url must start with http:// or https://")
+        return cleaned.rstrip("/")
 
     @classmethod
     def settings_customise_sources(

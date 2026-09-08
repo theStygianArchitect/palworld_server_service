@@ -230,3 +230,64 @@ def test_feedback_crud_operations(db: DatabaseManager) -> None:
     assert len(records) == 1
     assert records[0].github_issue_number == 42
     assert json.loads(records[0].metadata_json)["server_fps"] == 28.5
+
+
+def test_list_feedbacks_filtering(db: DatabaseManager) -> None:
+    """Verifies feedback listing with multi-parameter filtering and pagination."""
+    # 1. Seed multiple tickets
+    db.create_feedback(
+        category="bug_report",
+        title="Alice Bug 1",
+        description="Bug found by alice",
+        submitted_by="alice",
+    )
+    fb2 = db.create_feedback(
+        category="feature_request",
+        title="Alice Feature 1",
+        description="Feature requested by alice",
+        submitted_by="alice",
+    )
+    db.create_feedback(
+        category="bug_report",
+        title="Bob Bug 1",
+        description="Bug found by bob",
+        submitted_by="bob",
+    )
+    db.update_feedback_status(fb2.id, status="RESOLVED")
+
+    # 2. Filter by submitter
+    alice_tickets = db.list_feedbacks(submitted_by="alice")
+    assert len(alice_tickets) == 2
+    assert all(t.submitted_by == "alice" for t in alice_tickets)
+
+    bob_tickets = db.list_feedbacks(submitted_by="bob")
+    assert len(bob_tickets) == 1
+    assert bob_tickets[0].title == "Bob Bug 1"
+
+    # 3. Filter by category
+    bug_tickets = db.list_feedbacks(category="bug_report")
+    assert len(bug_tickets) == 2
+    assert all(t.category == "bug_report" for t in bug_tickets)
+
+    feat_tickets = db.list_feedbacks(category="feature_request")
+    assert len(feat_tickets) == 1
+    assert feat_tickets[0].title == "Alice Feature 1"
+
+    # 4. Filter by status
+    resolved_tickets = db.list_feedbacks(status="RESOLVED")
+    assert len(resolved_tickets) == 1
+    assert resolved_tickets[0].title == "Alice Feature 1"
+
+    open_tickets = db.list_feedbacks(status="OPEN")
+    assert len(open_tickets) == 2
+
+    # 5. Combined filtering
+    alice_open_bugs = db.list_feedbacks(submitted_by="alice", category="bug_report", status="OPEN")
+    assert len(alice_open_bugs) == 1
+    assert alice_open_bugs[0].title == "Alice Bug 1"
+
+    # 6. Pagination
+    all_paged = db.list_feedbacks(limit=2, offset=0)
+    assert len(all_paged) == 2
+    offset_paged = db.list_feedbacks(limit=2, offset=2)
+    assert len(offset_paged) == 1

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Literal
+from urllib.parse import quote, urlencode
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -400,6 +401,71 @@ class LoginAuditResponse(BaseModel):
 # 4. Template-Driven Feedback & Issue Submission Schemas
 # =========================================================================
 
+IssueCategory = Literal[
+    "bug_report",
+    "feature_request",
+    "documentation_update",
+    "security_report",
+]
+
+TEMPLATE_FILENAMES: dict[IssueCategory, str] = {
+    "bug_report": "bug_report.md",
+    "feature_request": "feature_request.md",
+    "documentation_update": "documentation_update.md",
+    "security_report": "security_report.md",
+}
+
+
+class FeedbackFilterParams(BaseModel):
+    """Query parameters for filtering recorded feedback submissions.
+
+    Attributes:
+        mine (bool): Filter for tickets created by the authenticated user.
+        submitted_by (str | None): Optional filter for explicit submitter username.
+        category (IssueCategory | None): Filter by issue template category.
+        status (Literal["OPEN", "RESOLVED", "CLOSED"] | None): Filter by ticket status.
+        limit (int): Max entries to return.
+        offset (int): Pagination offset.
+    """
+
+    mine: bool = Field(default=False, description="Filter for tickets created by the authenticated user")
+    submitted_by: str | None = Field(default=None, description="Optional submitter handle filter")
+    category: IssueCategory | None = Field(default=None, description="Filter by issue template category")
+    status: Literal["OPEN", "RESOLVED", "CLOSED"] | None = Field(default=None, description="Filter by ticket status")
+    limit: int = Field(default=50, ge=1, le=100, description="Max entries to return")
+    offset: int = Field(default=0, ge=0, description="Pagination offset")
+
+
+def build_github_issue_url(
+    repo_url: str,
+    category: IssueCategory,
+    title: str | None = None,
+    body: str | None = None,
+) -> str:
+    """Builds a secure, sanitized deep link to GitHub's issue composer or security advisory.
+
+    Args:
+        repo_url: Upstream GitHub repository base URL (e.g. https://github.com/org/repo).
+        category: Issue template category identifier.
+        title: Optional pre-filled issue title.
+        body: Optional pre-filled markdown body content.
+
+    Returns:
+        str: Fully qualified, URL-encoded GitHub composer or security advisory URL.
+    """
+    base = repo_url.rstrip("/")
+    if category == "security_report":
+        return f"{base}/security/advisories/new"
+
+    template_file = TEMPLATE_FILENAMES.get(category, "bug_report.md")
+    query_params: dict[str, str] = {"template": template_file}
+    if title:
+        query_params["title"] = title
+    if body:
+        query_params["body"] = body
+
+    return f"{base}/issues/new?{urlencode(query_params, quote_via=quote)}"
+
 
 # pylint: disable=too-many-instance-attributes
 # Rationale: Composite schema covers optional fields across all 4 repository issue templates.
@@ -412,7 +478,7 @@ class FeedbackSubmitRequest(BaseModel):
         description (str): Custom markdown summary overview.
     """
 
-    category: Literal["bug_report", "feature_request", "documentation_update", "security_report"] = Field(
+    category: IssueCategory = Field(
         ..., description="Target issue template category"
     )
     title: str = Field(..., min_length=3, max_length=200, description="Summary title of the issue")
