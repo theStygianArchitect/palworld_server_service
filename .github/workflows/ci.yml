@@ -1,0 +1,289 @@
+name: Continuous Integration & Quality Gates
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  secret-scan:
+    name: Zero-Leak Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run Secret Scanner
+        run: uv run python scripts/scan_secrets.py
+
+  suppression-audit:
+    name: Project Suppression Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run Suppression & Passphrase Audit
+        run: uv run python scripts/audit_suppressions.py
+
+  ast-exception-audit:
+    name: AST Exception & Logging Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run AST Exception Audit
+        run: uv run python scripts/audit_exceptions.py app scripts tests
+
+  pip-audit:
+    name: Dependency Vulnerability Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run Dependency Audit
+        run: uv run pip-audit --local --skip-editable
+
+  bandit:
+    name: Static Security Analysis (Bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run Static Application Security Testing
+        run: uv run bandit -c pyproject.toml -r app scripts tests
+
+  ruff:
+    name: Code Linting & Formatting (Ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run Ruff Linter & Formatter Check
+        run: uv run ruff check .
+
+  mypy:
+    name: Strict Type Analysis (Mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run Strict Mypy Analysis
+        run: uv run mypy app scripts tests
+
+  pylint:
+    name: Pylint Standard (10.00/10)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run Pylint Check
+        run: uv run pylint --rcfile=pyproject.toml app scripts tests
+
+  pycodestyle:
+    name: PEP 8 Formatting (pycodestyle)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run pycodestyle Check
+        run: uv run pycodestyle --max-line-length 120 app scripts tests
+
+  pydocstyle:
+    name: Google Docstring Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run Google Docstrings Validation
+        run: uv run pydocstyle app scripts
+
+  pytest-coverage:
+    name: Unit Tests & Coverage (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run Parallel Unit Tests & Coverage Report
+        run: uv run pytest --cov=app --cov-report=term-missing tests
+
+  idempotent-install:
+    name: Clean Install & Idempotency Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck & Host Dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck acl
+
+      - name: Run Clean Install & Idempotency Verification
+        run: sudo bash scripts/test_install_idempotency.sh
+
+  python-matrix:
+    name: Matrix Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "${{ matrix.python-version }}"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Run Unit Tests on Python ${{ matrix.python-version }}
+        run: uv run pytest tests
+
+  ci-gate:
+    name: All CI Quality Gates Passed
+    needs:
+      - secret-scan
+      - suppression-audit
+      - ast-exception-audit
+      - pip-audit
+      - bandit
+      - ruff
+      - mypy
+      - pylint
+      - pycodestyle
+      - pydocstyle
+      - pytest-coverage
+      - idempotent-install
+      - python-matrix
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Assert Zero Failures Across All Checks
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "::error::One or more parallel quality gate jobs failed."
+            exit 1
+          fi
+          echo "[+] All 15 parallel quality gate jobs passed successfully."

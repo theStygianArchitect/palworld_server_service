@@ -1,83 +1,57 @@
-# GitHub Branch Protection & Automated Promotion Policy
+# GitHub Branch Protection Policy (Unified GitHub Flow)
 
-This repository implements a multi-tier automated promotion pipeline. Direct manual commits to `test`, `dev`, and `main` are strictly prohibited.
+This repository follows **Modern GitHub Flow**. All direct commits to `main` are prohibited. All development occurs on ephemeral topic branches (`feature/*`, `bugfix/*`) and merges into `main` strictly through Pull Requests that pass all automated status checks.
 
 ---
 
-## 🏛️ Branch Hierarchy & Governance Rules
+## 🏛️ Branch Hierarchy & Governance
 
-| Branch | Purpose | Permitted Ingress | Egress / Promotion | Update Mechanism |
+| Branch | Purpose | Permitted Ingress | Egress / Deployment | Gate Enforcement |
 | :--- | :--- | :--- | :--- | :--- |
-| `feature/*`, `bugfix/*` | Developer work | Local developer workstations | PR or `./scripts/gitflow.sh promote-to-test` | Manual Git commits |
-| `test` | Integration & Quality Gate | PRs from feature/bugfix branches, CLI promotion | Auto-promotes to `dev` upon Gate 1 pass | Merges via PR or Gitflow CLI |
-| `dev` | Staging & Multi-Python Matrix | Automated only | Auto-promotes to `main` upon Gate 2 pass | **Bot only** (`github-actions[bot]`) |
-| `main` | Production & Release Deploy | Automated only | Deployment (`deploy.yml`) | **Bot only** (`github-actions[bot]`) |
+| `feature/*`, `bugfix/*` | Feature & patch development | Local developer workstations | Pull Request to `main` | `./quality_script.sh -a` (local) |
+| `main` | Production & Release Source of Truth | Pull Requests only | `deploy.yml` on PR merge | 15 parallel status checks + `ci-gate` |
 
 ---
 
-## 🔒 Recommended GitHub Repository Settings
+## ⚡ Automated Setup via Script
 
-To enforce this governance policy on GitHub (`Settings` -> `Branches` -> `Branch protection rules`):
+You can configure this branch protection policy instantly on GitHub using our universal automation script:
 
-### 1. Branch Protection Rule: `test`
-- **Branch name pattern**: `test`
+```bash
+# Preview the JSON API payload (no credentials needed)
+./scripts/setup_branch_protection.sh --dry-run
+
+# Apply branch protection to main via GitHub CLI or GH_TOKEN
+./scripts/setup_branch_protection.sh
+```
+
+---
+
+## 🔒 Exact GitHub Repository Settings (`main`)
+
+- **Target Branch**: `main`
 - [x] **Require a pull request before merging**
-  - Require approvals: `1` (or optional for solo maintainer)
+  - Required approvals: `0` (solo/status-check gate) or `1+` (team reviews)
   - Dismiss stale pull request approvals when new commits are pushed: `true`
 - [x] **Require status checks to pass before merging**
   - Require branches to be up to date before merging: `true`
-  - Required checks:
-    - `Code Qualifications & Security Audit`
-    - `Clean Install & Idempotency Test`
-- [x] **Do not allow bypassing the above settings**
-- [x] **Restrict deletions**
-
-### 2. Branch Protection Rule: `dev` (Staging - Automated Only)
-- **Branch name pattern**: `dev`
-- [x] **Restrict who can push to matching branches**:
-  - Allow only: `github-actions[bot]` (or Repository Admins)
-- [x] **Require status checks to pass before merging**:
-  - Required checks:
-    - `Staging Matrix Verification (Python 3.10)`
-    - `Staging Matrix Verification (Python 3.11)`
-    - `Staging Matrix Verification (Python 3.12)`
-    - `Staging Matrix Verification (Python 3.13)`
-- [x] **Block force pushes and deletions**
-- [x] **Reject PRs**: Any PR opened targeting `dev` will be automatically rejected by the `PR Target Policy Enforcement` workflow (`pr_target_enforcement.yml`).
-
-### 3. Branch Protection Rule: `main` (Production - Automated Only)
-- **Branch name pattern**: `main`
-- [x] **Restrict who can push to matching branches**:
-  - Allow only: `github-actions[bot]` (or Repository Admins)
-- [x] **Require status checks to pass before merging**:
-  - Required checks:
-    - `Verify Quality & Security Gate`
-- [x] **Block force pushes and deletions**
-- [x] **Reject PRs**: Any PR opened targeting `main` will be automatically rejected by the `PR Target Policy Enforcement` workflow (`pr_target_enforcement.yml`).
-
----
-
-## ⚙️ Automated Workflow Chain (`workflow_run`)
-
-The promotion pipeline flows automatically through GitHub Actions event chaining:
-
-```
-[Push / Merge to test]
-        │
-        ▼
-   quality_gate.yml (Gate 1: Code Qualifications, Secret Scan, Idempotency)
-        │
-        ├── (Success on push event)
-        ▼
-   Auto-Promote to dev (Git push by bot)
-        │
-        ▼
-   staging_matrix.yml (Gate 2: Python 3.10, 3.11, 3.12, 3.13 Matrix)
-        │
-        ├── (Success on workflow_run event)
-        ▼
-   Auto-Promote to main (Git push by bot)
-        │
-        ▼
-   deploy.yml (Gate 3: Production Deployment & Health Probes)
-```
+  - **Required Status Check Contexts**:
+    1. `All CI Quality Gates Passed` (`ci-gate`)
+    2. `Zero-Leak Secret Scan`
+    3. `Project Suppression Audit`
+    4. `AST Exception & Logging Audit`
+    5. `Dependency Vulnerability Audit`
+    6. `Static Security Analysis (Bandit)`
+    7. `Code Linting & Formatting (Ruff)`
+    8. `Strict Type Analysis (Mypy)`
+    9. `Pylint Standard (10.00/10)`
+    10. `PEP 8 Formatting (pycodestyle)`
+    11. `Google Docstring Validation`
+    12. `Unit Tests & Coverage (pytest)`
+    13. `Clean Install & Idempotency Test`
+    14. `Matrix Test (Python 3.10)`
+    15. `Matrix Test (Python 3.11)`
+    16. `Matrix Test (Python 3.12)`
+    17. `Matrix Test (Python 3.13)`
+- [x] **Block force pushes (`--force`)**
+- [x] **Block branch deletions**

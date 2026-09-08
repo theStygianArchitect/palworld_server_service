@@ -6,7 +6,8 @@ labels: enhancement, ci-cd, gitflow, backlog
 
 # Feature Request: Transition to Standard Open Source GitHub Pull Request (PR) Workflow
 
-## 🚀 Feature Proposal
+> **STATUS: IMPLEMENTED (2026-09-08)**
+> Transitioned to Modern GitHub Flow: single protected `main` branch, topic PRs, 15 parallel CI status checks, and automated branch protection script (`scripts/setup_branch_protection.sh`).
 Transition the repository promotion lifecycle from local/bot direct-push branches into a standardized GitHub **Pull Request (PR)** workflow. This introduces gh pr create, GitHub Actions PR status checks, branch protection policies on 	est, dev, and main, auto-merge queues (gh pr merge --auto), and complete inline code review audit trails matching top-tier open-source projects.
 
 ## 🎯 Problem / User Story

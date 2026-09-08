@@ -52,97 +52,103 @@ An enterprise-grade, non-disruptive operations plane, real-time dashboard, and P
 
 ---
 
-## 🌳 Git Branching & Promotion Pipeline (Gitflow)
+## 🌳 Git Branching & Promotion Pipeline (Modern GitHub Flow)
 
-The repository strictly enforces a multi-tier Gitflow architecture with automated qualification gates:
+The repository follows **Modern GitHub Flow** with single-branch protection on `main` and high-speed parallel Pull Request status gates:
 
 ```mermaid
 flowchart TD
-    subgraph Development ["1. Ephemeral Work"]
-        F["feature/<name>"]
-        B["bugfix/<name>"]
+    subgraph Development ["1. Ephemeral Topic Branch"]
+        M_BASE["main (Production Source of Truth)"] -->|gitflow.sh feature <name>| F["feature/<name>"]
+        F -->|./quality_script.sh -a| PASS["Local Master Quality Pass (15 Checks)"]
     end
 
-    subgraph Gate1 ["2. Integration & Qualification (Gate 1: test)"]
-        PR["Pull Request (targets test only)"] -->|PR Status Check| Q1["quality_check.sh -a & test_install_idempotency.sh"]
-        F -->|promote-to-test| Q1
-        B -->|promote-to-test| Q1
-        Q1 -->|100% Passed| T[test branch]
-        Q1 -->|Any Failure| FAIL["Abort Merge<br/>Convert to bugfix/<br/>Delete feature/<br/>Log Issue"]
-        T -->|Auto-Promote Bot| D[dev branch]
+    subgraph PRGate ["2. Pull Request Gate (Target: main)"]
+        PASS -->|gitflow.sh pr| PR["Pull Request (base: main)"]
+        
+        subgraph ParallelCI ["All-in-One Parallel CI Status Checks (ci.yml)"]
+            direction LR
+            C1["Zero-Leak Secret Scan"]
+            C2["Suppression Audit"]
+            C3["AST Exception Audit"]
+            C4["pip-audit (CVEs)"]
+            C5["Bandit SAST"]
+            C6["Ruff Linter"]
+            C7["Mypy Strict Types"]
+            C8["Pylint (10.00/10)"]
+            C9["pycodestyle (PEP 8)"]
+            C10["pydocstyle"]
+            C11["pytest Coverage"]
+            C12["Clean Install & Idempotency"]
+            C13["Python 3.10 Matrix"]
+            C14["Python 3.11 Matrix"]
+            C15["Python 3.12 Matrix"]
+            C16["Python 3.13 Matrix"]
+        end
+
+        PR --> ParallelCI
+        ParallelCI --> GATE["ci-gate: All CI Quality Gates Passed"]
+        GATE --> MERGE["Maintainer Review & Merge"]
     end
 
-    subgraph StagingGate ["3. Staging Multi-Python Matrix (Gate 2: dev)"]
-        T -.->|workflow_run: Quality Gate Succeeded| SM["staging_matrix.yml<br/>(Python 3.10, 3.11, 3.12, 3.13)"]
-        SM -->|100% Passed (4/4 Python)| M[main branch]
-    end
-
-    subgraph Production ["4. Production Deployment (Gate 3: main)"]
-        SM -.->|workflow_run: Staging Succeeded| DEP["deploy.yml<br/>(Production Deployment & Health Verification)"]
+    subgraph Production ["3. Production Release & Deployment"]
+        MERGE -->|push to main| DEP["deploy.yml<br/>(Host Deployment & Health Probes)"]
         DEP --> PROD[Dedicated Server Deployment]
     end
 ```
 
 ### Branch Environments & Access Governance
-1. **`test` (Integration & Qualification Gate)**:
-   - The **only** branch where developer Pull Requests and feature promotions may be targeted.
-   - Must pass 100% of Gate 1 qualifications (`quality_gate.yml`) and clean installation idempotency tests before merging.
-2. **`dev` (Staging - Protected & Automated Only)**:
-   - Staging environment directly preceding production.
-   - **Protected**: No direct commits and no direct Pull Requests. Updated exclusively by automated GitHub Actions promotion from `test`.
-   - Executes the multi-Python verification matrix across all supported Python runtimes (**Python 3.10, 3.11, 3.12, and 3.13**).
-3. **`main` (Production - Protected & Automated Only)**:
-   - Stable production release branch deployed directly to the dedicated server.
-   - **Protected**: No direct commits and no direct Pull Requests. Updated exclusively by automated GitHub Actions promotion from `dev` once all 4 matrix tests pass.
-4. **`feature/*` & `bugfix/*`**:
-   - Ephemeral development branches branched exclusively from `test`.
+1. **`main` (Production & Release Source of Truth)**:
+   - Protected: All direct commits are strictly prohibited.
+   - All code enters `main` exclusively through Pull Requests that pass all 15 automated CI status checks.
+   - Merges to `main` trigger [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) for production deployment.
+2. **`feature/*` & `bugfix/*` (Ephemeral Topic Branches)**:
+   - Branched directly from latest `main`.
+   - Verified locally with `./quality_script.sh -a` before submission.
+   - See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor guidelines.
+3. **Automated Branch Protection Setup**:
+   - Run `./scripts/setup_branch_protection.sh` to configure GitHub branch protection rules via GitHub CLI or API.
 
 ---
 
 ## 🛡️ Hard Enforcement Governance Rules
 
-1. **Rule 1: Zero Direct Commits to Protected Branches**
-   - Direct commits to `test`, `dev`, or `main` are strictly forbidden.
-   - Enforced locally via Git `pre-commit` hook installed by `./scripts/gitflow.sh install-hooks`.
-2. **Rule 2: Only Merge on 100% Green Qualification Runs**
-   - Merges into `test`, `dev`, or `main` are blocked unless all linting, typing, security, and idempotency checks pass.
-3. **Rule 3: Automatic Feature Branch Deletion & Bugfix Conversion**
-   - If a feature branch fails qualifications, the merge is aborted, the failing feature branch is closed and deleted, and work is preserved on a `bugfix/<name>` branch with a bug report and GitHub issue logged.
-   - Merged branches are automatically deleted upon successful promotion.
+1. **Rule 1: Zero Direct Commits to `main`**
+   - Direct commits to `main` are strictly forbidden. Enforced locally via Git `pre-commit` hook installed by `./scripts/gitflow.sh install-hooks`.
+2. **Rule 2: Only Merge on 100% Green Status Checks**
+   - Merges into `main` are blocked by GitHub branch protection until all 15 checks in `ci.yml` pass.
+3. **Rule 3: Full Local & Remote Check Parity (Strictly Duplicative)**
+   - Before submitting a PR, developers run `./quality_script.sh -a` which executes all 15 checks locally. Remote CI repeats all 15 checks in parallel.
 4. **Rule 4: Project-Wide Suppression Passphrase Guard**
    - Prohibited from adding project-wide suppressions (`pyproject.toml` `disable = [...]`, Ruff ignores, Mypy broad ignores) without explicit user authorization stating the exact passphrase:
      > **"I solemnly swear I know what I’m doing"**
    - Enforced by `scripts/audit_suppressions.py`.
-5. **Rule 5: 100% Green Local Qualifications on All Directories**
-   - Before running `promote-to-test`, `./quality_check.sh -a` (or `./quality_script.sh -a`) must pass locally across **all** repository directories (`app/`, `scripts/`, `tests/`). All issues must be fixed locally.
-6. **Rule 6: The 3 AM Debugger Standard**
+5. **Rule 5: The 3 AM Debugger Standard**
    - All code generation, features, and bug fixes strictly follow `/the-3am-debugger`: radical clarity, flat linear logic, physical type isolation, defensive typing (zero `Any`), 12-factor compliance, and comprehensive intent documentation.
-7. **Rule 7: Pull Requests Target `test` Exclusively**
-   - All external and internal Pull Requests must target `test`. Branches `dev` and `main` are automated conduits managed exclusively by GitHub Actions bots through verified qualification gates.
+6. **Rule 6: Pull Requests Target `main` Exclusively**
+   - All Pull Requests must target `main`.
 
 ---
 
-## 🛠️ Gitflow CLI Automation (`./scripts/gitflow.sh`)
+## 🛠️ Gitflow & GitHub Flow CLI Automation (`./scripts/gitflow.sh`)
 
-Manage development lifecycles effortlessly using the unified Gitflow CLI:
+Manage development lifecycles effortlessly using the unified CLI:
 
 ```bash
-# 1. Start a new feature or bugfix (branching off latest test)
-./scripts/gitflow.sh feature add-telemetry-metrics [issue#]
-./scripts/gitflow.sh bugfix fix-rcon-timeout [issue#]
+# 1. Start a new feature or bugfix (branching off latest main)
+./scripts/gitflow.sh feature my-new-feature
+./scripts/gitflow.sh bugfix patch-login-issue
 
-# 2. Link or close GitHub issues
-./scripts/gitflow.sh link-issue 42
-./scripts/gitflow.sh close-issue 42 "Resolved via bugfix"
+# 2. Run local master quality suite across all directories
+./quality_script.sh -a
 
-# 3. Promote work to test (runs Gate 1 qualifications and merges on success)
-./scripts/gitflow.sh promote-to-test
+# 3. Push branch and open Pull Request targeting main
+./scripts/gitflow.sh pr "feat: add my new feature"
 
-# 4. Install repository guard pre-commit hook
-./scripts/gitflow.sh install-hooks
-
-# 5. Check promotion hierarchy and active linked issue
+# 4. Check pipeline and branch status
 ./scripts/gitflow.sh status
+# 5. Install repository pre-commit hook protecting main
+./scripts/gitflow.sh install-hooks
 ```
 
 ---

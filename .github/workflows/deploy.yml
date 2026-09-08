@@ -4,30 +4,19 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Staging Multi-Python Matrix & Production Promotion"]
-    types: [completed]
-    branches: [dev]
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
-  validate-gate:
-    name: Verify Quality & Security Gate
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    uses: ./.github/workflows/quality_gate.yml
-    secrets: inherit
-
-
   deploy:
     name: Deploy to Production Linux Host
-    needs: validate-gate
     runs-on: ubuntu-latest
-    if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_run') && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
 
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
-        with:
-          ref: main
 
       - name: Check Deployment Configuration
         env:
@@ -35,7 +24,7 @@ jobs:
         if: ${{ env.PROD_HOST == '' }}
         run: |
           echo "[*] No PROD_HOST secret configured in repository settings."
-          echo "[*] Skipping automated SSH deployment to host. Quality Gate passed successfully."
+          echo "[*] Skipping automated SSH deployment to host. Release verified successfully."
 
       - name: Deploy to Host via SSH
         env:
