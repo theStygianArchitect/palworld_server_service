@@ -18,8 +18,8 @@ except ImportError as err:
     sys.stderr.write(f"Notice: tomllib stdlib not available ({err}), attempting tomli fallback.\n")
     import tomli as tomllib  # type: ignore[no-redef]
 
-REQUIRED_PASSPHRASE = "I solemnly swear I know what I\u2019m doing"
-REQUIRED_PASSPHRASE_ASCII = "I solemnly swear I know what I'm doing"
+USER_OVERRIDE_STATEMENT = "I solemnly swear I know what I\u2019m doing"
+USER_OVERRIDE_STATEMENT_ASCII = "I solemnly swear I know what I'm doing"
 
 
 def get_commit_message() -> str:
@@ -46,17 +46,17 @@ def get_commit_message() -> str:
 
 
 def is_passphrase_authorized() -> bool:
-    """Checks whether the explicit user authorization passphrase is provided.
+    """Checks whether the explicit user authorization statement is provided.
 
     Returns:
         bool: True if authorized via environment variable or commit message.
     """
-    env_phrase = os.environ.get("PROJECT_WIDE_OVERRIDE_PASSPHRASE", "").strip()
-    if env_phrase in (REQUIRED_PASSPHRASE, REQUIRED_PASSPHRASE_ASCII):
+    env_phrase = os.environ.get("PROJECT_WIDE_OVERRIDE_STATEMENT", "").strip()
+    if env_phrase in (USER_OVERRIDE_STATEMENT, USER_OVERRIDE_STATEMENT_ASCII):
         return True
 
     commit_msg = get_commit_message()
-    return bool(REQUIRED_PASSPHRASE in commit_msg or REQUIRED_PASSPHRASE_ASCII in commit_msg)
+    return bool(USER_OVERRIDE_STATEMENT in commit_msg or USER_OVERRIDE_STATEMENT_ASCII in commit_msg)
 
 
 def audit_pyproject_toml(config_path: Path) -> list[str]:

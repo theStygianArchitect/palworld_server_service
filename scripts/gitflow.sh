@@ -185,12 +185,10 @@ BUG_EOF
                 fi
             fi
 
-            # Branch to bugfix to preserve work
-            echo ">>> Creating bugfix/${sanitized_name} to preserve commit history..."
-            git checkout -b "bugfix/${sanitized_name}"
-
-            # Delete the failing feature branch
+            # If current branch is a feature branch, convert to bugfix and delete the feature branch
             if [[ "${current_branch}" == feature/* ]]; then
+                echo ">>> Creating bugfix/${sanitized_name} to preserve commit history..."
+                git checkout -b "bugfix/${sanitized_name}"
                 echo ">>> Deleting closed feature branch '${current_branch}'..."
                 git branch -D "${current_branch}" || true
                 git push origin --delete "${current_branch}" 2>/dev/null || true
