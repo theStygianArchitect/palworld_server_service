@@ -1,7 +1,10 @@
 ---
 name: Security Report
 about: Privately report a vulnerability, credential risk, or security flaw
-labels: security
+title: ''
+labels: ''
+assignees: ''
+
 ---
 
 ## 🛡️ Security Vulnerability Summary

@@ -1,7 +1,10 @@
 ---
 name: Feature Request
 about: Propose a new feature, dashboard widget, or enhancement
+title: ''
 labels: enhancement
+assignees: ''
+
 ---
 
 <!--- Provide a summary of the requested feature in the title above -->
