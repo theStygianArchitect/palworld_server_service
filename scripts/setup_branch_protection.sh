@@ -141,6 +141,12 @@ fi
 # 4. Dual-Execution Engine (gh CLI or curl fallback)
 echo ">>> Configuring branch protection for ${REPO_SLUG}:${BRANCH}..."
 
+# Detect credentials: gh CLI -> GH_TOKEN/GITHUB_TOKEN -> git credential manager
+TOKEN=$(echo "${GH_TOKEN:-${GITHUB_TOKEN:-}}" | tr -d '\r\n')
+if [ -z "${TOKEN}" ] && command -v git >/dev/null 2>&1; then
+  TOKEN=$(printf "protocol=https\nhost=github.com\n" | git credential fill 2>/dev/null | grep '^password=' | head -n1 | cut -d'=' -f2- | tr -d '\r\n' || true)
+fi
+
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   echo ">>> Using authenticated GitHub CLI (gh)..."
   echo "${PAYLOAD}" | gh api \
@@ -150,20 +156,26 @@ if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
     "/repos/${REPO_SLUG}/branches/${BRANCH}/protection" \
     --input -
   echo "[+] Branch protection successfully enabled via gh CLI."
-elif [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]; then
-  TOKEN="${GH_TOKEN:-${GITHUB_TOKEN}}"
-  echo ">>> Using curl with GH_TOKEN/GITHUB_TOKEN..."
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+elif [ -n "${TOKEN}" ]; then
+  echo ">>> Using curl with GitHub API token..."
+  RESPONSE_FILE=$(mktemp)
+  trap 'rm -f "${RESPONSE_FILE}"' EXIT
+
+  if echo "${PAYLOAD}" | curl -s -S -f \
     -X PUT \
     -H "Accept: application/vnd.github+json" \
+    -H "Content-Type: application/json" \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
-    -d "${PAYLOAD}" \
-    "https://api.github.com/repos/${REPO_SLUG}/branches/${BRANCH}/protection")
-  if [ "${HTTP_CODE}" -ge 200 ] && [ "${HTTP_CODE}" -lt 300 ]; then
-    echo "[+] Branch protection successfully enabled via GitHub API (HTTP ${HTTP_CODE})."
+    --data-binary @- \
+    -o "${RESPONSE_FILE}" \
+    "https://api.github.com/repos/${REPO_SLUG}/branches/${BRANCH}/protection"; then
+    echo "[+] Branch protection successfully enabled via GitHub API."
   else
-    echo "[-] Error: GitHub API returned HTTP ${HTTP_CODE}." >&2
+    echo "[-] Error: GitHub API request failed." >&2
+    if [ -s "${RESPONSE_FILE}" ]; then
+      cat "${RESPONSE_FILE}" >&2
+    fi
     exit 3
   fi
 else
