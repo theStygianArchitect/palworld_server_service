@@ -3,12 +3,22 @@
 # Palworld Dedicated Server Operations Suite - Quality & Security Runner
 # ==============================================================================
 
-app_directory_list=(
-  app/*.py
-  app/*/*.py
-  scripts/*.py
-  tests/*.py
-)
+# Dynamically discover all Python source files across all project directories,
+# strictly excluding virtual environments, hidden folders, and build caches.
+app_directory_list=()
+while IFS= read -r file; do
+  [ -n "${file}" ] && app_directory_list+=("${file}")
+done < <(find . -maxdepth 4 -type f -name "*.py" ! -path "*/.*/*" ! -path "./.venv/*" 2>/dev/null | sed 's|^\./||' | sort)
+
+if [ ${#app_directory_list[@]} -eq 0 ]; then
+  app_directory_list=(
+    app/*.py
+    app/*/*.py
+    scripts/*.py
+    tests/*.py
+  )
+fi
+
 run_ast_exception_audit() {
   echo ">>> Starting AST exception and diagnostic logging audit..."
   uv run python scripts/audit_exceptions.py app scripts tests
