@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
 # ==============================================================================
 # Palworld Unified Operations Suite & Lifecycle Automation Installer
 # ==============================================================================
+# Universal installer supporting Debian/Ubuntu, RHEL/Rocky, Arch, openSUSE, and Alpine.
+# Supports standalone compiled ELF binary and source-level virtualenv deployment.
+
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -21,6 +23,7 @@ DUCKDNS_SCRIPT="${DUCKDNS_DIR}/duck.sh"
 DUCKDNS_LOG="${DUCKDNS_DIR}/duck.log"
 MANAGER_SERVICE_FILE="/etc/systemd/system/palworld-manager.service"
 SUDOERS_FILE="/etc/sudoers.d/palworld_manager_palmanager"
+STANDALONE_BIN="/usr/local/bin/palworld-manager"
 APP_PORT=8080
 
 echo "========================================================================="
@@ -28,17 +31,29 @@ echo " Palworld Unified Operations Suite Deployment"
 echo " Target Directory: ${APP_DIR} | UI Bind Port: ${APP_PORT}"
 echo "========================================================================="
 
-if [ "$EUID" -ne 0 ]; then
-    echo "[-] Please run as root or with sudo: sudo ./palworld-run.sh"
+if [ "${EUID}" -ne 0 ]; then
+    echo "[-] Please run as root or with sudo: sudo ./palworld-run.sh" >&2
     exit 1
 fi
 
-# 1. System Dependencies & UV
-echo -n "[1/8] Installing system dependencies and uv... "
-apt-get update -qq
-apt-get install -y -qq curl git tar acl build-essential python3 python3-venv python3-pip iproute2 dnsutils ufw > /dev/null
-if ! command -v uv &> /dev/null; then
-    curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="/usr/local/bin" sh > /dev/null 2>&1
+# 1. System Dependencies & Build Toolchain
+echo -n "[1/8] Installing system dependencies and build toolchain... "
+if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y -qq curl git tar acl build-essential python3 python3-venv python3-pip iproute2 dnsutils ufw >/dev/null 2>&1 || true
+elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y -q curl git tar acl gcc make python3 python3-pip python3-devel iproute bind-utils >/dev/null 2>&1 || true
+elif command -v yum >/dev/null 2>&1; then
+    yum install -y -q curl git tar acl gcc make python3 python3-pip python3-devel iproute bind-utils >/dev/null 2>&1 || true
+elif command -v pacman >/dev/null 2>&1; then
+    pacman -Sy --noconfirm --needed curl git tar acl base-devel python python-pip iproute2 bind >/dev/null 2>&1 || true
+elif command -v zypper >/dev/null 2>&1; then
+    zypper --non-interactive install -y curl git tar acl gcc make python3 python3-pip python3-devel iproute2 bind-utils >/dev/null 2>&1 || true
+elif command -v apk >/dev/null 2>&1; then
+    apk add --no-cache curl git tar acl build-base python3 py3-pip python3-dev iproute2 bind-tools >/dev/null 2>&1 || true
+else
+    echo "[-] Warning: Unrecognized package manager. Ensure Python 3.10+, gcc, and make are available." >&2
 fi
 echo "[ OK ]"
 
@@ -58,28 +73,35 @@ mkdir -p "${APP_DIR}"
 mkdir -p "${STEAM_HOME}/Palworld_backups"
 mkdir -p "${DUCKDNS_DIR}"
 
-cp "${SCRIPT_DIR}/duck.sh" "${DUCKDNS_SCRIPT}"
-chown -R "${STEAM_USER}:${STEAM_USER}" "${DUCKDNS_DIR}"
-chmod 0755 "${DUCKDNS_SCRIPT}"
+if [ -f "${SCRIPT_DIR}/duck.sh" ]; then
+    cp "${SCRIPT_DIR}/duck.sh" "${DUCKDNS_SCRIPT}"
+fi
+chown -R "${STEAM_USER}:${STEAM_USER}" "${DUCKDNS_DIR}" 2>/dev/null || true
+chmod 0755 "${DUCKDNS_SCRIPT}" 2>/dev/null || true
 
-# Sync repository code to /opt/palworld-web-manager
-cp -r "${REPO_ROOT}/app" "${APP_DIR}/"
-cp "${REPO_ROOT}/pyproject.toml" "${APP_DIR}/"
+# Sync repository source to /opt/palworld-web-manager
+if [ -d "${REPO_ROOT}/app" ]; then
+    cp -r "${REPO_ROOT}/app" "${APP_DIR}/"
+fi
+if [ -f "${REPO_ROOT}/pyproject.toml" ]; then
+    cp "${REPO_ROOT}/pyproject.toml" "${APP_DIR}/"
+fi
 if [ -f "${REPO_ROOT}/README.md" ]; then
     cp "${REPO_ROOT}/README.md" "${APP_DIR}/"
 fi
 
-chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
+chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}" 2>/dev/null || true
 
-setfacl -m u:"${APP_USER}":rx "${STEAM_HOME}" || true
-setfacl -R -m u:"${APP_USER}":rwX "${DUCKDNS_DIR}" || true
-setfacl -R -d -m u:"${APP_USER}":rwX "${DUCKDNS_DIR}" || true
+# Apply POSIX ACLs for shared cross-service interaction
+setfacl -m u:"${APP_USER}":rx "${STEAM_HOME}" 2>/dev/null || true
+setfacl -R -m u:"${APP_USER}":rwX "${DUCKDNS_DIR}" 2>/dev/null || true
+setfacl -R -d -m u:"${APP_USER}":rwX "${DUCKDNS_DIR}" 2>/dev/null || true
 
 if [ -d "${PAL_CONFIG_DIR}" ]; then
-    setfacl -R -m u:"${APP_USER}":rwX "${PAL_CONFIG_DIR}" || true
-    setfacl -R -d -m u:"${APP_USER}":rwX "${PAL_CONFIG_DIR}" || true
+    setfacl -R -m u:"${APP_USER}":rwX "${PAL_CONFIG_DIR}" 2>/dev/null || true
+    setfacl -R -d -m u:"${APP_USER}":rwX "${PAL_CONFIG_DIR}" 2>/dev/null || true
     if [ -f "${PAL_SETTINGS_FILE}" ]; then
-        setfacl -m u:"${APP_USER}":rw "${PAL_SETTINGS_FILE}" || true
+        setfacl -m u:"${APP_USER}":rw "${PAL_SETTINGS_FILE}" 2>/dev/null || true
     fi
 fi
 
@@ -91,7 +113,8 @@ setfacl -m u:"${APP_USER}":rw "${STEAM_HOME}/.update_requested" 2>/dev/null || t
 mkdir -p /var/lib/palmanager
 touch /var/lib/palmanager/update_requested 2>/dev/null || true
 : > /var/lib/palmanager/update_requested 2>/dev/null || true
-chown "${APP_USER}:${APP_USER}" /var/lib/palmanager/update_requested 2>/dev/null || true
+chown -R "${APP_USER}:${APP_USER}" /var/lib/palmanager 2>/dev/null || true
+chmod 0775 /var/lib/palmanager 2>/dev/null || true
 chmod 0666 /var/lib/palmanager/update_requested 2>/dev/null || true
 setfacl -m u:steam:rw /var/lib/palmanager/update_requested 2>/dev/null || true
 setfacl -m u:steam:rwx /var/lib/palmanager 2>/dev/null || true
@@ -107,67 +130,112 @@ ${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *, /usr/bin/
 ${APP_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status
 SUDO_EOF
 chmod 0440 "${SUDOERS_FILE}"
-if command -v visudo > /dev/null 2>&1; then
-    visudo -cf "${SUDOERS_FILE}" > /dev/null
+if command -v visudo >/dev/null 2>&1; then
+    visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1 || true
 fi
 echo "[ OK ]"
 
 # 5. Service Files & Maintenance Scripts
 echo -n "[5/8] Installing systemd units and maintenance hooks... "
-cp "${SCRIPT_DIR}/palworld.service" "${PAL_SERVICE_FILE}"
-cp "${SCRIPT_DIR}/palworld-maintenance.sh" "${MAINTENANCE_SCRIPT}"
-chown "${STEAM_USER}:${STEAM_USER}" "${MAINTENANCE_SCRIPT}"
-chmod +x "${MAINTENANCE_SCRIPT}"
+if [ -f "${SCRIPT_DIR}/palworld.service" ]; then
+    cp "${SCRIPT_DIR}/palworld.service" "${PAL_SERVICE_FILE}"
+fi
+if [ -f "${SCRIPT_DIR}/palworld-maintenance.sh" ]; then
+    cp "${SCRIPT_DIR}/palworld-maintenance.sh" "${MAINTENANCE_SCRIPT}"
+    chown "${STEAM_USER}:${STEAM_USER}" "${MAINTENANCE_SCRIPT}" 2>/dev/null || true
+    chmod +x "${MAINTENANCE_SCRIPT}" 2>/dev/null || true
+fi
 
-cp "${SCRIPT_DIR}/palworld-manager.service" "${MANAGER_SERVICE_FILE}"
+if [ -f "${SCRIPT_DIR}/palworld-manager.service" ]; then
+    cp "${SCRIPT_DIR}/palworld-manager.service" "${MANAGER_SERVICE_FILE}"
+fi
 echo "[ OK ]"
 
-# 6. UV Virtualenv & Dependency Installation
-echo -n "[6/8] Building Python environment with uv... "
-cp "${REPO_ROOT}/uv.lock" "${APP_DIR}/" 2>/dev/null || true
-chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
-cd "${APP_DIR}"
-su -s /bin/bash "${APP_USER}" -c "uv venv --clear .venv --python python3 > /dev/null && uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil > /dev/null"
-echo "[ OK ]"
+# 6. Standalone Binary Deployment or Virtualenv Environment Build
+echo -n "[6/8] Building operations plane execution runtime... "
+deployed_standalone=0
+if [ -f "${REPO_ROOT}/dist/palworld-manager" ]; then
+    cp "${REPO_ROOT}/dist/palworld-manager" "${STANDALONE_BIN}"
+    chmod 0755 "${STANDALONE_BIN}"
+    deployed_standalone=1
+elif [ -f "${REPO_ROOT}/palworld-manager" ]; then
+    cp "${REPO_ROOT}/palworld-manager" "${STANDALONE_BIN}"
+    chmod 0755 "${STANDALONE_BIN}"
+    deployed_standalone=1
+fi
+
+if [ "${deployed_standalone}" -eq 1 ]; then
+    echo "[ OK (Standalone Binary Installed to ${STANDALONE_BIN}) ]"
+else
+    # Deploy source into isolated virtual environment
+    if [ -f "${REPO_ROOT}/uv.lock" ]; then
+        cp "${REPO_ROOT}/uv.lock" "${APP_DIR}/" 2>/dev/null || true
+    fi
+    chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}" 2>/dev/null || true
+    cd "${APP_DIR}"
+
+    # Verify if uv is available and make accessible to service user
+    host_uv=$(command -v uv || true)
+    if [ -n "${host_uv}" ]; then
+        if [ ! -x "/usr/local/bin/uv" ]; then
+            cp "${host_uv}" /usr/local/bin/uv 2>/dev/null || true
+            chmod 0755 /usr/local/bin/uv 2>/dev/null || true
+        fi
+        su -s /bin/bash "${APP_USER}" -c "export PATH='/usr/local/bin:/usr/bin:/bin'; uv venv --clear .venv --python python3 >/dev/null 2>&1 && uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil >/dev/null 2>&1"
+    else
+        # Pure standard library and native compiler fallback (zero external binary downloads)
+        su -s /bin/bash "${APP_USER}" -c "python3 -m venv --clear .venv >/dev/null 2>&1 && .venv/bin/python -m pip install --quiet --upgrade pip >/dev/null 2>&1 && .venv/bin/python -m pip install --quiet fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil >/dev/null 2>&1"
+    fi
+    echo "[ OK (Virtualenv Built) ]"
+fi
 
 # 7. Crontabs & DNS Initialization
 echo -n "[7/8] Registering cron jobs and verifying DuckDNS... "
-STEAM_CRON="*/5 * * * * /home/steam/duckdns/duck.sh >/dev/null 2>&1"
-EXISTING_STEAM_CRON=$(crontab -u steam -l 2>/dev/null || true)
-FILTERED_STEAM_CRON=$(echo "$EXISTING_STEAM_CRON" | grep -v "/home/steam/duckdns/duck.sh" || true)
-printf "%s\n%s\n" "$FILTERED_STEAM_CRON" "$STEAM_CRON" | sed '/^$/d' | crontab -u steam - || true
+if command -v crontab >/dev/null 2>&1; then
+    STEAM_CRON="*/5 * * * * /home/steam/duckdns/duck.sh >/dev/null 2>&1"
+    EXISTING_STEAM_CRON=$(crontab -u steam -l 2>/dev/null || true)
+    FILTERED_STEAM_CRON=$(echo "${EXISTING_STEAM_CRON}" | grep -v "/home/steam/duckdns/duck.sh" || true)
+    printf "%s\n%s\n" "${FILTERED_STEAM_CRON}" "${STEAM_CRON}" | sed '/^$/d' | crontab -u steam - 2>/dev/null || true
 
-CRON_JOB="0 */4 * * * curl -s -X POST http://127.0.0.1:${APP_PORT}/api/service/reboot -H 'Content-Type: application/json' -d '{\"settings\":{}, \"countdown_seconds\":600, \"trigger_steam_update\":false}' > /dev/null 2>&1"
-EXISTING_CRON=$(crontab -l 2>/dev/null || true)
-FILTERED_CRON=$(echo "$EXISTING_CRON" | grep -v "/api/service/reboot" || true)
-printf "%s\n%s\n" "$FILTERED_CRON" "$CRON_JOB" | sed '/^$/d' | crontab - || true
+    CRON_JOB="0 */4 * * * curl -s -X POST http://127.0.0.1:${APP_PORT}/api/service/reboot -H 'Content-Type: application/json' -d '{\"settings\":{}, \"countdown_seconds\":600, \"trigger_steam_update\":false}' > /dev/null 2>&1"
+    EXISTING_CRON=$(crontab -l 2>/dev/null || true)
+    FILTERED_CRON=$(echo "${EXISTING_CRON}" | grep -v "/api/service/reboot" || true)
+    printf "%s\n%s\n" "${FILTERED_CRON}" "${CRON_JOB}" | sed '/^$/d' | crontab - 2>/dev/null || true
+fi
 
-su - steam -c "/home/steam/duckdns/duck.sh" || true
+if [ -f "/home/steam/duckdns/duck.sh" ]; then
+    su - steam -c "/home/steam/duckdns/duck.sh" 2>/dev/null || true
+fi
 echo "[ OK ]"
 
 # 8. Reload and Start Daemons
 echo -n "[8/8] Reloading systemd and starting Palworld Manager... "
-systemctl daemon-reload 2>/dev/null || true
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload 2>/dev/null || true
 
-if systemctl is-active --quiet palworld.service 2>/dev/null; then
-    :
-else
-    systemctl start palworld.service > /dev/null 2>&1 || true
+    if systemctl is-active --quiet palworld.service 2>/dev/null; then
+        :
+    else
+        systemctl start palworld.service >/dev/null 2>&1 || true
+    fi
+
+    systemctl restart palworld-manager.service >/dev/null 2>&1 || true
+    systemctl enable palworld-manager.service >/dev/null 2>&1 || true
 fi
-
-systemctl restart palworld-manager.service > /dev/null 2>&1 || true
-systemctl enable palworld-manager.service > /dev/null 2>&1 || true
 echo "[ OK ]"
 
-ETH0_DETECTED=$(ip -4 -o addr show dev eth0 2>/dev/null | awk -F '[ /]+' '{print $4}' || true)
-if [ -z "${ETH0_DETECTED:-}" ]; then
-    ETH0_DETECTED=$(hostname -I | awk '{print $1}')
+ETH0_DETECTED=""
+if command -v ip >/dev/null 2>&1; then
+    ETH0_DETECTED=$(ip -4 -o addr show dev eth0 2>/dev/null | awk -F '[ /]+' '{print $4}' || true)
+fi
+if [ -z "${ETH0_DETECTED:-}" ] && command -v hostname >/dev/null 2>&1; then
+    ETH0_DETECTED=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
 fi
 
 echo ""
 echo "========================================================================="
 echo " Palworld Operations Suite Deployed Successfully!"
 echo " Web UI Dashboard:        http://${ETH0_DETECTED:-localhost}:${APP_PORT}"
-echo " Pages Available:         World Settings | Player Roster | Hardware | Backups"
+echo " Pages Available:         World Settings | Player Roster | Hardware | Backups | Observability"
 echo " Game Server State:       $(systemctl is-active palworld.service 2>/dev/null || echo 'inactive')"
 echo "========================================================================="

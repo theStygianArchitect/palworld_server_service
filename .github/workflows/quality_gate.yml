@@ -51,7 +51,8 @@ jobs:
         run: uv run mypy app scripts tests
 
       - name: Run Pylint Standard (10.00/10)
-        run: uv run pylint --rcfile=pyproject.toml app tests
+        run: uv run pylint --rcfile=pyproject.toml app scripts tests
+
 
       - name: Run Google Docstring Validation (pydocstyle)
         run: uv run pydocstyle app scripts

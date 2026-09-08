@@ -1568,3 +1568,27 @@ async def prune_metrics(
         pruned_records=pruned,
         retention_days=retention,
     )
+
+
+if __name__ == "__main__":
+    import argparse
+
+    import uvicorn
+
+    cli_parser = argparse.ArgumentParser(
+        description="Palworld Unified Operations Suite & Web Management Plane"
+    )
+    cli_parser.add_argument(
+        "--host",
+        default=settings.host,
+        help="Bind host IP address (default: configured setting)",
+    )
+    cli_parser.add_argument(
+        "--port",
+        type=int,
+        default=settings.port,
+        help="Bind port number (default: configured setting)",
+    )
+    cli_args = cli_parser.parse_args()
+
+    uvicorn.run(app, host=cli_args.host, port=cli_args.port)

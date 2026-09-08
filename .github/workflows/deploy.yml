@@ -9,6 +9,8 @@ jobs:
   validate-gate:
     name: Verify Quality & Security Gate
     uses: ./.github/workflows/quality_gate.yml
+    secrets: inherit
+
 
   deploy:
     name: Deploy to Production Linux Host

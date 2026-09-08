@@ -234,20 +234,37 @@ def _resolve_default_backup_dir() -> str:
     return str(Path.home() / ".palmanager" / "Palworld_backups")
 
 
+def _is_directory_writable(target_dir: Path) -> bool:
+    """Verifies whether the target directory can be written to by the current process.
+
+    Args:
+        target_dir: Filesystem directory path to evaluate.
+
+    Returns:
+        bool: True if process has write access, False otherwise.
+    """
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        probe = target_dir / ".write_probe"
+        probe.touch()
+        probe.unlink()
+        return True
+    except PermissionError as err:
+        log.debug("Permission denied accessing directory %s: %s", target_dir, err)
+        return False
+    except OSError as err:
+        log.debug("OS error accessing directory %s: %s", target_dir, err)
+        return False
+
+
 def _resolve_default_log_dir() -> str:
     """Returns a writable log directory path, falling back to home dir if unprivileged."""
     if os.name == "nt":
         return str(Path.home() / ".palmanager" / "logs")
     var_log = Path("/var/log/palmanager")
-    try:
-        var_log.mkdir(parents=True, exist_ok=True)
+    if _is_directory_writable(var_log):
         return str(var_log)
-    except PermissionError as err:
-        log.debug("Permission denied creating /var/log/palmanager (%s), using home dir fallback.", err)
-        return str(Path.home() / ".palmanager" / "logs")
-    except OSError as err:
-        log.debug("OS error creating /var/log/palmanager (%s), using home dir fallback.", err)
-        return str(Path.home() / ".palmanager" / "logs")
+    return str(Path.home() / ".palmanager" / "logs")
 
 
 def _resolve_default_db_path() -> str:
@@ -255,15 +272,9 @@ def _resolve_default_db_path() -> str:
     if os.name == "nt":
         return str(Path.home() / ".palmanager" / "palmanager.db")
     var_lib = Path("/var/lib/palmanager")
-    try:
-        var_lib.mkdir(parents=True, exist_ok=True)
+    if _is_directory_writable(var_lib):
         return str(var_lib / "palmanager.db")
-    except PermissionError as err:
-        log.debug("Permission denied creating /var/lib/palmanager (%s), using home dir fallback.", err)
-        return str(Path.home() / ".palmanager" / "palmanager.db")
-    except OSError as err:
-        log.debug("OS error creating /var/lib/palmanager (%s), using home dir fallback.", err)
-        return str(Path.home() / ".palmanager" / "palmanager.db")
+    return str(Path.home() / ".palmanager" / "palmanager.db")
 
 
 def _resolve_default_metrics_db_path() -> str:
@@ -271,15 +282,9 @@ def _resolve_default_metrics_db_path() -> str:
     if os.name == "nt":
         return str(Path.home() / ".palmanager" / "metrics.db")
     var_lib = Path("/var/lib/palmanager")
-    try:
-        var_lib.mkdir(parents=True, exist_ok=True)
+    if _is_directory_writable(var_lib):
         return str(var_lib / "metrics.db")
-    except PermissionError as err:
-        log.debug("Permission denied creating /var/lib/palmanager (%s), using home dir fallback.", err)
-        return str(Path.home() / ".palmanager" / "metrics.db")
-    except OSError as err:
-        log.debug("OS error creating /var/lib/palmanager (%s), using home dir fallback.", err)
-        return str(Path.home() / ".palmanager" / "metrics.db")
+    return str(Path.home() / ".palmanager" / "metrics.db")
 
 
 def _resolve_default_host_ip() -> str:
