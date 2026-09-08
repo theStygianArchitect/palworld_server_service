@@ -1,8 +1,7 @@
 <!--- Provide a concise summary of your changes in the Title above (e.g. 'feat(tracker): add a2s udp probe') -->
 
 > [!IMPORTANT]
-> **TARGET BRANCH POLICY**: All Pull Requests MUST target the `test` branch (`base: test`).
-> Pull Requests targeting `dev` or `main` are strictly prohibited and will be automatically rejected by GitHub Actions CI.
+> **TARGET BRANCH POLICY**: All Pull Requests MUST target the `main` branch (`base: main`).
 
 ## Description
 <!--- Describe your changes in detail. Focus on the 'Why' (rationale/intent), not just the 'What'. -->
@@ -38,7 +37,7 @@
 - [ ] 📝 Documentation update (docstrings, markdown docs, or guide updates)
 
 ## Contributor Checklist:
-- [ ] My pull request targets the `test` branch (`base: test`).
+- [ ] My pull request targets the `main` branch (`base: main`).
 - [ ] My code adheres to the project's formatting and linting rules (`ruff`, `mypy`).
 - [ ] I have committed changes to a descriptive feature branch.
 - [ ] My commit messages follow Conventional Commits standard (`feat(...)`, `fix(...)`, `refactor(...)`).

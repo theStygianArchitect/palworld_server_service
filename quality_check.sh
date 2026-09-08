@@ -235,9 +235,22 @@ run_linting_check() {
   run_pydocstyle_check
 }
 
+run_idempotency_check() {
+  echo ">>> Starting installer clean install & idempotency check..."
+  if [ -f "scripts/test_install_idempotency.sh" ]; then
+    bash scripts/test_install_idempotency.sh
+    exit_code=$?
+    if [ ${exit_code} -ne 0 ]; then
+      echo "[-] Idempotency check failed."
+      exit ${exit_code}
+    fi
+    echo "[+] Passed clean install and idempotency check."
+  fi
+}
+
 quality_check() {
   echo "========================================================================="
-  echo " Running Master Quality Suite"
+  echo " Running Master Quality Suite (All 15 Checks)"
   echo "========================================================================="
   run_secret_scan
   run_project_wide_suppression_audit
@@ -250,6 +263,8 @@ quality_check() {
   run_pycodestyle_check
   run_pydocstyle_check
   run_coverage
+  run_multi_python_matrix
+  run_idempotency_check
   echo "========================================================================="
   echo " [SUCCESS] All Master Quality & Security Checks Passed!"
   echo "========================================================================="
