@@ -328,6 +328,12 @@ class AppSettings(BaseSettings):
         discord_log_level (str): Log level threshold for Discord mirroring (default: ERROR).
         discord_critical_ping (str): User/role mention for CRITICAL alerts (default: @thestygianarchitect).
         github_repo_url (str): Upstream GitHub repository URL for template issues and feedback redirects.
+        admin_credential_export_path (str | None): Optional filesystem path for initial administrator credential export.
+        updater_enabled (bool): Whether background upstream commit and update watcher is active (default: True).
+        update_check_interval_seconds (int): Periodic interval in seconds to poll upstream GitHub (default: 600 / 10m).
+        update_branch (str): Target git branch to poll and deploy (default: 'main').
+        deploy_script_path (str): Filepath to host zero-drift deployer script
+            (default: '/opt/palworld-web-manager/scripts/deploy.sh').
     """
 
     model_config = SettingsConfigDict(
@@ -463,6 +469,39 @@ class AppSettings(BaseSettings):
             "PALWORLD_ADMIN_CREDENTIAL_EXPORT_PATH",
             "ADMIN_CREDENTIAL_EXPORT_PATH",
             "admin_credential_export_path",
+        ),
+    )
+    updater_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "PALWORLD_UPDATER_ENABLED",
+            "UPDATER_ENABLED",
+            "updater_enabled",
+        ),
+    )
+    update_check_interval_seconds: int = Field(
+        default=600,
+        ge=10,
+        validation_alias=AliasChoices(
+            "PALWORLD_UPDATE_CHECK_INTERVAL_SECONDS",
+            "UPDATE_CHECK_INTERVAL_SECONDS",
+            "update_check_interval_seconds",
+        ),
+    )
+    update_branch: str = Field(
+        default="main",
+        validation_alias=AliasChoices(
+            "PALWORLD_UPDATE_BRANCH",
+            "UPDATE_BRANCH",
+            "update_branch",
+        ),
+    )
+    deploy_script_path: str = Field(
+        default="/opt/palworld-web-manager/scripts/deploy.sh",
+        validation_alias=AliasChoices(
+            "PALWORLD_DEPLOY_SCRIPT_PATH",
+            "DEPLOY_SCRIPT_PATH",
+            "deploy_script_path",
         ),
     )
 

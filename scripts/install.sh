@@ -88,6 +88,15 @@ fi
 if [ -f "${REPO_ROOT}/README.md" ]; then
     cp "${REPO_ROOT}/README.md" "${APP_DIR}/"
 fi
+if [ -d "${REPO_ROOT}/scripts" ]; then
+    mkdir -p "${APP_DIR}/scripts"
+    cp -r "${REPO_ROOT}/scripts/"* "${APP_DIR}/scripts/"
+    chmod 0755 "${APP_DIR}/scripts/"*.sh 2>/dev/null || true
+fi
+if command -v git >/dev/null 2>&1 && [ -d "${REPO_ROOT}/.git" ]; then
+    git -C "${REPO_ROOT}" rev-parse HEAD > "${APP_DIR}/.git_commit" 2>/dev/null || true
+    chmod 0644 "${APP_DIR}/.git_commit" 2>/dev/null || true
+fi
 
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}" 2>/dev/null || true
 
@@ -127,6 +136,8 @@ ${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status palworld.service, /usr/bin
 ${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld.service, /usr/bin/systemctl is-active palworld.service
 ${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *, /usr/bin/journalctl -u palworld.service *
 ${APP_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status
+${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh *
+${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/deploy.sh *
 SUDO_EOF
 chmod 0440 "${SUDOERS_FILE}"
 if command -v visudo >/dev/null 2>&1; then

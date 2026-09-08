@@ -36,6 +36,15 @@ cp "${REPO_ROOT}/uv.lock" "${APP_DIR}/" 2>/dev/null || true
 if [ -f "${REPO_ROOT}/README.md" ]; then
     cp "${REPO_ROOT}/README.md" "${APP_DIR}/"
 fi
+if [ -d "${REPO_ROOT}/scripts" ]; then
+    mkdir -p "${APP_DIR}/scripts"
+    cp -r "${REPO_ROOT}/scripts/"* "${APP_DIR}/scripts/"
+    chmod 0755 "${APP_DIR}/scripts/"*.sh 2>/dev/null || true
+fi
+if command -v git >/dev/null 2>&1 && [ -d "${REPO_ROOT}/.git" ]; then
+    git -C "${REPO_ROOT}" rev-parse HEAD > "${APP_DIR}/.git_commit" 2>/dev/null || true
+    chmod 0644 "${APP_DIR}/.git_commit" 2>/dev/null || true
+fi
 if [ -f "${REPO_ROOT}/scripts/palworld.service" ]; then
     cp "${REPO_ROOT}/scripts/palworld.service" /etc/systemd/system/palworld.service
 fi

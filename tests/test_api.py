@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.database.auth import bootstrap_admin_user
 from app.database.metric_models import MetricSnapshotRecord
-from app.main import app, db, engine, metrics_db, settings
+from app.main import app, db, engine, metrics_db, settings, updater
 
 
 @pytest.fixture
@@ -635,3 +635,132 @@ def test_api_user_role_promotion_and_lockout(client: TestClient):
     assert "Cannot deactivate the last remaining active administrator" in last_deactivate.json()["detail"]
 
     db.delete_user(target_id)
+
+
+def test_system_update_status(client: TestClient):
+    # 1. Normal status query
+    res = client.get("/api/system/update/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert "update_available" in data
+    assert "current_commit" in data
+    assert "latest_commit" in data
+    assert "commits_behind" in data
+    assert "last_checked" in data
+    assert "update_in_progress" in data
+
+    # 2. Force live probe query
+    res_force = client.get("/api/system/update/status?force=true")
+    assert res_force.status_code == 200
+    assert "update_available" in res_force.json()
+
+
+# pylint: disable=too-many-locals
+def test_system_update_apply_rbac_and_conflict(client: TestClient):
+    runner_calls: list[tuple[str, str]] = []
+
+    def mock_runner(script: str, branch: str) -> None:
+        runner_calls.append((script, branch))
+
+    orig_runner = updater.command_runner
+    updater.command_runner = mock_runner
+    updater.lock_file.unlink(missing_ok=True)
+
+    try:
+        # Create a test viewer user
+        test_pwd = f"Sec_{'Pass'}_456!"
+        viewer_reg = client.post(
+            "/api/auth/register",
+            json={"username": "test_viewer_update", "password": test_pwd, "email": "viewer_up@example.com"},
+        )
+        assert viewer_reg.status_code in (200, 201)
+        viewer_id = viewer_reg.json()["id"]
+
+        # Log in as viewer
+        viewer_token = client.post(
+            "/api/auth/login",
+            json={"username": "test_viewer_update", "password": test_pwd},
+        ).json()["token"]
+        viewer_headers = {
+            "Authorization": f"Bearer {viewer_token}",
+            "X-Forwarded-For": "198.51.100.77",
+        }
+
+        # 1. Unauthenticated remote client receives 401
+        client.cookies.clear()
+        res_unauth = client.post(
+            "/api/system/update/apply",
+            json={"branch": "main"},
+            headers={"X-Forwarded-For": "198.51.100.88"},
+        )
+        assert res_unauth.status_code == 401
+
+        # 2. Viewer role receives 403 Forbidden
+        res_viewer = client.post(
+            "/api/system/update/apply",
+            json={"branch": "main"},
+            headers=viewer_headers,
+        )
+        assert res_viewer.status_code == 403
+        assert "Forbidden" in res_viewer.json()["detail"]
+
+        # 3. Promote viewer to operator using admin credentials
+        admin_token = client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": settings.AdminPassword},
+        ).json()["token"]
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+        promote_res = client.patch(
+            f"/api/users/{viewer_id}/role",
+            json={"role": "operator"},
+            headers=admin_headers,
+        )
+        assert promote_res.status_code == 200
+
+        # 4. Operator triggers update -> succeeds with 200
+        res_op = client.post(
+            "/api/system/update/apply",
+            json={"branch": "main"},
+            headers=viewer_headers,
+        )
+        assert res_op.status_code == 200
+        op_data = res_op.json()
+        assert op_data["status"] == "applying"
+        assert op_data["target_branch"] == "main"
+        assert len(runner_calls) == 1
+
+        # 5. Concurrent apply while lock exists -> 409 Conflict
+        res_conflict = client.post(
+            "/api/system/update/apply",
+            json={"branch": "main"},
+            headers=admin_headers,
+        )
+        assert res_conflict.status_code == 409
+        assert "already in progress" in res_conflict.json()["detail"]
+
+        # Release lock and test admin custom branch
+        updater.lock_file.unlink(missing_ok=True)
+        res_admin = client.post(
+            "/api/system/update/apply",
+            json={"branch": "release-v2"},
+            headers=admin_headers,
+        )
+        assert res_admin.status_code == 200
+        assert res_admin.json()["target_branch"] == "release-v2"
+        assert len(runner_calls) == 2
+
+        db.delete_user(viewer_id)
+    finally:
+        updater.command_runner = orig_runner
+        updater.lock_file.unlink(missing_ok=True)
+
+
+def test_index_update_ui(client: TestClient) -> None:
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "updateBanner" in res.text
+    assert "updateModal" in res.text
+    assert "updateOverlay" in res.text
+    assert "checkSystemUpdateStatus" in res.text
+    assert "confirmApplyUpdate" in res.text

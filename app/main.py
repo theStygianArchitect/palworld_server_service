@@ -55,6 +55,9 @@ from app.api.schemas import (
     PlayerWarnRequest,
     RebootCancelRequest,
     RebootRequest,
+    UpdateApplyRequest,
+    UpdateApplyResponse,
+    UpdateStatusResponse,
     UserCreateRequest,
     UserLoginRequest,
     UserLoginResponse,
@@ -82,6 +85,7 @@ from app.database import (
 )
 from app.engine.notifications import DiscordNotifier
 from app.engine.service import LOCK_FILE, PalEngine
+from app.engine.updater import UpdateWatcher
 
 settings = get_settings()
 db = DatabaseManager(settings.database_path)
@@ -97,6 +101,12 @@ engine = PalEngine(
     service_name=settings.service_name,
 )
 notifier = DiscordNotifier(settings.discord_webhook_url)
+updater = UpdateWatcher(
+    repo_url=settings.github_repo_url,
+    branch=settings.update_branch,
+    check_interval_seconds=settings.update_check_interval_seconds,
+    deploy_script=settings.deploy_script_path,
+)
 
 metrics_buffer: list[MetricSnapshotRecord] = []
 metrics_buffer_lock = asyncio.Lock()
@@ -360,6 +370,9 @@ async def lifespan(_: FastAPI):
     duckdns_task = asyncio.create_task(trigger_duckdns_sync())
     stream_task = asyncio.create_task(telemetry_streamer())
     metrics_task = asyncio.create_task(metrics_collector_loop())
+    updater_task: asyncio.Task[None] | None = None
+    if settings.updater_enabled:
+        updater_task = asyncio.create_task(updater.run_loop())
 
     async def _send_startup_notice() -> None:
         await asyncio.sleep(4)
@@ -380,6 +393,8 @@ async def lifespan(_: FastAPI):
     startup_task.cancel()
     stream_task.cancel()
     metrics_task.cancel()
+    if updater_task is not None:
+        updater_task.cancel()
     try:
         await stream_task
     except asyncio.CancelledError as err:
@@ -388,6 +403,11 @@ async def lifespan(_: FastAPI):
         await metrics_task
     except asyncio.CancelledError as err:
         log.debug("Metrics background task cancelled during shutdown: %s", err)
+    if updater_task is not None:
+        try:
+            await updater_task
+        except asyncio.CancelledError as err:
+            log.debug("Updater background task cancelled during shutdown: %s", err)
 
     # Flush any remaining in-memory telemetry buffer to disk before database closure
     try:
@@ -571,6 +591,7 @@ perm_player_broadcast = require_permission("player:broadcast")
 perm_logs_view = require_permission("logs:view")
 perm_feedback_submit = require_permission("feedback:submit")
 perm_users_manage = require_permission("users:manage")
+perm_system_update = require_permission("system:update")
 
 
 def render_feedback_markdown(req: FeedbackSubmitRequest) -> str:
@@ -1782,6 +1803,47 @@ async def prune_metrics(
         pruned_records=pruned,
         retention_days=retention,
     )
+
+
+@app.get(
+    "/api/system/update/status",
+    response_model=UpdateStatusResponse,
+    tags=["System"],
+    dependencies=[Depends(get_current_user)],
+)
+async def get_system_update_status(
+    force: bool = Query(
+        default=False,
+        description="Whether to trigger an immediate live upstream probe",
+    ),
+) -> UpdateStatusResponse:
+    """Returns current upstream commit status, commits behind, and update availability."""
+    if force:
+        return await updater.check_for_updates()
+    return updater.get_status()
+
+
+@app.post(
+    "/api/system/update/apply",
+    response_model=UpdateApplyResponse,
+    tags=["System"],
+)
+async def apply_system_update(
+    request: Request,
+    payload: UpdateApplyRequest | None = None,
+    user: UserRecord = Depends(perm_system_update),
+) -> UpdateApplyResponse:
+    """Dispatches detached host deployment script pulling latest code and reloading systemd service."""
+    target_branch = payload.branch if payload is not None else settings.update_branch
+    client_ip = get_client_ip(request)
+    log.warning(
+        "SYSTEM UPDATE INITIATED: User '%s' (role: %s) requested update to branch '%s' from IP %s",
+        user.username,
+        user.role,
+        target_branch,
+        client_ip,
+    )
+    return await updater.apply_update(branch=target_branch)
 
 
 if __name__ == "__main__":
