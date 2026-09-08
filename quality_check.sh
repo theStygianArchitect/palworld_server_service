@@ -19,6 +19,8 @@ if [ ${#app_directory_list[@]} -eq 0 ]; then
   )
 fi
 
+test_directory="tests"
+
 run_ast_exception_audit() {
   echo ">>> Starting AST exception and diagnostic logging audit..."
   uv run python scripts/audit_exceptions.py app scripts tests
