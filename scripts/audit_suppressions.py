@@ -14,7 +14,8 @@ from pathlib import Path
 
 try:
     import tomllib
-except ImportError:
+except ImportError as err:
+    sys.stderr.write(f"Notice: tomllib stdlib not available ({err}), attempting tomli fallback.\n")
     import tomli as tomllib  # type: ignore[no-redef]
 
 REQUIRED_PASSPHRASE = "I solemnly swear I know what I\u2019m doing"
