@@ -4,10 +4,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Staging Multi-Python Matrix & Production Promotion"]
+    types: [completed]
+    branches: [dev]
 
 jobs:
   validate-gate:
     name: Verify Quality & Security Gate
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/quality_gate.yml
     secrets: inherit
 
@@ -16,11 +21,13 @@ jobs:
     name: Deploy to Production Linux Host
     needs: validate-gate
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_run') && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
 
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Check Deployment Configuration
         env:

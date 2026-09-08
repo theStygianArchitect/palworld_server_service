@@ -3,9 +3,11 @@ name: Staging Multi-Python Matrix & Production Promotion
 on:
   push:
     branches: [dev]
-  pull_request:
-    branches: [dev]
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Test Branch Quality & Idempotency Gate"]
+    types: [completed]
+    branches: [test]
 
 permissions:
   contents: write
@@ -16,6 +18,7 @@ jobs:
   multi-python-matrix:
     name: Staging Matrix Verification (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +27,8 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          ref: dev
 
       - name: Install uv and Set up Python ${{ matrix.python-version }}
         uses: astral-sh/setup-uv@v5
@@ -48,12 +53,13 @@ jobs:
     name: Auto-Promote dev -> main (Production Release)
     needs: [multi-python-matrix]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    if: (github.ref == 'refs/heads/dev' || github.event_name == 'workflow_run') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
 
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
         with:
+          ref: dev
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -81,7 +87,7 @@ jobs:
   log-bug-on-failure:
     name: Log Automated Bug Report on Matrix Failure
     needs: [multi-python-matrix]
-    if: failure() && (github.ref == 'refs/heads/dev' || github.base_ref == 'dev')
+    if: failure() && (github.ref == 'refs/heads/dev' || github.event_name == 'workflow_run')
     runs-on: ubuntu-latest
 
     steps:

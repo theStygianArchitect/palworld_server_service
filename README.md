@@ -63,29 +63,39 @@ flowchart TD
         B["bugfix/<name>"]
     end
 
-    subgraph Gate1 ["2. Integration & Qualification (Gate 1)"]
-        F -->|promote-to-test| Q1["quality_check.sh -a & test_install_idempotency.sh"]
+    subgraph Gate1 ["2. Integration & Qualification (Gate 1: test)"]
+        PR["Pull Request (targets test only)"] -->|PR Status Check| Q1["quality_check.sh -a & test_install_idempotency.sh"]
+        F -->|promote-to-test| Q1
         B -->|promote-to-test| Q1
         Q1 -->|100% Passed| T[test branch]
         Q1 -->|Any Failure| FAIL["Abort Merge<br/>Convert to bugfix/<br/>Delete feature/<br/>Log Issue"]
+        T -->|Auto-Promote Bot| D[dev branch]
     end
 
-    subgraph StagingGate ["3. Staging & Multi-Python Matrix"]
-        T -->|GitHub Actions: quality_gate.yml| D[dev branch]
-        D -->|GitHub Actions: staging_matrix.yml| MTRX["Python 3.10, 3.11, 3.12, 3.13 Matrix"]
+    subgraph StagingGate ["3. Staging Multi-Python Matrix (Gate 2: dev)"]
+        T -.->|workflow_run: Quality Gate Succeeded| SM["staging_matrix.yml<br/>(Python 3.10, 3.11, 3.12, 3.13)"]
+        SM -->|100% Passed (4/4 Python)| M[main branch]
     end
 
-    subgraph Production ["4. Production Release"]
-        MTRX -->|100% Passed| M[main branch]
-        M -->|deploy.sh main| PROD[Dedicated Server Deployment]
+    subgraph Production ["4. Production Deployment (Gate 3: main)"]
+        SM -.->|workflow_run: Staging Succeeded| DEP["deploy.yml<br/>(Production Deployment & Health Verification)"]
+        DEP --> PROD[Dedicated Server Deployment]
     end
 ```
 
-### Branch Environments
-1. **`main` (Production)**: Stable production code deployed directly to the dedicated server. Only receives code that has passed the staging gate and multi-Python matrix.
-2. **`dev` (Staging)**: Staging environment directly preceding production. Must pass tests across all supported Python versions (**Python 3.10, 3.11, 3.12, and 3.13**). Once verified, automatically promoted to `main`.
-3. **`test` (Integration & Qualification Gate)**: Integration branch where all features and bug fixes merge first. Must pass 100% of Gate 1 qualifications and clean installation idempotency checks.
-4. **`feature/*` & `bugfix/*`**: Ephemeral development branches branched exclusively from `test`.
+### Branch Environments & Access Governance
+1. **`test` (Integration & Qualification Gate)**:
+   - The **only** branch where developer Pull Requests and feature promotions may be targeted.
+   - Must pass 100% of Gate 1 qualifications (`quality_gate.yml`) and clean installation idempotency tests before merging.
+2. **`dev` (Staging - Protected & Automated Only)**:
+   - Staging environment directly preceding production.
+   - **Protected**: No direct commits and no direct Pull Requests. Updated exclusively by automated GitHub Actions promotion from `test`.
+   - Executes the multi-Python verification matrix across all supported Python runtimes (**Python 3.10, 3.11, 3.12, and 3.13**).
+3. **`main` (Production - Protected & Automated Only)**:
+   - Stable production release branch deployed directly to the dedicated server.
+   - **Protected**: No direct commits and no direct Pull Requests. Updated exclusively by automated GitHub Actions promotion from `dev` once all 4 matrix tests pass.
+4. **`feature/*` & `bugfix/*`**:
+   - Ephemeral development branches branched exclusively from `test`.
 
 ---
 
@@ -107,6 +117,8 @@ flowchart TD
    - Before running `promote-to-test`, `./quality_check.sh -a` (or `./quality_script.sh -a`) must pass locally across **all** repository directories (`app/`, `scripts/`, `tests/`). All issues must be fixed locally.
 6. **Rule 6: The 3 AM Debugger Standard**
    - All code generation, features, and bug fixes strictly follow `/the-3am-debugger`: radical clarity, flat linear logic, physical type isolation, defensive typing (zero `Any`), 12-factor compliance, and comprehensive intent documentation.
+7. **Rule 7: Pull Requests Target `test` Exclusively**
+   - All external and internal Pull Requests must target `test`. Branches `dev` and `main` are automated conduits managed exclusively by GitHub Actions bots through verified qualification gates.
 
 ---
 
