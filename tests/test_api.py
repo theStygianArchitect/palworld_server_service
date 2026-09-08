@@ -24,6 +24,8 @@ def client(tmp_path: Path) -> Generator[TestClient, None, None]:
     test_metrics_path = str(tmp_path / "test_api_metrics.db")
     orig_db_path = db.db_path
     orig_metrics_path = metrics_db.db_path
+    orig_updater_enabled = settings.updater_enabled
+    settings.updater_enabled = False
     db.close()
     metrics_db.close()
     db.db_path = test_db_path
@@ -35,6 +37,7 @@ def client(tmp_path: Path) -> Generator[TestClient, None, None]:
         with TestClient(app) as test_client:
             yield test_client
     finally:
+        settings.updater_enabled = orig_updater_enabled
         db.close()
         metrics_db.close()
         db.db_path = orig_db_path
@@ -649,10 +652,11 @@ def test_system_update_status(client: TestClient):
     assert "last_checked" in data
     assert "update_in_progress" in data
 
-    # 2. Force live probe query
-    res_force = client.get("/api/system/update/status?force=true")
-    assert res_force.status_code == 200
-    assert "update_available" in res_force.json()
+    # 2. Force live probe query with mocked upstream
+    with patch.object(updater, "check_for_updates", AsyncMock(return_value=updater.get_status())):
+        res_force = client.get("/api/system/update/status?force=true")
+        assert res_force.status_code == 200
+        assert "update_available" in res_force.json()
 
 
 # pylint: disable=too-many-locals

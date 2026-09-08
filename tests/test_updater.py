@@ -6,7 +6,7 @@ import asyncio
 import os
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -200,10 +200,11 @@ async def test_apply_update_missing_script(temp_watcher: UpdateWatcher):
 
 @pytest.mark.asyncio
 async def test_run_loop_cancellation(temp_watcher: UpdateWatcher):
-    task = asyncio.create_task(temp_watcher.run_loop())
-    await asyncio.sleep(0.05)
-    task.cancel()
-    await task
+    with patch.object(temp_watcher, "check_for_updates", AsyncMock(return_value=temp_watcher.get_status())):
+        task = asyncio.create_task(temp_watcher.run_loop())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        await task
 
 
 def test_resolve_default_deploy_log_path():

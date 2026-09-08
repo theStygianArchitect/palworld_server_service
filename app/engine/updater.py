@@ -430,10 +430,14 @@ class UpdateWatcher:
         while True:
             try:
                 await self.check_for_updates()
+                await asyncio.sleep(self.check_interval_seconds)
             except asyncio.CancelledError:
                 log.debug("UpdateWatcher loop received cancellation request.")
                 break
             except Exception as err:  # pylint: disable=broad-exception-caught
                 log.warning("Unexpected error in UpdateWatcher background loop: %s", err)
-
-            await asyncio.sleep(self.check_interval_seconds)
+                try:
+                    await asyncio.sleep(self.check_interval_seconds)
+                except asyncio.CancelledError:
+                    log.debug("UpdateWatcher loop received cancellation request during recovery sleep.")
+                    break
