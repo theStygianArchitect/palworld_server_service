@@ -27,6 +27,7 @@ Commands:
   promote-to-dev              Verify staging & merge 'test' into 'dev'
   promote-to-main             Verify multi-python matrix & merge 'dev' into 'main'
   log-bug <title> [desc]      Log a bug report file + GitHub issue & branch into bugfix/
+  install-hooks               Install local Git pre-commit hook to protect test, dev, main
   status                      Display active branch, linked issue, and promotion hierarchy
 ================================================================================
 EOF
@@ -129,16 +130,81 @@ case "${cmd}" in
 
     promote-to-test)
         current_branch=$(git rev-parse --abbrev-ref HEAD)
-        if [ "${current_branch}" = "test" ] || [ "${current_branch}" = "main" ]; then
-            echo "[-] Cannot promote from branch '${current_branch}'. Checkout your feature branch first."
+        if [ "${current_branch}" = "test" ] || [ "${current_branch}" = "dev" ] || [ "${current_branch}" = "main" ]; then
+            echo "[-] Cannot promote from protected branch '${current_branch}'. Checkout your feature or bugfix branch first."
             exit 1
         fi
         echo "========================================================================="
         echo " [GATE 1] Running Master Quality & Code Qualifications on ${current_branch}"
         echo "========================================================================="
-        ./quality_check.sh -a
-        ./scripts/test_install_idempotency.sh
+        qual_passed=1
+        ./quality_check.sh -a || qual_passed=0
+        if [ "${qual_passed}" -eq 1 ]; then
+            ./scripts/test_install_idempotency.sh || qual_passed=0
+        fi
 
+        # If any failure occurs: abort merge, delete failing feature branch, convert to bugfix, and log issue
+        if [ "${qual_passed}" -ne 1 ]; then
+            echo "========================================================================="
+            echo " [GATE 1 FAILED] Master qualifications failed on ${current_branch}!"
+            echo "========================================================================="
+            echo "[-] MERGE ABORTED: No code will be merged into 'test'."
+            echo "[-] Per repository policy: failing feature branch will be closed and deleted,"
+            echo "    and all work transitioned to a dedicated bugfix/ branch for patching."
+
+            sanitized_name=$(echo "${current_branch}" | sed 's|^feature/||; s|^bugfix/||' | tr '[:upper:]' '[:lower:]' | tr ' _' '--' | tr -cd '[:alnum:]-')
+            bug_title="Gate 1 Qualification Failure on ${current_branch}"
+            bug_desc="Code qualifications or clean installation idempotency checks failed on branch ${current_branch} (commit $(git rev-parse --short HEAD))."
+
+            mkdir -p "${REPO_ROOT}/bugs"
+            timestamp=$(date '+%Y%m%d_%H%M%S')
+            bug_file="${REPO_ROOT}/bugs/BUG-${timestamp}-${sanitized_name}.md"
+            cat << BUG_EOF > "${bug_file}"
+# Bug Report: ${bug_title}
+
+- **Date Logged:** $(date '+%Y-%m-%d %H:%M:%S')
+- **Source Branch:** ${current_branch}
+- **Commit:** $(git rev-parse --short HEAD)
+
+## Description
+${bug_desc}
+
+## Action Taken
+- Branch '${current_branch}' closed and deleted.
+- Work preserved on 'bugfix/${sanitized_name}'.
+BUG_EOF
+
+            echo "[+] Bug report recorded at: ${bug_file}"
+            created_issue=""
+            if command -v gh >/dev/null 2>&1; then
+                issue_url=$(gh issue create --title "[BUG] ${bug_title}" --body-file "${bug_file}" --label "bug" 2>&1 || true)
+                created_issue=$(echo "${issue_url}" | grep -oE '[0-9]+$' || true)
+                if [ -n "${created_issue}" ]; then
+                    echo "[+] Created GitHub Issue #${created_issue}."
+                    echo "${created_issue}" > "${ISSUE_FILE}"
+                fi
+            fi
+
+            # Branch to bugfix to preserve work
+            echo ">>> Creating bugfix/${sanitized_name} to preserve commit history..."
+            git checkout -b "bugfix/${sanitized_name}"
+
+            # Delete the failing feature branch
+            if [[ "${current_branch}" == feature/* ]]; then
+                echo ">>> Deleting closed feature branch '${current_branch}'..."
+                git branch -D "${current_branch}" || true
+                git push origin --delete "${current_branch}" 2>/dev/null || true
+                echo "[+] Successfully deleted feature branch '${current_branch}'."
+            fi
+
+            echo "========================================================================="
+            echo " [NEXT STEPS] Fix the issues on 'bugfix/${sanitized_name}'."
+            echo " Once resolved, run: ./scripts/gitflow.sh promote-to-test"
+            echo "========================================================================="
+            exit 1
+        fi
+
+        # Qualifications passed: Merge into test
         active_issue=$(get_active_issue)
         merge_tag="merge: promote ${current_branch} to test"
         if [ -n "${active_issue}" ]; then
@@ -153,6 +219,12 @@ case "${cmd}" in
         echo ">>> Pushing promoted changes to origin/test..."
         git push origin test
         echo "[+] Branch ${current_branch} successfully merged and pushed to 'test'."
+
+        # Clean up / delete the merged feature or bugfix branch
+        echo ">>> Cleaning up completed branch '${current_branch}'..."
+        git branch -d "${current_branch}" || git branch -D "${current_branch}" || true
+        git push origin --delete "${current_branch}" 2>/dev/null || true
+        echo "[+] Branch '${current_branch}' deleted after successful promotion."
         ;;
 
     promote-to-dev)
@@ -284,6 +356,25 @@ BUG_EOF
         fi
         echo "========================================================================="
         git branch -v
+        ;;
+
+    install-hooks)
+        echo ">>> Installing Git pre-commit hook to protect test, dev, and main..."
+        mkdir -p "${REPO_ROOT}/.git/hooks"
+        cat << 'HOOK_EOF' > "${REPO_ROOT}/.git/hooks/pre-commit"
+#!/usr/bin/env bash
+branch="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$branch" = "main" ] || [ "$branch" = "dev" ] || [ "$branch" = "test" ]; then
+    echo "========================================================================="
+    echo "[-] REPOSITORY RULE VIOLATION: Direct commits to '$branch' are PROHIBITED."
+    echo "[-] All code must originate in an ephemeral feature/ or bugfix/ branch."
+    echo "[-] Run: ./scripts/gitflow.sh feature <name>"
+    echo "========================================================================="
+    exit 1
+fi
+HOOK_EOF
+        chmod +x "${REPO_ROOT}/.git/hooks/pre-commit" 2>/dev/null || true
+        echo "[+] Successfully installed .git/hooks/pre-commit protection hook."
         ;;
 
     *)

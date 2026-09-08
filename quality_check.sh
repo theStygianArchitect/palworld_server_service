@@ -20,6 +20,17 @@ run_ast_exception_audit() {
   echo "[+] Passed AST exception audit."
 }
 
+run_project_wide_suppression_audit() {
+  echo ">>> Starting project-wide suppression & passphrase authorization audit..."
+  uv run python scripts/audit_suppressions.py
+  exit_code=$?
+  if [ ${exit_code} -ne 0 ]; then
+    echo "[-] Project-wide suppression audit failed: unauthorized suppressions detected."
+    exit ${exit_code}
+  fi
+  echo "[+] Passed project-wide suppression audit."
+}
+
 run_secret_scan() {
   echo ">>> Starting repository-wide hardcoded secret and credential audit..."
   uv run python scripts/scan_secrets.py
@@ -196,6 +207,7 @@ run_security_check() {
   echo " Running Security Checks"
   echo "========================================================================="
   run_secret_scan
+  run_project_wide_suppression_audit
   run_bandit_check
   run_dependency_check
 }
@@ -216,6 +228,7 @@ quality_check() {
   echo " Running Master Quality Suite"
   echo "========================================================================="
   run_secret_scan
+  run_project_wide_suppression_audit
   run_ast_exception_audit
   run_dependency_check
   run_bandit_check
