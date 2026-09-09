@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Palworld TLS Certificate Renewal Twice Daily
+Documentation=https://github.com/theStygianArchitect/palworld_server_service
+After=network-online.target
+
+[Timer]
+OnCalendar=*-*-* 03,15:00:00
+RandomizedDelaySec=3600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

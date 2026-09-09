@@ -1,0 +1,11 @@
+[Unit]
+Description=Palworld Operations Suite TLS Certificate Auto-Renewal
+Documentation=https://github.com/theStygianArchitect/palworld_server_service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/palworld-web-manager/scripts/palworld-cert-manager.sh renew
+StandardOutput=journal
+StandardError=journal
