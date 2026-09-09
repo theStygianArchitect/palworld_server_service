@@ -11,7 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.schemas import TLSCertificateInfo
-from app.main import app
+from app.database.models import UserRecord
+from app.main import app, get_current_user
 
 
 @pytest.fixture
@@ -93,3 +94,76 @@ def test_post_tls_renew_success(client: TestClient) -> None:
         # Verify --force argument was included
         call_args = mock_run.call_args[0][0]
         assert "--force" in call_args
+
+
+def test_tls_endpoints_forbidden_for_viewer(client: TestClient) -> None:
+    """Tests GET /api/system/tls/status and POST /api/system/tls/renew return 403 for viewer."""
+    dummy_digest = str(id(client))
+    viewer_user = UserRecord(
+        id=99,
+        username="test_viewer",
+        password_hash=dummy_digest,
+        salt=dummy_digest,
+        email="viewer@test.local",
+        role="viewer",
+        is_active=True,
+        created_at="2026-09-09T00:00:00Z",
+    )
+    app.dependency_overrides[get_current_user] = lambda: viewer_user
+    try:
+        resp_status = client.get("/api/system/tls/status")
+        assert resp_status.status_code == 403
+        assert "Administrator role required" in resp_status.json()["detail"]
+
+        resp_renew = client.post("/api/system/tls/renew", json={"force": False})
+        assert resp_renew.status_code == 403
+        assert "Administrator role required" in resp_renew.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_tls_endpoints_forbidden_for_operator(client: TestClient) -> None:
+    """Tests GET /api/system/tls/status and POST /api/system/tls/renew return 403 for operator."""
+    dummy_digest = str(id(client))
+    operator_user = UserRecord(
+        id=98,
+        username="test_operator",
+        password_hash=dummy_digest,
+        salt=dummy_digest,
+        email="operator@test.local",
+        role="operator",
+        is_active=True,
+        created_at="2026-09-09T00:00:00Z",
+    )
+    app.dependency_overrides[get_current_user] = lambda: operator_user
+    try:
+        resp_status = client.get("/api/system/tls/status")
+        assert resp_status.status_code == 403
+        assert "Administrator role required" in resp_status.json()["detail"]
+
+        resp_renew = client.post("/api/system/tls/renew", json={"force": False})
+        assert resp_renew.status_code == 403
+        assert "Administrator role required" in resp_renew.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_tls_renew_sudo_password_remediation_error(client: TestClient) -> None:
+    """Tests POST /api/system/tls/renew surfaces actionable remediation when sudo requires password."""
+    mock_proc = MagicMock()
+    mock_proc.returncode = 1
+    mock_proc.stdout = ""
+    mock_proc.stderr = (
+        "sudo: a terminal is required to read the password; either use the -S option to read from standard input\n"
+        "sudo: a password is required"
+    )
+
+    with (
+        patch("pathlib.Path.is_file", return_value=True),
+        patch("subprocess.run", return_value=mock_proc),
+    ):
+        resp = client.post("/api/system/tls/renew", json={"force": False})
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert "passwordless sudo is not configured" in detail
+        assert "palmanager-certs" in detail

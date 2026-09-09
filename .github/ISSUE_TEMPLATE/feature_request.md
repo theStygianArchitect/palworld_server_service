@@ -23,3 +23,7 @@ assignees: ''
 
 ## 🔄 Alternatives Considered
 <!--- Describe any alternative solutions or workarounds you've evaluated. -->
+
+## 🔐 Role-Based Access Control (RBAC) & Target Audience
+<!--- MANDATORY: Who should be able to access this feature? (Admin-Only, Operator, Viewer, or Public).
+NOTE: All new features default to Admin-Only unless explicitly specified otherwise. If unspecified, implementation will HALT until clarified. -->

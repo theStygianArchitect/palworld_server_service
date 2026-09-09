@@ -365,6 +365,10 @@ def test_dashboard_ui_tls_elements_present(rbac_client: TestClient) -> None:
     assert 'id="btnRenewTlsNow"' in html
     assert "fetchTlsStatus()" in html
     assert "triggerTlsRenewal()" in html
+    assert "setVisible('updatesTlsCard', isAdmin)" in html
+    assert "setVisible('settingsTlsCard', isAdmin)" in html
+    assert "setVisible('tlsCard', isAdmin)" in html
+    assert "setVisible('httpsHeaderBadge', isAdmin)" in html
 
 
 def test_dashboard_ui_deployment_progression_elements_present(rbac_client: TestClient) -> None:

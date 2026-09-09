@@ -147,6 +147,8 @@ chmod 0440 "${SUDOERS_FILE}"
 if command -v visudo >/dev/null 2>&1; then
     visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1 || true
 fi
+cp "${SUDOERS_FILE}" /etc/sudoers.d/palmanager-certs 2>/dev/null || true
+chmod 0440 /etc/sudoers.d/palmanager-certs 2>/dev/null || true
 echo "[ OK ]"
 
 # 5. Service Files & Maintenance Scripts
