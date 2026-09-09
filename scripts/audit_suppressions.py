@@ -8,7 +8,7 @@ demonstrated by the exact passphrase: "I solemnly swear I know what I'm doing".
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404 - required for git commit message inspection; no user input
 import sys
 from pathlib import Path
 
@@ -29,7 +29,7 @@ def get_commit_message() -> str:
         str: Commit message or empty string on failure.
     """
     try:
-        res = subprocess.run(
+        res = subprocess.run(  # nosec B603 B607 - static arg list, no user input; git is a trusted system binary
             ["git", "log", "-1", "--pretty=%B"],
             capture_output=True,
             text=True,
@@ -109,6 +109,15 @@ def audit_pyproject_toml(config_path: Path) -> list[str]:
     mypy_section = tool_section.get("mypy", {})
     if mypy_section.get("ignore_errors", False):
         violations.append("[MYPY SUPPRESSION] pyproject.toml has 'ignore_errors = true'")
+
+    # 4. Check Bandit project-wide skips — must be empty or absent
+    bandit_section = tool_section.get("bandit", {})
+    bandit_skips = bandit_section.get("skips", [])
+    if bandit_skips:
+        violations.append(
+            f"[BANDIT SUPPRESSION] pyproject.toml has project-wide Bandit skips: {bandit_skips}. "
+            "All Bandit suppressions must be inline `# nosec BXXX` annotations with justification comments."
+        )
 
     return violations
 

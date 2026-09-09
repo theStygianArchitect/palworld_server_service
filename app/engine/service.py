@@ -11,7 +11,7 @@ import asyncio
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 - required for systemctl daemon control; no Python-native alternative for systemd
 import tempfile
 import time
 from dataclasses import dataclass, field

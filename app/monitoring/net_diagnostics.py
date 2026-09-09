@@ -10,8 +10,10 @@ import asyncio
 import re
 import shutil
 import socket
-import subprocess  # nosec B404
+import struct
+import subprocess  # nosec B404 - required for ICMP ping execution (setuid binary; raw ICMP requires CAP_NET_RAW)
 import time
+from pathlib import Path
 from typing import Any
 
 import psutil
@@ -173,26 +175,42 @@ def _execute_socket_probes(target: str, count: int) -> tuple[float, float, float
 
 
 def resolve_default_gateway() -> str:
-    """Resolves local LAN default gateway IP address via routing table inspection."""
-    gateway_ip = "192.168.1.1"
+    """Resolves local LAN default gateway IP address via pure-Python kernel routing table inspection.
+
+    Reads /proc/net/route directly to extract the default gateway without spawning a subprocess.
+    Falls back to the conventional 192.168.1.1 address if the routing table is unavailable.
+
+    Returns:
+        str: Resolved default gateway IP address.
+    """
+    fallback_ip = "192.168.1.1"
     if not is_posix():
-        return gateway_ip
+        return fallback_ip
+
+    proc_route = Path("/proc/net/route")
+    if not proc_route.exists():
+        return fallback_ip
 
     try:
-        route_proc = subprocess.run(  # nosec B603
-            ["ip", "route", "show", "default"],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        )
-        if route_proc.returncode == 0:
-            match = re.search(r"default via ([\d\.]+)", route_proc.stdout)
-            if match:
-                gateway_ip = match.group(1)
+        lines = proc_route.read_text(encoding="ascii").splitlines()
+        for line in lines[1:]:  # Skip header row
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            destination_hex = parts[1]
+            gateway_hex = parts[2]
+            # Default route: destination == 00000000
+            if destination_hex == "00000000" and gateway_hex != "00000000":
+                # Gateway is stored as little-endian hex; unpack and convert to dotted notation
+                gateway_packed = int(gateway_hex, 16)
+                gateway_bytes = struct.pack("<I", gateway_packed)
+                return socket.inet_ntoa(gateway_bytes)
     except OSError as err:
-        log.debug("Could not resolve default gateway via ip route: %s", err)
-    return gateway_ip
+        log.debug("Could not resolve default gateway via /proc/net/route (OS): %s", err)
+    except ValueError as err:
+        log.debug("Could not resolve default gateway via /proc/net/route (parse): %s", err)
+
+    return fallback_ip
 
 
 def check_udp_drops() -> bool:

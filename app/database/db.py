@@ -69,10 +69,15 @@ CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_login_audit_timestamp ON login_audit(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback_submissions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_filter ON feedback_submissions(submitted_by, category, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS system_metadata (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL
+);
 """
 
 
-class DatabaseManager:
+class DatabaseManager:  # pylint: disable=too-many-public-methods
     """Manages SQLite connection lifecycle, schema initialization, and transactional queries.
 
     Attributes:
@@ -690,3 +695,39 @@ class DatabaseManager:
             conn.commit()
 
         return self.get_feedback(feedback_id)
+
+    def get_meta(self, key: str) -> str | None:
+        """Retrieves a system metadata value by key from the system_metadata table.
+
+        Args:
+            key: Metadata key to look up.
+
+        Returns:
+            str | None: Stored value, or None if the key does not exist.
+        """
+        with self._lock:
+            conn = self.get_connection()
+            try:
+                row = conn.execute(
+                    "SELECT value FROM system_metadata WHERE key = ?", (key,)
+                ).fetchone()
+                return str(row["value"]) if row else None
+            except sqlite3.OperationalError as err:
+                log.debug("Error reading metadata key '%s': %s", key, err)
+                return None
+
+    def set_meta(self, key: str, value: str) -> None:
+        """Upserts a system metadata key-value pair in the system_metadata table.
+
+        Args:
+            key: Metadata key to store.
+            value: Metadata value to store.
+        """
+        with self._lock:
+            conn = self.get_connection()
+            conn.execute(
+                "INSERT INTO system_metadata (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+            conn.commit()
