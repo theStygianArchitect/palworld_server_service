@@ -706,16 +706,25 @@ def inspect_certificate(cert_path: Path | str) -> TLSCertificateInfo | None:
         log.debug("Certificate file does not exist at %s", path_obj)
         return None
 
+    res: TLSCertificateInfo | None = None
     try:
         decoded = _decode_x509_file(str(path_obj))
-        if not decoded:
+        if decoded:
+            res = _build_tls_cert_info(decoded)
+        else:
             log.warning("Certificate at %s decoded to empty payload", path_obj)
-            return None
+    except FileNotFoundError as err:
+        log.warning("Certificate file not found at %s: %s", path_obj, err)
+    except PermissionError as err:
+        log.warning("Permission denied reading certificate at %s: %s", path_obj, err)
+    except OSError as err:
+        log.warning("OS error decoding certificate at %s: %s", path_obj, err)
+    except ValueError as err:
+        log.warning("Value error decoding certificate at %s: %s", path_obj, err)
+    except KeyError as err:
+        log.warning("Key error decoding certificate fields at %s: %s", path_obj, err)
 
-        return _build_tls_cert_info(decoded)
-    except (FileNotFoundError, PermissionError, OSError, ValueError, KeyError) as err:
-        log.warning("Failed to decode certificate at %s: %s", path_obj, err)
-        return None
+    return res
 
 
 def resolve_ssl_paths(settings_obj: AppSettings | None = None) -> tuple[Path, Path] | None:
@@ -773,7 +782,13 @@ def resolve_ssl_paths(settings_obj: AppSettings | None = None) -> tuple[Path, Pa
             ctx.load_cert_chain(certfile=str(resolved_cert), keyfile=str(resolved_key))
             log.info("Validated active TLS certificate pair at %s and %s", resolved_cert, resolved_key)
             return resolved_cert, resolved_key
-        except (FileNotFoundError, PermissionError, OSError, ssl.SSLError) as err:
-            log.debug("TLS path candidate %s / %s validation failed: %s", cert_candidate, key_candidate, err)
+        except FileNotFoundError as err:
+            log.debug("TLS path candidate %s / %s not found: %s", cert_candidate, key_candidate, err)
+        except PermissionError as err:
+            log.debug("TLS path candidate %s / %s permission denied: %s", cert_candidate, key_candidate, err)
+        except ssl.SSLError as err:
+            log.debug("TLS path candidate %s / %s SSL mismatch: %s", cert_candidate, key_candidate, err)
+        except OSError as err:
+            log.debug("TLS path candidate %s / %s OS error: %s", cert_candidate, key_candidate, err)
 
     return None

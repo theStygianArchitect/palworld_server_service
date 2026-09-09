@@ -2110,7 +2110,11 @@ def _check_auto_renew_active() -> bool:
                 timeout=2,
             )
             return res.returncode == 0
-        except (subprocess.SubprocessError, OSError):
+        except subprocess.SubprocessError as err:
+            log.debug("Subprocess error checking palworld-cert-renew.timer: %s", err)
+            return False
+        except OSError as err:
+            log.debug("OS error checking palworld-cert-renew.timer: %s", err)
             return False
     return False
 
@@ -2124,7 +2128,7 @@ async def get_tls_status(
     Accessible to any authenticated user (Viewer, Operator, Admin).
 
     Args:
-        user (UserRecord): Authenticated user requesting status.
+        _: Authenticated user requesting status.
 
     Returns:
         TLSStatusResponse: Operational status of SSL/TLS and certificate metadata.
@@ -2145,7 +2149,7 @@ async def get_tls_status(
             warning="Running unencrypted plaintext HTTP. No valid certificate pair detected.",
         )
 
-    cert_path, _ = resolved_paths
+    cert_path, _key_path = resolved_paths
     cert_info = inspect_certificate(cert_path)
     warning = None
     if cert_info is not None and cert_info.days_remaining <= 15:

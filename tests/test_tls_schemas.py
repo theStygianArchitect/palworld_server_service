@@ -74,6 +74,8 @@ def test_tls_status_response_https_active() -> None:
     assert status.scheme == "https"
     assert status.port == 8443
     assert status.certificate is not None
+    # pylint: disable=no-member
+    # Rationale: Pylint misidentifies Pydantic v2 model fields as FieldInfo objects in test assertions.
     assert status.certificate.days_remaining == 83
     assert status.auto_renew_active
 

@@ -1,4 +1,6 @@
 """Integration tests for TLS status and certificate renewal REST API endpoints."""
+# pylint: disable=redefined-outer-name
+# Rationale: Pytest dependency injection requires test parameters to match fixture names.
 
 from __future__ import annotations
 
@@ -38,13 +40,13 @@ def test_get_tls_status_https_active(client: TestClient, tmp_path: Path) -> None
     key_path.touch()
 
     mock_cert_info = TLSCertificateInfo(
-        subject="myserver.duckdns.org",
-        issuer="Let's Encrypt",
-        valid_from="2026-09-01T00:00:00Z",
-        expires_at="2026-12-01T00:00:00Z",
-        days_remaining=83,
+        subject="api-gateway.duckdns.org",
+        issuer="Let's Encrypt Authority R3",
+        valid_from="2026-08-15T12:00:00Z",
+        expires_at="2026-11-15T12:00:00Z",
+        days_remaining=67,
         is_expired=False,
-        san_list=["myserver.duckdns.org"],
+        san_list=["api-gateway.duckdns.org", "palworld.duckdns.org"],
     )
 
     with (
@@ -56,8 +58,8 @@ def test_get_tls_status_https_active(client: TestClient, tmp_path: Path) -> None
         data = resp.json()
         assert data["enabled"] is True
         assert data["scheme"] == "https"
-        assert data["certificate"]["subject"] == "myserver.duckdns.org"
-        assert data["certificate"]["days_remaining"] == 83
+        assert data["certificate"]["subject"] == "api-gateway.duckdns.org"
+        assert data["certificate"]["days_remaining"] == 67
         assert data["cert_path"] == str(cert_path)
 
 
