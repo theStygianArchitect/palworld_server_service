@@ -882,3 +882,75 @@ def test_get_slash_authenticated_via_testclient(client: TestClient) -> None:
     # testclient IP auto-authenticates, so dashboard is served directly
     assert res.status_code == 200
     assert "Palworld" in res.text
+
+
+def test_shutdown_server_schedules_successfully(client: TestClient) -> None:
+    """POST /api/server/shutdown enqueues a countdown and returns 200 with confirmation."""
+    with patch("app.main.LOCK_FILE") as mock_lock:
+        mock_lock.exists.return_value = False
+        with patch.object(engine, "execute_countdown_and_reboot") as mock_reboot:
+            mock_reboot.return_value = None
+            res = client.post("/api/server/shutdown", json={"seconds": 60, "message": "Restarting soon"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "scheduled"
+    assert body["countdown_seconds"] == 60
+    assert body["message"] == "Restarting soon"
+
+
+def test_shutdown_server_defaults(client: TestClient) -> None:
+    """POST /api/server/shutdown with no body uses 300s default countdown."""
+    with patch("app.main.LOCK_FILE") as mock_lock:
+        mock_lock.exists.return_value = False
+        with patch.object(engine, "execute_countdown_and_reboot"):
+            res = client.post("/api/server/shutdown", json={})
+    assert res.status_code == 200
+    assert res.json()["countdown_seconds"] == 300
+
+
+def test_shutdown_server_rejects_when_lock_held(client: TestClient) -> None:
+    """POST /api/server/shutdown returns 409 when a reboot sequence is already in progress."""
+    with patch("app.main.LOCK_FILE") as mock_lock:
+        mock_lock.exists.return_value = True
+        res = client.post("/api/server/shutdown", json={"seconds": 60, "message": "Test"})
+    assert res.status_code == 409
+    assert "already in progress" in res.json()["detail"]
+
+
+def test_shutdown_server_rejects_below_minimum_seconds(client: TestClient) -> None:
+    """POST /api/server/shutdown returns 422 when countdown is below 30 seconds."""
+    res = client.post("/api/server/shutdown", json={"seconds": 10, "message": "Too fast"})
+    assert res.status_code == 422
+
+
+def test_shutdown_server_rejects_above_maximum_seconds(client: TestClient) -> None:
+    """POST /api/server/shutdown returns 422 when countdown exceeds 3600 seconds."""
+    res = client.post("/api/server/shutdown", json={"seconds": 9999, "message": "Too long"})
+    assert res.status_code == 422
+
+
+def test_shutdown_server_rejects_message_too_long(client: TestClient) -> None:
+    """POST /api/server/shutdown returns 422 when message exceeds 80 characters."""
+    res = client.post("/api/server/shutdown", json={"seconds": 60, "message": "x" * 81})
+    assert res.status_code == 422
+
+
+def test_manual_world_save_success(client: TestClient) -> None:
+    """POST /api/server/save returns 200 with operator username and ISO timestamp."""
+    with patch.object(engine, "trigger_save", new_callable=AsyncMock, return_value=True):
+        res = client.post("/api/server/save")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "ok"
+    assert isinstance(body["triggered_by"], str)
+    assert isinstance(body["timestamp"], str)
+    # Confirm ISO 8601 format by parsing it
+    datetime.datetime.fromisoformat(body["timestamp"])
+
+
+def test_manual_world_save_engine_failure(client: TestClient) -> None:
+    """POST /api/server/save returns 503 when the engine save call fails."""
+    with patch.object(engine, "trigger_save", new_callable=AsyncMock, return_value=False):
+        res = client.post("/api/server/save")
+    assert res.status_code == 503
+    assert "World save failed" in res.json()["detail"]

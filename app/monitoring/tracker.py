@@ -696,10 +696,16 @@ class CommunityTracker:
 
     @staticmethod
     def _build_security_matrix(kwargs: dict[str, Any]) -> SecurityMatrixInfo:
-        """Extracts and formats security matrix parameters."""
+        """Extracts and formats security matrix parameters.
+
+        Evaluates the RCON configuration state and emits a deprecation advisory
+        when RCON is enabled. Pocketpair deprecated RCON in early 2024 in favour
+        of the REST API; operators should disable it via RCONEnabled=False.
+        """
         server_password = str(kwargs.get("server_password", ""))
         current_players = int(kwargs.get("current_players", 0))
         max_players = int(kwargs.get("max_players", 32))
+        rcon_enabled = bool(kwargs.get("rcon_enabled", True))
 
         return {
             "is_password_protected": bool(server_password),
@@ -708,6 +714,8 @@ class CommunityTracker:
             ),
             "server_password": server_password,
             "rcon_port": int(kwargs.get("rcon_port", 25575)),
+            "rcon_enabled": rcon_enabled,
+            "rcon_advisory": "enabled_warn" if rcon_enabled else "disabled_ok",
             "rest_port": int(kwargs.get("rest_port", 8212)),
             "max_players": max_players,
             "current_players": current_players,
