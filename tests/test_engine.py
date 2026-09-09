@@ -5,7 +5,6 @@
 # Rationale: Mock coroutines and monkeypatch fixtures must accept standard signature arguments.
 
 import asyncio
-
 from unittest.mock import Mock
 
 import httpx
@@ -39,7 +38,7 @@ async def test_pal_engine_check_readiness_diagnostics(monkeypatch):
         return Mock(status_code=200, json=lambda: {"version": "v0.3.5", "servername": "TestPal"})
 
     async def mock_get_401(self, url, *a, **kw):
-        return Mock(status_code=401, json=lambda: {})
+        return Mock(status_code=401, json=dict)
 
     # Test 200 OK
     monkeypatch.setattr(httpx.AsyncClient, "get", mock_get_200)

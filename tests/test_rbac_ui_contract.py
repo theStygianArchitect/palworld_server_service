@@ -19,23 +19,29 @@ from app.main import app, db, metrics_db, settings
 @pytest.fixture
 def rbac_client(tmp_path: Path) -> Generator[TestClient, None, None]:
     """Provides an isolated FastAPI TestClient fixture with clean DB and admin user."""
-    saved_state = (db.db_path, metrics_db.db_path, settings.updater_enabled)
+    orig_db = db.db_path
+    orig_metrics = metrics_db.db_path
+    orig_updater = settings.updater_enabled
     settings.updater_enabled = False
-    for db_target, suffix in ((db, "rbac.db"), (metrics_db, "rbac_metrics.db")):
-        db_target.close()
-        db_target.db_path = str(tmp_path / suffix)
-        db_target.initialize()
+    db.close()
+    db.db_path = str(tmp_path / "rbac.db")
+    db.initialize()
+    metrics_db.close()
+    metrics_db.db_path = str(tmp_path / "rbac_metrics.db")
+    metrics_db.initialize()
     bootstrap_admin_user(db=db, default_password=settings.AdminPassword)
     test_client = TestClient(app)
     try:
         with test_client:
             yield test_client
     finally:
-        settings.updater_enabled = saved_state[2]
-        for db_target, orig_path in zip((db, metrics_db), saved_state[:2]):
-            db_target.close()
-            db_target.db_path = orig_path
-            db_target.initialize()
+        settings.updater_enabled = orig_updater
+        db.close()
+        db.db_path = orig_db
+        db.initialize()
+        metrics_db.close()
+        metrics_db.db_path = orig_metrics
+        metrics_db.initialize()
 
 
 def _create_user_and_token(
