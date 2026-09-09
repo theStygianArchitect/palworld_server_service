@@ -1854,19 +1854,48 @@
     async function loadSettings() {
       try {
         const res = await fetch('/api/settings');
+        if (!res.ok) {
+          const container = document.getElementById('categoriesContainer');
+          if (container) {
+            container.innerHTML = `
+              <div class="p-4 bg-amber-950/40 border border-amber-800/60 rounded-xl text-amber-200 text-xs font-mono">
+                <span class="font-bold">⚠️ Notice:</span> Failed to retrieve server settings (HTTP ${res.status}).
+              </div>
+            `;
+          }
+          return;
+        }
         const data = await res.json();
         if (data.status === 'success') {
-          settingsMetadata = data.metadata;
-          currentSettings = data.data;
+          settingsMetadata = data.metadata || {};
+          currentSettings = data.data || {};
           if (currentSettings.ServerPassword && !liveServerPassword) {
             liveServerPassword = currentSettings.ServerPassword;
             if (document.getElementById('copyPasswordText')) document.getElementById('copyPasswordText').innerText = "•••••••• (Set)";
             if (document.getElementById('copyPasswordBtn')) document.getElementById('copyPasswordBtn').disabled = false;
           }
           renderSettingsForm();
+        } else {
+          const container = document.getElementById('categoriesContainer');
+          if (container) {
+            container.innerHTML = `
+              <div class="p-4 bg-amber-950/40 border border-amber-800/60 rounded-xl text-amber-200 text-xs font-mono">
+                <span class="font-bold">⚠️ Notice:</span> ${data.detail || 'Could not load server settings.'}
+              </div>
+            `;
+          }
         }
       } catch (err) {
+        console.debug('Failed to load settings:', err);
         showAlert('Failed to load world settings from server.', true);
+        const container = document.getElementById('categoriesContainer');
+        if (container) {
+          container.innerHTML = `
+            <div class="p-4 bg-amber-950/40 border border-amber-800/60 rounded-xl text-amber-200 text-xs font-mono">
+              <span class="font-bold">⚠️ Network Notice:</span> Unable to reach the settings endpoint. Please verify server connectivity.
+            </div>
+          `;
+        }
       }
     }
 
@@ -1879,6 +1908,16 @@
         const cat = meta.category || 'General Settings';
         if (!grouped[cat]) grouped[cat] = [];
         grouped[cat].push({ key, ...meta, value: currentSettings[key] });
+      }
+
+      if (Object.keys(grouped).length === 0) {
+        container.innerHTML = `
+          <div class="p-6 bg-dark-900 border border-slate-800 rounded-2xl text-center space-y-2">
+            <p class="text-sm font-semibold text-slate-300 font-mono">No Gameplay Settings Configured</p>
+            <p class="text-xs text-slate-500">PalWorldSettings.ini has not been initialized or contains no parameters yet. Once the server completes its initial startup, settings will appear here automatically.</p>
+          </div>
+        `;
+        return;
       }
 
       for (const [catName, fields] of Object.entries(grouped)) {
@@ -3055,7 +3094,6 @@
               </tr>
             `;
           }).join('');
-        }
       } catch (err) {
         console.debug("Audit load error:", err);
         tbody.innerHTML = `<tr><td colspan="6" class="py-4 text-center text-red-400">Failed to load login audit trail.</td></tr>`;
@@ -3290,9 +3328,9 @@
 
       currentAuthUser = null;
       window.currentAuthUser = null;
-      if (headerText) headerText.innerText = "Admin (Localhost)";
+      if (headerText) headerText.innerText = "Guest (Sign In)";
       if (logoutBtn) logoutBtn.classList.add('hidden');
-      applyRoleVisibility('admin');
+      applyRoleVisibility('viewer');
     }
 
     let currentMetricsWindow = '24h';
