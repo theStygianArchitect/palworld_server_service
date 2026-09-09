@@ -208,7 +208,7 @@ class PalEngine:
         """Probes the Palworld internal REST API for operational readiness.
 
         Returns:
-            ReadinessInfo: Ready boolean flag, reported build version, and server name.
+            ReadinessInfo: Ready boolean flag, build version, server name, and diagnostic details.
         """
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
@@ -219,14 +219,58 @@ class PalEngine:
                         "ready": True,
                         "version": info.get("version"),
                         "server_name": info.get("servername", self.server_name),
+                        "diagnostic_code": "OK",
+                        "diagnostic_message": "Palworld REST API operational.",
                     }
+                if res.status_code == 401:
+                    log.warning("Palworld REST probe HTTP 401: AdminPassword mismatch between portal and server.")
+                    return {
+                        "ready": False,
+                        "version": None,
+                        "server_name": self.server_name,
+                        "diagnostic_code": "UNAUTHORIZED",
+                        "diagnostic_message": (
+                            "Authentication failed (HTTP 401). "
+                            "Verify AdminPassword in PalWorldSettings.ini matches engine configuration."
+                        ),
+                    }
+                return {
+                    "ready": False,
+                    "version": None,
+                    "server_name": self.server_name,
+                    "diagnostic_code": "ERROR",
+                    "diagnostic_message": f"Palworld REST probe returned unexpected HTTP status {res.status_code}.",
+                }
         except httpx.TimeoutException as err:
             log.debug("Engine readiness probe timed out: %s", err)
+            return {
+                "ready": False,
+                "version": None,
+                "server_name": self.server_name,
+                "diagnostic_code": "TIMEOUT",
+                "diagnostic_message": "Palworld REST probe timed out after 2.0s (server may be hanging or booting).",
+            }
         except httpx.ConnectError as err:
             log.debug("Engine readiness probe connection refused (server likely offline/booting): %s", err)
+            return {
+                "ready": False,
+                "version": None,
+                "server_name": self.server_name,
+                "diagnostic_code": "CONNECTION_REFUSED",
+                "diagnostic_message": (
+                    f"Connection refused on port {self.config.rest_port}. "
+                    "Palworld server is offline or starting."
+                ),
+            }
         except httpx.HTTPError as err:
             log.debug("Engine readiness probe HTTP error: %s", err)
-        return {"ready": False, "version": None, "server_name": self.server_name}
+            return {
+                "ready": False,
+                "version": None,
+                "server_name": self.server_name,
+                "diagnostic_code": "ERROR",
+                "diagnostic_message": f"HTTP probe communication error: {err}",
+            }
 
     async def get_engine_metrics(self) -> EngineMetrics:
         """Fetches live server FPS, frame time, uptime, and player count from REST API.

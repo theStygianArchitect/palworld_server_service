@@ -81,29 +81,25 @@ class PalWorldIniSettingsSource(PydanticBaseSettingsSource):
             from app.config_manager.parser import parse_ini_file
 
             ini_data = parse_ini_file(self.ini_path)
+            alias_map: dict[str, tuple[str, ...]] = {
+                "AdminPassword": ("ADMIN_PASSWORD", "admin_password"),
+                "ServerPassword": ("SERVER_PASSWORD", "server_password"),
+                "ServerName": ("SERVER_NAME", "server_name"),
+                "PublicPort": ("PUBLIC_PORT",),
+                "QueryPort": ("QUERY_PORT", "query_port"),
+                "RCONPort": ("RCON_PORT",),
+                "RCONEnabled": ("RCON_ENABLED", "RCONEnabled", "rcon_enabled"),
+                "bRCONEnabled": ("RCON_ENABLED", "RCONEnabled", "rcon_enabled"),
+                "RESTAPIPort": ("REST_PORT", "RESTAPIPORT"),
+                "RESTAPIEnabled": ("REST_ENABLED", "RESTAPIEnabled", "rest_enabled"),
+                "bRESTAPIEnabled": ("REST_ENABLED", "RESTAPIEnabled", "rest_enabled"),
+            }
             mapped: dict[str, Any] = {}
             for k, v in ini_data.items():
                 mapped[k] = v
                 mapped[k.upper()] = v
-                if k == "AdminPassword":
-                    mapped["ADMIN_PASSWORD"] = v
-                    mapped["admin_password"] = v
-                elif k == "ServerPassword":
-                    mapped["SERVER_PASSWORD"] = v
-                    mapped["server_password"] = v
-                elif k == "ServerName":
-                    mapped["SERVER_NAME"] = v
-                    mapped["server_name"] = v
-                elif k == "PublicPort":
-                    mapped["PUBLIC_PORT"] = v
-                elif k == "QueryPort":
-                    mapped["QUERY_PORT"] = v
-                    mapped["query_port"] = v
-                elif k == "RCONPort":
-                    mapped["RCON_PORT"] = v
-                elif k == "RESTAPIPort":
-                    mapped["REST_PORT"] = v
-                    mapped["RESTAPIPORT"] = v
+                for alias in alias_map.get(k, ()):
+                    mapped[alias] = v
             log.info(
                 "Loaded configuration from %s (AdminPassword found: %s)",
                 self.ini_path,

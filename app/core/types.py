@@ -368,11 +368,15 @@ class ReadinessInfo(TypedDict):
         ready (bool): True if server REST API is accepting commands.
         version (str | None): Palworld engine release build version string.
         server_name (str): Server name reported by the engine.
+        diagnostic_code (str): Granular probe status ('OK', 'UNAUTHORIZED', 'CONNECTION_REFUSED', 'TIMEOUT', 'ERROR').
+        diagnostic_message (str): Human-readable actionable description of probe result.
     """
 
     ready: bool
     version: str | None
     server_name: str
+    diagnostic_code: str
+    diagnostic_message: str
 
 
 class LifecycleState(TypedDict):
