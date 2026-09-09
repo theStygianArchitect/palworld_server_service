@@ -211,3 +211,67 @@ def test_resolve_default_deploy_log_path():
     log_path = _resolve_default_deploy_log_path()
     assert isinstance(log_path, Path)
     assert log_path.name == "deploy.log"
+
+
+def test_get_last_update_summary_missing(temp_watcher: UpdateWatcher):
+    assert temp_watcher.get_last_update_summary() is None
+
+
+def test_get_last_update_summary_present(temp_watcher: UpdateWatcher, tmp_path: Path):
+    summary_file = tmp_path / "last_update.json"
+    summary_file.write_text(
+        '{"status": "success", "target_branch": "main", "deployed_commit": "1234567890abcdef", '
+        '"deployed_commit_short": "1234567", "deployed_at": "2026-09-09T12:00:00Z", '
+        '"duration_seconds": 42, "summary": "Fix all bugs", "acknowledged": false}',
+        encoding="utf-8",
+    )
+    temp_watcher.post_update_file = summary_file
+    summary = temp_watcher.get_last_update_summary()
+    assert summary is not None
+    assert summary.status == "success"
+    assert summary.deployed_commit_short == "1234567"
+    assert summary.duration_seconds == 42
+    assert summary.acknowledged is False
+
+    # Test acknowledgement
+    assert temp_watcher.acknowledge_last_update() is True
+    updated = temp_watcher.get_last_update_summary()
+    assert updated is not None
+    assert updated.acknowledged is True
+
+
+def test_get_deployment_progress_idle(temp_watcher: UpdateWatcher):
+    prog = temp_watcher.get_deployment_progress()
+    assert prog.active is False
+    assert prog.current_step == 0
+    assert prog.percentage == 0
+    assert len(prog.steps) == 5
+
+
+def test_get_deployment_progress_active_and_parsing(temp_watcher: UpdateWatcher, tmp_path: Path):
+    # Setup active lock
+    temp_watcher.lock_file.write_text(
+        f"pid=1234\nstarted_at={time.time() - 15.0}\nbranch=main\noperation=portal_update\n",
+        encoding="utf-8",
+    )
+    # Setup mock deploy.log
+    log_file = tmp_path / "deploy.log"
+    log_file.write_text(
+        "[STEP 1/5] Pulling latest updates from origin/main... [ OK ]\n"
+        "[STEP 2/5] Syncing application code & systemd units... [ OK ]\n"
+        "[STEP 3/5] Enforcing cross-user POSIX ACLs and storage permissions...\n",
+        encoding="utf-8",
+    )
+
+    prog = temp_watcher.get_deployment_progress(log_path=log_file)
+    assert prog.active is True
+    assert prog.current_step == 3
+    assert prog.steps[0].status == "completed"
+    assert prog.steps[1].status == "completed"
+    assert prog.steps[2].status == "running"
+    assert prog.steps[3].status == "pending"
+    assert prog.steps[4].status == "pending"
+    assert prog.percentage == 50  # 2 completed (40) + running (10) = 50
+    assert prog.elapsed_seconds >= 14
+    assert prog.estimated_remaining_seconds is not None
+    assert len(prog.log_tail) == 3

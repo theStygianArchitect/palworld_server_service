@@ -414,3 +414,46 @@ class GitCommitInfo(TypedDict):
     hash: str
     message: str
     date: str
+
+
+# =========================================================================
+# 5. Deployment Progression & Telemetry Types
+# =========================================================================
+
+
+class DeploymentStepDict(TypedDict):
+    """Domain contract for an individual execution step in a deployment.
+
+    Attributes:
+        index (int): 1-indexed step number.
+        name (str): Human-readable title of the step.
+        status (str): Execution state ('pending', 'running', 'completed', 'failed').
+    """
+
+    index: int
+    name: str
+    status: str
+
+
+class PostUpdateSummaryDict(TypedDict):
+    """Domain contract for completed deployment telemetry.
+
+    Attributes:
+        status (str): Outcome state ('success', 'failed').
+        target_branch (str): Branch targeted for the update.
+        deployed_commit (str): Full 40-character Git commit hash.
+        deployed_commit_short (str): 7-character Git commit hash.
+        deployed_at (str): ISO-8601 UTC timestamp of deployment completion.
+        duration_seconds (int): Total execution duration in seconds.
+        summary (str): Short commit message header.
+        acknowledged (bool): Whether operator has dismissed the notification.
+    """
+
+    status: str
+    target_branch: str
+    deployed_commit: str
+    deployed_commit_short: str
+    deployed_at: str
+    duration_seconds: int
+    summary: str
+    acknowledged: bool

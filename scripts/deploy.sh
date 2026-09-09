@@ -10,6 +10,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 APP_DIR="/opt/palworld-web-manager"
 APP_USER="palmanager"
+DEPLOY_START_TIME=$(date +%s 2>/dev/null || echo 0)
+LOCK_FILE="/tmp/palmanager_update.lock"
+POST_UPDATE_FILE="/var/lib/palmanager/last_update.json"
+
+cleanup_on_exit() {
+    local exit_code=$?
+    if [ "${exit_code}" -ne 0 ]; then
+        echo "[-] Deployment aborted with error exit code: ${exit_code}"
+        rm -f "${LOCK_FILE}" 2>/dev/null || true
+    fi
+}
+trap cleanup_on_exit EXIT
 
 echo "========================================================================="
 echo " Deploying Palworld Operations Suite"
@@ -51,13 +63,13 @@ fi
 
 cd "${REPO_ROOT}"
 
-echo -n "[1/5] Pulling latest updates from origin/${TARGET_BRANCH}... "
+echo -n "[STEP 1/5] Pulling latest updates from origin/${TARGET_BRANCH}... "
 git fetch origin "${TARGET_BRANCH}"
 git checkout "${TARGET_BRANCH}"
 git pull origin "${TARGET_BRANCH}"
 echo "[ OK ]"
 
-echo -n "[2/5] Syncing application code & systemd units... "
+echo -n "[STEP 2/5] Syncing application code & systemd units... "
 cp -r "${REPO_ROOT}/app" "${APP_DIR}/"
 cp "${REPO_ROOT}/pyproject.toml" "${APP_DIR}/"
 cp "${REPO_ROOT}/uv.lock" "${APP_DIR}/" 2>/dev/null || true
@@ -118,7 +130,7 @@ fi
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 echo "[ OK ]"
 
-echo -n "[3/5] Enforcing cross-user POSIX ACLs and storage permissions... "
+echo -n "[STEP 3/5] Enforcing cross-user POSIX ACLs and storage permissions... "
 id -u steam >/dev/null 2>&1 && usermod -aG steam "${APP_USER}" 2>/dev/null || true
 id -u steam >/dev/null 2>&1 && chmod 0755 /home/steam 2>/dev/null || true
 
@@ -180,12 +192,12 @@ if command -v setfacl >/dev/null 2>&1; then
 fi
 echo "[ OK ]"
 
-echo -n "[4/5] Updating Python dependencies via uv... "
+echo -n "[STEP 4/5] Updating Python dependencies via uv... "
 cd "${APP_DIR}"
 su -s /bin/bash "${APP_USER}" -c "uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil > /dev/null"
 echo "[ OK ]"
 
-echo -n "[5/5] Restarting palworld-manager.service... "
+echo -n "[STEP 5/5] Restarting palworld-manager.service... "
 systemctl restart palworld-manager.service
 echo "[ OK ]"
 
@@ -193,6 +205,50 @@ echo "[ OK ]"
 if [ -n "${SUDO_USER:-}" ]; then
     chown -R "${SUDO_USER}:${SUDO_USER}" "${REPO_ROOT}" 2>/dev/null || true
 fi
+
+# Serialize post-update summary record and release deployment lock
+DEPLOY_END_TIME=$(date +%s 2>/dev/null || echo 0)
+DEPLOY_DURATION=$((DEPLOY_END_TIME - DEPLOY_START_TIME))
+if [ "${DEPLOY_DURATION}" -lt 0 ]; then
+    DEPLOY_DURATION=0
+fi
+
+DEPLOYED_COMMIT="unknown"
+DEPLOYED_COMMIT_SHORT="unknown"
+COMMIT_MSG="Upstream update deployed successfully"
+if [ -f "${APP_DIR}/.git_commit" ]; then
+    DEPLOYED_COMMIT=$(cat "${APP_DIR}/.git_commit" 2>/dev/null || echo "unknown")
+    DEPLOYED_COMMIT="${DEPLOYED_COMMIT//[$'\r\n']/}"
+    DEPLOYED_COMMIT_SHORT="${DEPLOYED_COMMIT:0:7}"
+fi
+if command -v git >/dev/null 2>&1 && [ -d "${REPO_ROOT}/.git" ]; then
+    RESOLVED_MSG=$(git -C "${REPO_ROOT}" log -1 --pretty=format:"%s" 2>/dev/null || echo "")
+    if [ -n "${RESOLVED_MSG}" ]; then
+        COMMIT_MSG="${RESOLVED_MSG}"
+    fi
+fi
+# Escape JSON quotes in commit message
+COMMIT_MSG_JSON=$(echo "${COMMIT_MSG}" | sed 's/"/\\"/g')
+NOW_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u +"%Y-%m-%d %H:%M:%S")
+
+mkdir -p /var/lib/palmanager 2>/dev/null || true
+cat <<EOF > "${POST_UPDATE_FILE}"
+{
+  "status": "success",
+  "target_branch": "${TARGET_BRANCH}",
+  "deployed_commit": "${DEPLOYED_COMMIT}",
+  "deployed_commit_short": "${DEPLOYED_COMMIT_SHORT}",
+  "deployed_at": "${NOW_ISO}",
+  "duration_seconds": ${DEPLOY_DURATION},
+  "summary": "${COMMIT_MSG_JSON}",
+  "acknowledged": false
+}
+EOF
+chmod 0644 "${POST_UPDATE_FILE}" 2>/dev/null || true
+chown "${APP_USER}:${APP_USER}" "${POST_UPDATE_FILE}" 2>/dev/null || true
+
+# Release lock file
+rm -f "${LOCK_FILE}" 2>/dev/null || true
 
 echo "========================================================================="
 echo " Deployment Complete! Service status: $(systemctl is-active palworld-manager.service)"

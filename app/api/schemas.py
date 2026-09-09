@@ -5,6 +5,10 @@ for all REST API requests and gameplay settings modification in compliance with
 the Google Style Guide and 3 AM defensive typing principles.
 """
 
+# pylint: disable=too-many-lines
+# Rationale: Central schema definitions consolidate data models across game configuration,
+# RBAC, metrics, and deployment progression.
+
 from __future__ import annotations
 
 import re
@@ -694,6 +698,30 @@ class MetricFlushResponse(BaseModel):
     buffered_remaining: int = Field(default=0, description="Snapshots remaining in memory buffer")
 
 
+class PostUpdateSummary(BaseModel):
+    """Telemetry report of the most recently executed deployment.
+
+    Attributes:
+        status (Literal["success", "failed"]): Outcome of last deployment.
+        target_branch (str): Target Git branch.
+        deployed_commit (str): Full 40-character Git commit hash.
+        deployed_commit_short (str): 7-character Git commit hash.
+        deployed_at (str): ISO-8601 timestamp of completion.
+        duration_seconds (int): Total execution duration in seconds.
+        summary (str): Commit message title.
+        acknowledged (bool): Whether operator has dismissed the notice.
+    """
+
+    status: Literal["success", "failed"] = Field(..., description="Outcome of last deployment")
+    target_branch: str = Field(default="main", description="Target Git branch")
+    deployed_commit: str = Field(..., description="Full 40-character Git commit hash")
+    deployed_commit_short: str = Field(..., description="Short 7-character Git commit hash")
+    deployed_at: str = Field(..., description="ISO-8601 timestamp of completion")
+    duration_seconds: int = Field(default=0, ge=0, description="Total execution duration in seconds")
+    summary: str = Field(default="", description="Commit message title")
+    acknowledged: bool = Field(default=False, description="Whether operator has dismissed the notice")
+
+
 class UpdateStatusResponse(BaseModel):
     """Telemetry status response for upstream repository updates.
 
@@ -706,6 +734,7 @@ class UpdateStatusResponse(BaseModel):
         last_checked (str): ISO-8601 UTC timestamp of last probe.
         update_in_progress (bool): Whether an update deployment is currently executing.
         error (str | None): Detailed error description if probe failed, else None.
+        last_update (PostUpdateSummary | None): Metadata of most recent deployment.
     """
 
     update_available: bool = Field(..., description="Whether upstream changes are available")
@@ -716,6 +745,9 @@ class UpdateStatusResponse(BaseModel):
     last_checked: str = Field(..., description="ISO-8601 UTC timestamp of latest probe")
     update_in_progress: bool = Field(default=False, description="Whether deployment lock is active")
     error: str | None = Field(default=None, description="Diagnostic error message if probe failed")
+    last_update: PostUpdateSummary | None = Field(
+        default=None, description="Metadata of most recent deployment if completed"
+    )
 
 
 class UpdateApplyRequest(BaseModel):
@@ -748,6 +780,70 @@ class UpdateApplyResponse(BaseModel):
     message: str = Field(..., description="Status description")
     target_branch: str = Field(..., description="Branch being deployed")
     triggered_at: str = Field(..., description="ISO-8601 UTC timestamp when triggered")
+
+
+class DeploymentStepInfo(BaseModel):
+    """Step execution status model.
+
+    Attributes:
+        index (int): 1-indexed step number.
+        name (str): Step title/description.
+        status (Literal["pending", "running", "completed", "failed"]): Execution state.
+    """
+
+    index: int = Field(..., description="1-indexed step number")
+    name: str = Field(..., description="Step title/description")
+    status: Literal["pending", "running", "completed", "failed"] = Field(
+        default="pending", description="Current step execution status"
+    )
+
+
+class DeploymentProgressResponse(BaseModel):
+    """Real-time progression telemetry DTO.
+
+    Attributes:
+        operation (Literal["portal_update", "tls_certificate", "server_restart", "none"]): Operation type.
+        active (bool): Whether a deployment is actively running.
+        current_step (int): 1-based active step index (0 if idle).
+        total_steps (int): Total steps in sequence.
+        step_name (str): Name of the currently running or pending step.
+        percentage (int): Overall completion percent (0-100).
+        elapsed_seconds (int): Seconds elapsed since start.
+        estimated_remaining_seconds (int | None): Estimated time to completion in seconds.
+        steps (list[DeploymentStepInfo]): Ordered step sequence.
+        log_tail (list[str]): Last N lines from deployment log.
+        last_update (PostUpdateSummary | None): Metadata of most recent update if completed.
+    """
+
+    operation: Literal["portal_update", "tls_certificate", "server_restart", "none"] = Field(
+        default="none", description="Active deployment operation type"
+    )
+    active: bool = Field(default=False, description="Whether a deployment is actively running")
+    current_step: int = Field(default=0, ge=0, description="1-based active step index (0 if idle)")
+    total_steps: int = Field(default=5, ge=1, description="Total steps in sequence")
+    step_name: str = Field(default="", description="Name of the currently running or pending step")
+    percentage: int = Field(default=0, ge=0, le=100, description="Overall completion percent (0-100)")
+    elapsed_seconds: int = Field(default=0, ge=0, description="Seconds elapsed since start")
+    estimated_remaining_seconds: int | None = Field(
+        default=None, description="Dynamic estimated time to completion in seconds"
+    )
+    steps: list[DeploymentStepInfo] = Field(default_factory=list, description="Ordered step sequence")
+    log_tail: list[str] = Field(default_factory=list, description="Last 25 lines from deployment log")
+    last_update: PostUpdateSummary | None = Field(
+        default=None, description="Metadata of most recent update if completed"
+    )
+
+
+class PostUpdateAcknowledgeResponse(BaseModel):
+    """Acknowledgement response dismissing post-update banner.
+
+    Attributes:
+        status (str): Outcome status indicator.
+        acknowledged_at (str): ISO-8601 UTC timestamp of acknowledgement.
+    """
+
+    status: str = Field(default="success", description="Outcome status")
+    acknowledged_at: str = Field(..., description="ISO-8601 UTC timestamp of acknowledgement")
 
 
 # =========================================================================
