@@ -205,8 +205,10 @@ def resolve_default_gateway() -> str:
                 gateway_packed = int(gateway_hex, 16)
                 gateway_bytes = struct.pack("<I", gateway_packed)
                 return socket.inet_ntoa(gateway_bytes)
-    except (OSError, ValueError) as err:
-        log.debug("Could not resolve default gateway via /proc/net/route: %s", err)
+    except OSError as err:
+        log.debug("Could not resolve default gateway via /proc/net/route (OS): %s", err)
+    except ValueError as err:
+        log.debug("Could not resolve default gateway via /proc/net/route (parse): %s", err)
 
     return fallback_ip
 

@@ -8,7 +8,7 @@ demonstrated by the exact passphrase: "I solemnly swear I know what I'm doing".
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404 - required for git commit message inspection; no user input
 import sys
 from pathlib import Path
 
@@ -29,7 +29,7 @@ def get_commit_message() -> str:
         str: Commit message or empty string on failure.
     """
     try:
-        res = subprocess.run(
+        res = subprocess.run(  # nosec B603 B607 - static arg list, no user input; git is a trusted system binary
             ["git", "log", "-1", "--pretty=%B"],
             capture_output=True,
             text=True,

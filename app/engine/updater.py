@@ -182,7 +182,6 @@ class UpdateWatcher:
             except OSError as err:
                 log.debug("Git rev-parse OS probe failed in repo_dir %s: %s", self.repo_dir, err)
 
-
         # 2. Check for deployed commit metadata file (.git_commit)
         candidate_meta_files = [
             self.repo_dir / ".git_commit",

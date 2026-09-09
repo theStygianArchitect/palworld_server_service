@@ -831,7 +831,7 @@ def test_bootstrap_credentials_when_pending(client: TestClient) -> None:
     """GET /api/auth/bootstrap-credentials returns 200 with credentials when pending."""
     _bootstrap_state.is_pending = True
     _bootstrap_state.username = "admin"
-    _bootstrap_state.password = "test-ephemeral-password-123"
+    _bootstrap_state.password = "test-ephemeral-password-123"  # nosec B105 - test fixture value, not a real credential
     try:
         res = client.get("/api/auth/bootstrap-credentials")
         assert res.status_code == 200
@@ -859,7 +859,7 @@ def test_ack_bootstrap_when_pending(client: TestClient) -> None:
     """POST /api/auth/ack-bootstrap seals credentials and returns success."""
     _bootstrap_state.is_pending = True
     _bootstrap_state.username = "admin"
-    _bootstrap_state.password = "ephemeral-to-wipe"
+    _bootstrap_state.password = "ephemeral-to-wipe"  # nosec B105 - test fixture value, not a real credential
     try:
         res = client.post("/api/auth/ack-bootstrap")
         assert res.status_code == 200

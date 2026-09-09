@@ -102,10 +102,13 @@ def test_resolve_default_gateway_ioerror(tmp_path: Path) -> None:
 
     class FakePathExists:
         """Fake Path wrapper that exists but raises OSError on read_text."""
+
         def __init__(self, _p: str) -> None:
             pass
+
         def exists(self) -> bool:
             return True
+
         def read_text(self, encoding: str = "utf-8") -> str:
             raise OSError("Simulated IO failure")
 

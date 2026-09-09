@@ -55,8 +55,6 @@ class BootstrapState:  # pylint: disable=too-few-public-methods
 _bootstrap_state: BootstrapState = BootstrapState()
 
 
-
-
 def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:
     """Generates a PBKDF2-HMAC-SHA256 digest with a cryptographically secure random salt.
 
