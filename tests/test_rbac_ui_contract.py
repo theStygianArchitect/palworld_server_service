@@ -365,3 +365,21 @@ def test_dashboard_ui_tls_elements_present(rbac_client: TestClient) -> None:
     assert 'id="btnRenewTlsNow"' in html
     assert "fetchTlsStatus()" in html
     assert "triggerTlsRenewal()" in html
+
+
+def test_dashboard_ui_deployment_progression_elements_present(rbac_client: TestClient) -> None:
+    """Verifies that unified deployment progression, steppers, and TLS cards are present in HTML."""
+    resp = rbac_client.get("/")
+    assert resp.status_code == 200
+    html = resp.text
+    assert 'id="postUpdateSuccessBanner"' in html
+    assert 'id="postUpdateFailedBanner"' in html
+    assert 'id="updatesTlsCard"' in html
+    assert 'id="settingsTlsCard"' in html
+    assert 'id="deployStepperContainer"' in html
+    assert 'id="deployProgressBar"' in html
+    assert 'id="tlsStepperContainer"' in html
+    assert 'id="tlsProgressBar"' in html
+    assert 'id="rebootProgressBar"' in html
+    assert "acknowledgePostUpdate()" in html
+    assert "pollDeployProgress()" in html

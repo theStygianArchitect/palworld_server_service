@@ -94,6 +94,47 @@
     </div>
   </header>
 
+  <!-- Post-Update Celebration & Status Banners -->
+  <div id="postUpdateSuccessBanner" class="hidden max-w-7xl mx-auto w-full px-4 sm:px-6 pt-3">
+    <div class="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 border border-emerald-500/50 rounded-2xl p-4 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div class="flex items-start sm:items-center gap-3">
+        <span class="text-2xl animate-bounce">🎉</span>
+        <div>
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-bold text-white tracking-tight">Portal Successfully Updated!</h3>
+            <span id="postUpdateShaBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">vNext</span>
+            <span id="postUpdateDurationBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">0s</span>
+          </div>
+          <p id="postUpdateSuccessMsg" class="text-xs text-emerald-200/90 font-mono mt-0.5 truncate max-w-xl">Update deployed and services restarted cleanly.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 ml-auto sm:ml-0">
+        <button id="postUpdateAckBtn" onclick="acknowledgePostUpdate()" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs font-mono shadow-lg transition flex items-center gap-1.5">
+          <span>✓</span> Acknowledge
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="postUpdateFailedBanner" class="hidden max-w-7xl mx-auto w-full px-4 sm:px-6 pt-3">
+    <div class="bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 border border-rose-500/50 rounded-2xl p-4 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div class="flex items-start sm:items-center gap-3">
+        <span class="text-2xl">⚠️</span>
+        <div>
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-bold text-rose-200 tracking-tight">Portal Update Incomplete</h3>
+          </div>
+          <p id="postUpdateFailedMsg" class="text-xs text-rose-300 font-mono mt-0.5 truncate max-w-xl">Deployment encountered an issue.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 ml-auto sm:ml-0">
+        <button onclick="acknowledgePostUpdate()" class="px-3.5 py-1.5 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-semibold text-xs font-mono shadow-lg transition flex items-center gap-1.5">
+          Dismiss
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Upstream Software Update Notification Banner -->
   <div id="updateBanner" class="hidden max-w-7xl mx-auto w-full px-4 sm:px-6 pt-3">
     <div class="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 border border-indigo-500/40 rounded-2xl p-4 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -213,6 +254,27 @@
           <span>💾</span> Save Changes
         </button>
       </div>
+      <!-- Tab 1: Network & HTTPS Security Quick Settings Card -->
+      <div id="settingsTlsCard" class="bg-dark-900/80 border border-slate-800 rounded-xl p-3.5 sm:p-4 shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono text-xs">
+        <div class="flex items-center gap-3">
+          <div class="p-2 bg-dark-950 rounded-lg border border-slate-800 text-lg">🔒</div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-slate-200">HTTPS &amp; Domain Security</span>
+              <span id="settingsTlsBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">Checking...</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-0.5">
+              Domain: <strong id="settingsTlsDomain" class="text-slate-300">--</strong> &bull;
+              Issuer: <span id="settingsTlsIssuer" class="text-slate-300">--</span> &bull;
+              Expiry: <span id="settingsTlsExpiry" class="text-slate-300">--</span>
+            </p>
+          </div>
+        </div>
+        <button onclick="openTlsModal()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition text-xs font-semibold whitespace-nowrap border border-slate-700 flex items-center justify-center gap-1.5 shadow-sm">
+          <span>🔒</span> Certificate Settings
+        </button>
+      </div>
+
       <div id="categoriesContainer" class="space-y-4 sm:space-y-6"></div>
     </div>
 
@@ -1151,6 +1213,40 @@
           </div>
         </div>
       </div>
+
+      <!-- TLS / HTTPS Certificate Management Card in Tab 8 -->
+      <div id="updatesTlsCard" class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-4 font-mono text-xs">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <h3 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <span class="text-emerald-400 text-lg">🔒</span> TLS / HTTPS Certificate Plane
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">Inspect DuckDNS SSL/TLS certificates, check validity countdown, and trigger on-demand renewal.</p>
+          </div>
+          <button onclick="openTlsModal()" id="manageCertBtn" class="px-3.5 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl shadow-lg transition text-xs font-mono font-semibold flex items-center gap-1.5">
+            <span>🔒</span> Issue / Renew Certificate
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl">
+            <span class="text-[10px] text-slate-500 block uppercase">Configured Domain</span>
+            <span id="updatesTlsDomain" class="font-bold text-slate-200 truncate block">--</span>
+          </div>
+          <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl">
+            <span class="text-[10px] text-slate-500 block uppercase">Issuing Authority</span>
+            <span id="updatesTlsIssuer" class="font-bold text-slate-200 truncate block">--</span>
+          </div>
+          <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl">
+            <span class="text-[10px] text-slate-500 block uppercase">Certificate Status</span>
+            <span id="updatesTlsBadge" class="font-bold text-slate-300 truncate block">Checking...</span>
+          </div>
+          <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl">
+            <span class="text-[10px] text-slate-500 block uppercase">Auto-Renewal Timer</span>
+            <span id="updatesTlsAutoRenew" class="font-bold text-slate-400 truncate block">--</span>
+          </div>
+        </div>
+      </div>
     </div>
   </main>
 
@@ -1205,7 +1301,17 @@
       </span>
       <span id="countdownTimerText" class="text-base font-black text-amber-400">00:00</span>
     </div>
-    <p id="countdownMsg" class="text-[11px] text-amber-300 leading-snug mb-3">Notice broadcast sent...</p>
+    <p id="countdownMsg" class="text-[11px] text-amber-300 leading-snug mb-2">Notice broadcast sent...</p>
+    <!-- Reboot Shimmer Progress Bar -->
+    <div class="w-full bg-dark-950 rounded-full h-2 p-0.5 border border-amber-500/30 overflow-hidden mb-2">
+      <div id="rebootProgressBar" class="h-full rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 transition-all duration-300 shadow-[0_0_8px_rgba(245,158,11,0.5)]" style="width: 100%"></div>
+    </div>
+    <!-- 3-Step Stepper -->
+    <div class="grid grid-cols-3 gap-1 text-[9px] text-center mb-2" id="rebootStepperContainer">
+      <div id="rebootStep_1" class="p-1 rounded bg-amber-900/50 border border-amber-700/60 text-amber-200 font-bold">1. Broadcast</div>
+      <div id="rebootStep_2" class="p-1 rounded bg-dark-900/60 border border-slate-800 text-slate-400">2. Save</div>
+      <div id="rebootStep_3" class="p-1 rounded bg-dark-900/60 border border-slate-800 text-slate-400">3. Restart</div>
+    </div>
     <div id="countdownActions" class="flex justify-end pt-2 border-t border-amber-500/30">
       <button id="cancelRebootBtn" onclick="cancelReboot()" class="px-3 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-lg shadow-rose-950/50">
         🛑 Cancel Reboot
@@ -1431,6 +1537,21 @@
             <button type="button" id="btnRenewTlsNow" onclick="triggerTlsRenewal()" class="px-3.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-bold transition flex items-center gap-1.5 shadow-lg shadow-brand-500/20 text-xs">
               <span>🔄</span> Renew Certificate Now
             </button>
+          <!-- TLS Renewal Progression & Shimmer Progress Bar -->
+          <div id="tlsProgressSection" class="hidden space-y-2 pt-2 border-t border-slate-800">
+            <div class="flex justify-between items-center text-[10px]">
+              <span class="text-slate-400">Renewal Progress: <span id="tlsPercentText" class="font-bold text-emerald-400">0%</span></span>
+              <span class="text-slate-400">Elapsed: <span id="tlsElapsedTimer" class="text-slate-200">00:00</span></span>
+            </div>
+            <div class="w-full bg-dark-950 rounded-full h-2.5 p-0.5 border border-slate-700/80 overflow-hidden">
+              <div id="tlsProgressBar" class="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500 transition-all duration-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]" style="width: 0%"></div>
+            </div>
+            <div id="tlsStepperContainer" class="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px] text-center pt-1">
+              <div id="tlsStep_1" class="p-1.5 rounded-lg bg-dark-900 border border-slate-800 text-slate-400">1. Domain Config</div>
+              <div id="tlsStep_2" class="p-1.5 rounded-lg bg-dark-900 border border-slate-800 text-slate-400">2. DNS Challenge</div>
+              <div id="tlsStep_3" class="p-1.5 rounded-lg bg-dark-900 border border-slate-800 text-slate-400">3. Staging &amp; ACLs</div>
+              <div id="tlsStep_4" class="p-1.5 rounded-lg bg-dark-900 border border-slate-800 text-slate-400">4. Chain Validation</div>
+            </div>
           </div>
           <div id="tlsRenewalOutput" class="hidden text-[11px] font-mono p-2 rounded-lg bg-dark-900 border border-slate-800 max-h-24 overflow-y-auto"></div>
         </div>
@@ -1553,7 +1674,8 @@
         </h3>
         <button onclick="closeUpdateModal()" class="text-slate-400 hover:text-white text-sm font-bold p-1">✕</button>
       </div>
-      <div class="space-y-3 text-xs text-slate-300 font-mono">
+      <!-- Preflight Confirmation View -->
+      <div id="updateModalPreflightView" class="space-y-3 text-xs text-slate-300 font-mono">
         <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl space-y-2">
           <div class="flex justify-between items-center text-[11px]">
             <span class="text-slate-400">Current Commit:</span>
@@ -1586,15 +1708,94 @@
         </div>
 
         <div id="updateModalError" class="hidden p-2.5 bg-rose-950/60 border border-rose-800 text-rose-300 rounded-lg text-xs font-mono"></div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+          <button type="button" onclick="closeUpdateModal()" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition">
+            Cancel
+          </button>
+          <button type="button" id="confirmUpdateBtn" onclick="confirmApplyUpdate()" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold font-mono transition flex items-center gap-1.5 shadow-lg shadow-indigo-500/20">
+            <span>⚡</span> Confirm &amp; Apply Update
+          </button>
+        </div>
       </div>
 
-      <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
-        <button type="button" onclick="closeUpdateModal()" class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition">
-          Cancel
-        </button>
-        <button type="button" id="confirmUpdateBtn" onclick="confirmApplyUpdate()" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold font-mono transition flex items-center gap-1.5 shadow-lg shadow-indigo-500/20">
-          <span>⚡</span> Confirm &amp; Apply Update
-        </button>
+      <!-- Live Deployment Progression View -->
+      <div id="updateModalProgressView" class="hidden space-y-4 font-mono text-xs">
+        <!-- Progress Header & Timers -->
+        <div class="p-3.5 bg-dark-950 border border-slate-800 rounded-xl space-y-2">
+          <div class="flex items-center justify-between">
+            <span id="deployProgressStepBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Step 1 of 5</span>
+            <div class="flex items-center gap-3 text-[11px] text-slate-400">
+              <span>Elapsed: <strong id="deployElapsedTimer" class="text-slate-200">00:00</strong></span>
+              <span>Est. Remaining: <strong id="deployEtaTimer" class="text-indigo-300">~45s</strong></span>
+            </div>
+          </div>
+          <p id="deployProgressTitle" class="text-sm font-bold text-white tracking-tight">Deploying update...</p>
+
+          <!-- Glowing Shimmer Progress Bar -->
+          <div class="w-full bg-dark-900 rounded-full h-3 p-0.5 border border-slate-700/80 overflow-hidden relative">
+            <div id="deployProgressBar" class="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500 transition-all duration-500 ease-out shadow-[0_0_12px_rgba(99,102,241,0.5)]" style="width: 0%"></div>
+          </div>
+          <div class="flex justify-between items-center text-[10px] text-slate-400">
+            <span>Overall Deployment Progress</span>
+            <span id="deployPercentText" class="font-bold text-emerald-400">0%</span>
+          </div>
+        </div>
+
+        <!-- 5-Step Numbered Stepper -->
+        <div id="deployStepperContainer" class="space-y-1.5">
+          <div id="deployStep_1" class="flex items-center gap-3 p-2 rounded-xl bg-dark-950 border border-slate-800 transition">
+            <div id="deployStepIcon_1" class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-300">1</div>
+            <div class="flex-1">
+              <div class="flex justify-between items-center"><span class="font-bold text-slate-200">Pull Repository</span><span id="deployStepStatus_1" class="text-[10px] text-slate-400">Pending</span></div>
+              <p class="text-[10px] text-slate-400">Fetch latest commits from upstream git origin</p>
+            </div>
+          </div>
+          <div id="deployStep_2" class="flex items-center gap-3 p-2 rounded-xl bg-dark-950 border border-slate-800 transition">
+            <div id="deployStepIcon_2" class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-300">2</div>
+            <div class="flex-1">
+              <div class="flex justify-between items-center"><span class="font-bold text-slate-200">Sync Code &amp; Units</span><span id="deployStepStatus_2" class="text-[10px] text-slate-400">Pending</span></div>
+              <p class="text-[10px] text-slate-400">Synchronize app tree and systemd unit files</p>
+            </div>
+          </div>
+          <div id="deployStep_3" class="flex items-center gap-3 p-2 rounded-xl bg-dark-950 border border-slate-800 transition">
+            <div id="deployStepIcon_3" class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-300">3</div>
+            <div class="flex-1">
+              <div class="flex justify-between items-center"><span class="font-bold text-slate-200">POSIX ACLs &amp; Storage</span><span id="deployStepStatus_3" class="text-[10px] text-slate-400">Pending</span></div>
+              <p class="text-[10px] text-slate-400">Enforce cross-user permissions and state storage</p>
+            </div>
+          </div>
+          <div id="deployStep_4" class="flex items-center gap-3 p-2 rounded-xl bg-dark-950 border border-slate-800 transition">
+            <div id="deployStepIcon_4" class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-300">4</div>
+            <div class="flex-1">
+              <div class="flex justify-between items-center"><span class="font-bold text-slate-200">Dependencies</span><span id="deployStepStatus_4" class="text-[10px] text-slate-400">Pending</span></div>
+              <p class="text-[10px] text-slate-400">Install and verify Python packages with uv</p>
+            </div>
+          </div>
+          <div id="deployStep_5" class="flex items-center gap-3 p-2 rounded-xl bg-dark-950 border border-slate-800 transition">
+            <div id="deployStepIcon_5" class="w-6 h-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-300">5</div>
+            <div class="flex-1">
+              <div class="flex justify-between items-center"><span class="font-bold text-slate-200">Restart Daemon</span><span id="deployStepStatus_5" class="text-[10px] text-slate-400">Pending</span></div>
+              <p class="text-[10px] text-slate-400">Cleanly restart palworld-manager.service</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Log Terminal Console -->
+        <div class="space-y-1">
+          <div class="flex justify-between items-center text-[10px] font-mono text-slate-400">
+            <span>Terminal Output</span>
+            <span>deploy.log</span>
+          </div>
+          <pre id="deployLogTail" class="bg-dark-950 border border-slate-800 rounded-xl p-3 text-[11px] font-mono text-slate-300 max-h-28 overflow-y-auto whitespace-pre-wrap select-all">Waiting for deployment stream...</pre>
+        </div>
+
+        <div class="flex justify-between items-center pt-2 border-t border-slate-800">
+          <span class="text-[10px] text-slate-500 font-mono">Deployment runs autonomously in background</span>
+          <button type="button" onclick="closeUpdateModal()" class="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 transition">
+            Close / Run in Background
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -2505,6 +2706,11 @@
     function updateLifecycle(state) {
       const banner = document.getElementById('countdownBanner');
       const cancelBtn = document.getElementById('cancelRebootBtn');
+      const bar = document.getElementById('rebootProgressBar');
+      const s1 = document.getElementById('rebootStep_1');
+      const s2 = document.getElementById('rebootStep_2');
+      const s3 = document.getElementById('rebootStep_3');
+
       if (state.phase === 'COUNTDOWN') {
         banner.classList.remove('hidden');
         if (cancelBtn) cancelBtn.classList.remove('hidden');
@@ -2512,11 +2718,32 @@
         const secs = state.remaining_seconds % 60;
         document.getElementById('countdownTimerText').innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
         document.getElementById('countdownMsg').innerText = state.current_broadcast || 'Reboot sequence initiated...';
-      } else if (state.phase === 'SAVING' || state.phase === 'MAINTENANCE' || state.phase === 'PROBING') {
+
+        const totalSecs = window.lastRebootTotalSeconds || 600;
+        const pct = Math.max(5, Math.min(100, Math.round((state.remaining_seconds / totalSecs) * 100)));
+        if (bar) bar.style.width = `${pct}%`;
+
+        if (s1) { s1.className = "p-1 rounded bg-amber-900/50 border border-amber-700/60 text-amber-200 font-bold"; }
+        if (s2) { s2.className = "p-1 rounded bg-dark-900/60 border border-slate-800 text-slate-400"; }
+        if (s3) { s3.className = "p-1 rounded bg-dark-900/60 border border-slate-800 text-slate-400"; }
+      } else if (state.phase === 'SAVING') {
+        banner.classList.remove('hidden');
+        if (cancelBtn) cancelBtn.classList.add('hidden');
+        document.getElementById('countdownTimerText').innerText = 'SAVING';
+        document.getElementById('countdownMsg').innerText = state.current_broadcast || 'Saving world state and player progress...';
+        if (bar) bar.style.width = '60%';
+        if (s1) { s1.className = "p-1 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-300 font-semibold"; }
+        if (s2) { s2.className = "p-1 rounded bg-amber-900/50 border border-amber-700/60 text-amber-200 font-bold animate-pulse"; }
+        if (s3) { s3.className = "p-1 rounded bg-dark-900/60 border border-slate-800 text-slate-400"; }
+      } else if (state.phase === 'MAINTENANCE' || state.phase === 'PROBING') {
         banner.classList.remove('hidden');
         if (cancelBtn) cancelBtn.classList.add('hidden');
         document.getElementById('countdownTimerText').innerText = state.phase;
-        document.getElementById('countdownMsg').innerText = state.current_broadcast || 'Processing server restart...';
+        document.getElementById('countdownMsg').innerText = state.current_broadcast || 'Restarting service daemon & validating server health...';
+        if (bar) bar.style.width = '90%';
+        if (s1) { s1.className = "p-1 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-300 font-semibold"; }
+        if (s2) { s2.className = "p-1 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-300 font-semibold"; }
+        if (s3) { s3.className = "p-1 rounded bg-indigo-900/50 border border-indigo-700/60 text-indigo-200 font-bold animate-pulse"; }
       } else {
         banner.classList.add('hidden');
       }
@@ -2551,6 +2778,7 @@
         const parsed = parseInt(selectVal, 10);
         secs = Number.isNaN(parsed) ? 600 : parsed;
       }
+      window.lastRebootTotalSeconds = secs || 60;
       const update = isInstantUpdate || document.getElementById('updateCheck').checked;
       closeRebootModal();
 
@@ -3575,6 +3803,15 @@
 
     let latestUpdateStatus = null;
     let updateBannerDismissed = false;
+    let deployPollInterval = null;
+    let deployPollAttempts = 0;
+    let tlsRenewalTimerInterval = null;
+
+    function formatDuration(secs) {
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
 
     async function checkSystemUpdateStatus(force = false) {
       const manualBtn = document.getElementById('manualCheckUpdateBtn');
@@ -3598,11 +3835,41 @@
         const data = await res.json();
         latestUpdateStatus = data;
 
-        const banner = document.getElementById('updateBanner');
+        // 1. Post-Update Automated Reporting & Celebration Banner
+        const successBanner = document.getElementById('postUpdateSuccessBanner');
+        const failedBanner = document.getElementById('postUpdateFailedBanner');
+        const updateBanner = document.getElementById('updateBanner');
         const badge = document.getElementById('updateCommitsBadge');
         const msgText = document.getElementById('updateMessageText');
 
-        if (data.update_available && !updateBannerDismissed) {
+        if (data.last_update && !data.last_update.acknowledged) {
+          if (data.last_update.status === 'success') {
+            if (successBanner) {
+              const shortSha = data.last_update.applied_commit ? data.last_update.applied_commit.substring(0, 7) : 'vNext';
+              const shaBadge = document.getElementById('postUpdateShaBadge');
+              const durBadge = document.getElementById('postUpdateDurationBadge');
+              const succMsg = document.getElementById('postUpdateSuccessMsg');
+              if (shaBadge) shaBadge.innerText = shortSha;
+              if (durBadge) durBadge.innerText = `${data.last_update.duration_seconds || 0}s`;
+              if (succMsg) succMsg.innerText = data.last_update.commit_summary ? `[${shortSha}] ${data.last_update.commit_summary}` : 'Update applied and services restarted cleanly.';
+              successBanner.classList.remove('hidden');
+            }
+            if (failedBanner) failedBanner.classList.add('hidden');
+          } else if (data.last_update.status === 'failed') {
+            if (failedBanner) {
+              const failMsg = document.getElementById('postUpdateFailedMsg');
+              if (failMsg) failMsg.innerText = data.last_update.error_message || 'Deployment encountered an error during execution.';
+              failedBanner.classList.remove('hidden');
+            }
+            if (successBanner) successBanner.classList.add('hidden');
+          }
+        } else {
+          if (successBanner) successBanner.classList.add('hidden');
+          if (failedBanner) failedBanner.classList.add('hidden');
+        }
+
+        // 2. Upstream Update Notification Banner
+        if (data.update_available && !updateBannerDismissed && !(data.last_update && !data.last_update.acknowledged && data.last_update.status === 'success')) {
           if (badge) {
             badge.innerText = data.commits_behind > 0 
               ? `${data.commits_behind} commit${data.commits_behind > 1 ? 's' : ''} behind`
@@ -3613,12 +3880,12 @@
             const msg = data.remote_commit_message || 'A new update is available upstream.';
             msgText.innerText = shortSha ? `[${shortSha}] ${msg}` : msg;
           }
-          if (banner) banner.classList.remove('hidden');
+          if (updateBanner) updateBanner.classList.remove('hidden');
         } else {
-          if (banner) banner.classList.add('hidden');
+          if (updateBanner) updateBanner.classList.add('hidden');
         }
 
-        // Populate dedicated #page_updates dashboard tab
+        // 3. Populate dedicated #page_updates dashboard tab
         const curEl = document.getElementById('updateCurrentCommit');
         const remEl = document.getElementById('updateLatestCommit');
         const brEl = document.getElementById('updateBranch');
@@ -3630,8 +3897,10 @@
         if (curEl) curEl.innerText = data.current_commit ? data.current_commit.substring(0, 7) : 'Unknown';
         if (remEl) remEl.innerText = data.remote_commit ? data.remote_commit.substring(0, 7) : 'Unknown';
         if (brEl) brEl.innerText = data.target_branch || 'main';
+
+        const isJustUpdated = data.last_update && !data.last_update.acknowledged && data.last_update.status === 'success';
         if (statusEl) {
-          if (data.update_available) {
+          if (data.update_available && !isJustUpdated) {
             statusEl.innerText = 'Update Available';
             statusEl.className = 'font-bold text-amber-400 animate-pulse';
           } else {
@@ -3646,7 +3915,7 @@
           lastCheckedEl.innerText = new Date().toLocaleTimeString();
         }
         if (behindEl) {
-          const behindCount = data.commits_behind || 0;
+          const behindCount = isJustUpdated ? 0 : (data.commits_behind || 0);
           behindEl.innerText = `${behindCount} commit${behindCount === 1 ? '' : 's'} behind`;
           behindEl.className = behindCount > 0 ? 'font-bold text-amber-300' : 'font-bold text-slate-400';
         }
@@ -3660,14 +3929,31 @@
       }
     }
 
+    async function acknowledgePostUpdate() {
+      try {
+        const res = await fetch('/api/system/update/acknowledge', { method: 'POST' });
+        if (res.ok) {
+          document.getElementById('postUpdateSuccessBanner')?.classList.add('hidden');
+          document.getElementById('postUpdateFailedBanner')?.classList.add('hidden');
+          checkSystemUpdateStatus(true);
+        }
+      } catch (err) {
+        console.debug('Failed to acknowledge post update:', err);
+      }
+    }
+
     function dismissUpdateBanner() {
       updateBannerDismissed = true;
       const banner = document.getElementById('updateBanner');
       if (banner) banner.classList.add('hidden');
     }
 
-    function openUpdateModal() {
-      const modal = document.getElementById('updateModal');
+    function showDeployPreflightView() {
+      const preflight = document.getElementById('updateModalPreflightView');
+      const progress = document.getElementById('updateModalProgressView');
+      if (preflight) preflight.classList.remove('hidden');
+      if (progress) progress.classList.add('hidden');
+
       const errBox = document.getElementById('updateModalError');
       if (errBox) {
         errBox.classList.add('hidden');
@@ -3698,13 +3984,47 @@
           }
         }
       }
+    }
 
+    function showDeployProgressionView(prog = null) {
+      const preflight = document.getElementById('updateModalPreflightView');
+      const progress = document.getElementById('updateModalProgressView');
+      if (preflight) preflight.classList.add('hidden');
+      if (progress) progress.classList.remove('hidden');
+      if (prog) {
+        renderDeploymentProgress(prog);
+      }
+    }
+
+    async function openUpdateModal() {
+      const modal = document.getElementById('updateModal');
       if (modal) modal.classList.remove('hidden');
+
+      // Auto-attachment check: if deployment is running, attach directly to live view
+      try {
+        const res = await fetch('/api/system/deploy/progress');
+        if (res.ok) {
+          const prog = await res.json();
+          if (prog.active) {
+            showDeployProgressionView(prog);
+            startDeployProgressPolling();
+            return;
+          }
+        }
+      } catch (err) {
+        console.debug('Error probing deployment progress on modal open:', err);
+      }
+
+      showDeployPreflightView();
     }
 
     function closeUpdateModal() {
       const modal = document.getElementById('updateModal');
       if (modal) modal.classList.add('hidden');
+      if (deployPollInterval) {
+        clearInterval(deployPollInterval);
+        deployPollInterval = null;
+      }
     }
 
     async function confirmApplyUpdate() {
@@ -3735,9 +4055,9 @@
           return;
         }
 
-        closeUpdateModal();
-        showUpdateOverlay();
-        pollReconnection();
+        // Successfully dispatched update -> transition to progression view
+        showDeployProgressionView();
+        startDeployProgressPolling();
       } catch (err) {
         if (errBox) {
           errBox.innerText = 'Network error while dispatching update: ' + err;
@@ -3746,6 +4066,140 @@
           alert('Network error: ' + err);
         }
         if (confirmBtn) confirmBtn.disabled = false;
+      }
+    }
+
+    function startDeployProgressPolling() {
+      if (deployPollInterval) clearInterval(deployPollInterval);
+      deployPollAttempts = 0;
+      pollDeployProgress();
+      deployPollInterval = setInterval(pollDeployProgress, 1000);
+    }
+
+    async function pollDeployProgress() {
+      deployPollAttempts++;
+      try {
+        const res = await fetch('/api/system/deploy/progress', { cache: 'no-store' });
+        if (!res.ok) {
+          // If server restarted and returned 502/refused, transition to reconnection overlay
+          if (deployPollAttempts > 5) {
+            if (deployPollInterval) clearInterval(deployPollInterval);
+            closeUpdateModal();
+            showUpdateOverlay();
+            pollReconnection();
+          }
+          return;
+        }
+
+        const prog = await res.json();
+        renderDeploymentProgress(prog);
+
+        if (!prog.active) {
+          if (prog.last_update && prog.last_update.status === 'success') {
+            // Update finished successfully, hand off to reconnection
+            if (deployPollInterval) clearInterval(deployPollInterval);
+            setTimeout(() => {
+              closeUpdateModal();
+              showUpdateOverlay();
+              pollReconnection();
+            }, 1500);
+          } else if (prog.last_update && prog.last_update.status === 'failed') {
+            if (deployPollInterval) clearInterval(deployPollInterval);
+            const titleEl = document.getElementById('deployProgressTitle');
+            if (titleEl) {
+              titleEl.innerText = `Deployment failed: ${prog.last_update.error_message || 'Unknown error'}`;
+              titleEl.className = 'text-sm font-bold text-rose-400 tracking-tight';
+            }
+          }
+        }
+      } catch (e) {
+        // Network dropped because systemd service is restarting!
+        if (deployPollAttempts > 3) {
+          if (deployPollInterval) clearInterval(deployPollInterval);
+          closeUpdateModal();
+          showUpdateOverlay();
+          pollReconnection();
+        }
+      }
+    }
+
+    function renderDeploymentProgress(prog) {
+      const pBar = document.getElementById('deployProgressBar');
+      const pText = document.getElementById('deployPercentText');
+      const elTimer = document.getElementById('deployElapsedTimer');
+      const etaTimer = document.getElementById('deployEtaTimer');
+      const stepBadge = document.getElementById('deployProgressStepBadge');
+      const title = document.getElementById('deployProgressTitle');
+      const logTail = document.getElementById('deployLogTail');
+
+      const pct = Math.max(0, Math.min(100, prog.percentage || 0));
+      if (pBar) pBar.style.width = `${pct}%`;
+      if (pText) pText.innerText = `${pct}%`;
+      if (elTimer) elTimer.innerText = formatDuration(prog.elapsed_seconds || 0);
+      if (etaTimer) {
+        etaTimer.innerText = (prog.estimated_remaining_seconds !== null && prog.estimated_remaining_seconds !== undefined)
+          ? `~${prog.estimated_remaining_seconds}s`
+          : (pct >= 100 ? '0s' : '--');
+      }
+      if (stepBadge) stepBadge.innerText = `Step ${prog.current_step || 1} of 5`;
+
+      const stepNames = [
+        'Pulling latest repository updates...',
+        'Syncing application code & systemd units...',
+        'Enforcing POSIX ACLs & storage permissions...',
+        'Installing & updating Python dependencies...',
+        'Restarting portal daemon service...'
+      ];
+      if (title) {
+        if (pct >= 100) {
+          title.innerText = 'Deployment finished! Restarting portal...';
+          title.className = 'text-sm font-bold text-emerald-400 tracking-tight';
+        } else {
+          title.innerText = stepNames[(prog.current_step || 1) - 1] || 'Deploying update...';
+          title.className = 'text-sm font-bold text-white tracking-tight';
+        }
+      }
+
+      // Update 5 steps
+      if (prog.steps && prog.steps.length) {
+        prog.steps.forEach(step => {
+          const stepEl = document.getElementById(`deployStep_${step.index}`);
+          const iconEl = document.getElementById(`deployStepIcon_${step.index}`);
+          const statusEl = document.getElementById(`deployStepStatus_${step.index}`);
+
+          if (!stepEl || !iconEl || !statusEl) return;
+
+          if (step.status === 'completed') {
+            iconEl.className = 'w-6 h-6 rounded-full bg-emerald-900/60 border border-emerald-500 text-emerald-300 flex items-center justify-center text-[11px] font-bold';
+            iconEl.innerHTML = '✓';
+            statusEl.innerText = 'Completed';
+            statusEl.className = 'text-[10px] font-bold text-emerald-400';
+            stepEl.className = 'flex items-center gap-3 p-2 rounded-xl bg-dark-950 border border-emerald-900/40 transition';
+          } else if (step.status === 'running') {
+            iconEl.className = 'w-6 h-6 rounded-full bg-indigo-900/70 border border-indigo-400 text-indigo-200 flex items-center justify-center text-[10px] font-bold animate-pulse';
+            iconEl.innerHTML = '⟳';
+            statusEl.innerText = 'Running...';
+            statusEl.className = 'text-[10px] font-bold text-indigo-300 animate-pulse';
+            stepEl.className = 'flex items-center gap-3 p-2 rounded-xl bg-indigo-950/20 border border-indigo-500/40 shadow-sm transition';
+          } else if (step.status === 'failed') {
+            iconEl.className = 'w-6 h-6 rounded-full bg-rose-900/70 border border-rose-500 text-rose-200 flex items-center justify-center text-[11px] font-bold';
+            iconEl.innerHTML = '✕';
+            statusEl.innerText = 'Failed';
+            statusEl.className = 'text-[10px] font-bold text-rose-400';
+            stepEl.className = 'flex items-center gap-3 p-2 rounded-xl bg-rose-950/30 border border-rose-800 transition';
+          } else {
+            iconEl.className = 'w-6 h-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-400';
+            iconEl.innerHTML = `${step.index}`;
+            statusEl.innerText = 'Pending';
+            statusEl.className = 'text-[10px] text-slate-500';
+            stepEl.className = 'flex items-center gap-3 p-2 rounded-xl bg-dark-950 border border-slate-800 transition';
+          }
+        });
+      }
+
+      if (logTail && prog.log_tail && prog.log_tail.length) {
+        logTail.innerText = prog.log_tail.join('\n');
+        logTail.scrollTop = logTail.scrollHeight;
       }
     }
 
@@ -3814,7 +4268,7 @@
           }
         }
 
-        // Security card in Section 3
+        // Security card in Tab 3 (Section 3)
         const secTlsBadge = document.getElementById('secTlsBadge');
         if (secTlsBadge) {
           if (data.enabled) {
@@ -3834,6 +4288,40 @@
         if (document.getElementById('secTlsAutoRenew')) {
           document.getElementById('secTlsAutoRenew').innerText = data.auto_renew_active ? "Active (Systemd/Cron)" : "Inactive";
           document.getElementById('secTlsAutoRenew').className = data.auto_renew_active ? "text-emerald-400" : "text-slate-400";
+        }
+
+        // Tab 8: Updates TLS Card
+        const updDomain = document.getElementById('updatesTlsDomain');
+        const updIssuer = document.getElementById('updatesTlsIssuer');
+        const updBadge = document.getElementById('updatesTlsBadge');
+        const updAuto = document.getElementById('updatesTlsAutoRenew');
+        if (updDomain) updDomain.innerText = data.domain || '--';
+        if (updIssuer) updIssuer.innerText = data.certificate ? data.certificate.issuer : 'None (Plaintext)';
+        if (updBadge) {
+          if (data.enabled) {
+            updBadge.innerText = `Active (HTTPS) - ${data.certificate ? data.certificate.days_remaining + 'd valid' : 'Valid'}`;
+            updBadge.className = 'font-bold text-emerald-400 truncate block';
+          } else {
+            updBadge.innerText = 'HTTP (Plaintext)';
+            updBadge.className = 'font-bold text-amber-400 truncate block';
+          }
+        }
+        if (updAuto) {
+          updAuto.innerText = data.auto_renew_active ? 'Active (Twice Daily)' : 'Inactive';
+          updAuto.className = data.auto_renew_active ? 'font-bold text-emerald-400 truncate block' : 'font-bold text-slate-400 truncate block';
+        }
+
+        // Tab 1: Settings TLS Quick Card
+        const setDomain = document.getElementById('settingsTlsDomain');
+        const setIssuer = document.getElementById('settingsTlsIssuer');
+        const setExpiry = document.getElementById('settingsTlsExpiry');
+        const setBadge = document.getElementById('settingsTlsBadge');
+        if (setDomain) setDomain.innerText = data.domain || '--';
+        if (setIssuer) setIssuer.innerText = data.certificate ? data.certificate.issuer : 'None';
+        if (setExpiry) setExpiry.innerText = data.certificate ? `${data.certificate.days_remaining}d remaining` : 'N/A';
+        if (setBadge) {
+          setBadge.innerText = data.enabled ? 'HTTPS' : 'HTTP';
+          setBadge.className = data.enabled ? 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/60 text-emerald-300' : 'px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/60 text-amber-300';
         }
 
         // Modal fields
@@ -3885,21 +4373,61 @@
     function closeTlsModal() {
       const modal = document.getElementById('tlsModal');
       if (modal) modal.classList.add('hidden');
+      if (tlsRenewalTimerInterval) {
+        clearInterval(tlsRenewalTimerInterval);
+        tlsRenewalTimerInterval = null;
+      }
     }
 
     async function triggerTlsRenewal() {
       const btn = document.getElementById('btnRenewTlsNow');
       const out = document.getElementById('tlsRenewalOutput');
       const force = Boolean(document.getElementById('tlsForceEarlyRenewalCheck')?.checked);
+      const progSec = document.getElementById('tlsProgressSection');
+      const pBar = document.getElementById('tlsProgressBar');
+      const pText = document.getElementById('tlsPercentText');
+      const elTimer = document.getElementById('tlsElapsedTimer');
+      const s1 = document.getElementById('tlsStep_1');
+      const s2 = document.getElementById('tlsStep_2');
+      const s3 = document.getElementById('tlsStep_3');
+      const s4 = document.getElementById('tlsStep_4');
+
       if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span>⏳</span> Renewing...`;
+        btn.innerHTML = '<span>⏳</span> Renewing...';
       }
+      if (progSec) progSec.classList.remove('hidden');
       if (out) {
         out.classList.remove('hidden');
         out.innerText = "Initiating certificate renewal via Let's Encrypt...";
         out.className = "text-[11px] font-mono p-2 rounded-lg bg-dark-900 border border-slate-700 text-slate-300 max-h-24 overflow-y-auto";
       }
+
+      let elapsed = 0;
+      if (elTimer) elTimer.innerText = '00:00';
+      if (pBar) pBar.style.width = '25%';
+      if (pText) pText.innerText = '25%';
+      if (s1) s1.className = 'p-1.5 rounded-lg bg-indigo-950/60 border border-indigo-500 text-indigo-300 font-bold animate-pulse';
+      if (s2) s2.className = 'p-1.5 rounded-lg bg-dark-900 border border-slate-800 text-slate-400';
+      if (s3) s3.className = 'p-1.5 rounded-lg bg-dark-900 border border-slate-800 text-slate-400';
+      if (s4) s4.className = 'p-1.5 rounded-lg bg-dark-900 border border-slate-800 text-slate-400';
+
+      if (tlsRenewalTimerInterval) clearInterval(tlsRenewalTimerInterval);
+      tlsRenewalTimerInterval = setInterval(() => {
+        elapsed++;
+        if (elTimer) elTimer.innerText = formatDuration(elapsed);
+        if (elapsed === 2) {
+          if (s1) s1.className = 'p-1.5 rounded-lg bg-emerald-950/60 border border-emerald-600 text-emerald-300 font-semibold';
+          if (s2) s2.className = 'p-1.5 rounded-lg bg-indigo-950/60 border border-indigo-500 text-indigo-300 font-bold animate-pulse';
+          if (pBar) pBar.style.width = '50%';
+          if (pText) pText.innerText = '50%';
+        } else if (elapsed === 5) {
+          if (s2) s2.className = 'p-1.5 rounded-lg bg-emerald-950/60 border border-emerald-600 text-emerald-300 font-semibold';
+          if (s3) s3.className = 'p-1.5 rounded-lg bg-indigo-950/60 border border-indigo-500 text-indigo-300 font-bold animate-pulse';
+          if (pBar) pBar.style.width = '75%';
+          if (pText) pText.innerText = '75%';
+        }
+      }, 1000);
 
       try {
         const res = await fetch('/api/system/tls/renew', {
@@ -3909,6 +4437,11 @@
         });
         const data = await res.json();
         if (res.ok && data.status === 'success') {
+          if (pBar) pBar.style.width = '100%';
+          if (pText) pText.innerText = '100%';
+          [s1, s2, s3, s4].forEach(s => {
+            if (s) s.className = 'p-1.5 rounded-lg bg-emerald-950/60 border border-emerald-600 text-emerald-300 font-semibold';
+          });
           if (out) {
             out.innerText = `✅ ${data.message}`;
             out.className = "text-[11px] font-mono p-2 rounded-lg bg-emerald-950/40 border border-emerald-800 text-emerald-300 max-h-24 overflow-y-auto";
@@ -3916,6 +4449,7 @@
           fetchTlsStatus();
           showAlert('Certificate successfully renewed!');
         } else {
+          if (s4) s4.className = 'p-1.5 rounded-lg bg-rose-950/60 border border-rose-600 text-rose-300 font-bold';
           if (out) {
             out.innerText = `[-] ${data.detail || data.message || 'Renewal failed.'}`;
             out.className = "text-[11px] font-mono p-2 rounded-lg bg-red-950/40 border border-red-800 text-red-300 max-h-24 overflow-y-auto";
@@ -3929,9 +4463,13 @@
         }
         showAlert('Network error while requesting certificate renewal.', true);
       } finally {
+        if (tlsRenewalTimerInterval) {
+          clearInterval(tlsRenewalTimerInterval);
+          tlsRenewalTimerInterval = null;
+        }
         if (btn) {
           btn.disabled = false;
-          btn.innerHTML = `<span>🔄</span> Renew Certificate Now`;
+          btn.innerHTML = '<span>🔄</span> Renew Certificate Now';
         }
       }
     }

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import os
 import re
 import shutil
@@ -16,16 +17,23 @@ import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import httpx
 from fastapi import HTTPException
 
-from app.api.schemas import UpdateApplyResponse, UpdateStatusResponse
+from app.api.schemas import (
+    DeploymentProgressResponse,
+    DeploymentStepInfo,
+    PostUpdateSummary,
+    UpdateApplyResponse,
+    UpdateStatusResponse,
+)
 from app.core.logger import log
 
 DEFAULT_UPDATE_LOCK_FILE: Path = Path(tempfile.gettempdir()) / "palmanager_update.lock"
+DEFAULT_POST_UPDATE_FILE: Path = Path("/var/lib/palmanager/last_update.json")
 STALE_LOCK_TIMEOUT_SECONDS: float = 1800.0  # 30 minutes
 
 
@@ -43,6 +51,25 @@ def _resolve_default_deploy_log_path() -> Path:
     fallback_dir = Path.home() / ".palmanager" / "logs"
     fallback_dir.mkdir(parents=True, exist_ok=True)
     return fallback_dir / "deploy.log"
+
+
+def _resolve_post_update_file_path(repo_dir: Path | None = None) -> Path:
+    """Returns the readable destination path for post-update summary record."""
+    candidates = [
+        Path("/var/lib/palmanager/last_update.json"),
+        Path.home() / ".palmanager" / "last_update.json",
+    ]
+    if repo_dir:
+        candidates.append(repo_dir / "last_update.json")
+
+    for cand in candidates:
+        if cand.is_file():
+            return cand
+    if os.name == "nt":
+        log_dir = Path.home() / ".palmanager"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir / "last_update.json"
+    return candidates[0]
 
 
 def _spawn_detached_deployer(deploy_script: Path, target_branch: str) -> None:
@@ -104,6 +131,8 @@ class UpdateWatcher:
         lock_file: Path | str | None = None,
         repo_dir: Path | str | None = None,
         command_runner: Callable[..., Any] | None = None,
+        post_update_file: Path | str | None = None,
+        deploy_log_path: Path | str | None = None,
     ) -> None:
         """Initializes the UpdateWatcher service.
 
@@ -115,6 +144,8 @@ class UpdateWatcher:
             lock_file: Optional override path to mutual exclusion lock file.
             repo_dir: Local repository directory root.
             command_runner: Optional test hook overriding detached subprocess dispatch.
+            post_update_file: Optional override path to post-update metadata JSON file.
+            deploy_log_path: Optional override path to deploy.log execution log file.
         """
         self.repo_url = repo_url
         self.branch = branch
@@ -123,6 +154,10 @@ class UpdateWatcher:
         self.lock_file = Path(lock_file) if lock_file else DEFAULT_UPDATE_LOCK_FILE
         self.repo_dir = Path(repo_dir) if repo_dir else Path(__file__).parent.parent.parent
         self.command_runner = command_runner
+        self.post_update_file = (
+            Path(post_update_file) if post_update_file else _resolve_post_update_file_path(self.repo_dir)
+        )
+        self.deploy_log_path = Path(deploy_log_path) if deploy_log_path else None
 
         self._async_lock = asyncio.Lock()
         self._update_available: bool = False
@@ -350,6 +385,224 @@ class UpdateWatcher:
             last_checked=self._last_checked,
             update_in_progress=self.is_update_in_progress(),
             error=self._last_error,
+            last_update=self.get_last_update_summary(),
+        )
+
+    def get_last_update_summary(self) -> PostUpdateSummary | None:
+        """Inspects and returns the persisted post-update execution summary if present.
+
+        Returns:
+            PostUpdateSummary | None: Parsed summary DTO or None if unavailable/corrupted.
+        """
+        target = self.post_update_file
+        if not target.is_file():
+            target = _resolve_post_update_file_path(self.repo_dir)
+            if not target.is_file():
+                return None
+
+        try:
+            raw_text = target.read_text(encoding="utf-8").strip()
+            if not raw_text:
+                return None
+            data = json.loads(raw_text)
+            status_val: Literal["success", "failed"] = "failed" if data.get("status") == "failed" else "success"
+            return PostUpdateSummary(
+                status=status_val,
+                target_branch=str(data.get("target_branch", "main")),
+                deployed_commit=str(data.get("deployed_commit", "unknown")),
+                deployed_commit_short=str(data.get("deployed_commit_short", "unknown")),
+                deployed_at=str(data.get("deployed_at", "")),
+                duration_seconds=max(0, int(data.get("duration_seconds", 0))),
+                summary=str(data.get("summary", "")),
+                acknowledged=bool(data.get("acknowledged", False)),
+            )
+        except OSError as err:
+            log.warning("Filesystem error reading post-update summary from %s: %s", target, err)
+            return None
+        except json.JSONDecodeError as err:
+            log.warning("JSON decode error in post-update summary from %s: %s", target, err)
+            return None
+        except ValueError as err:
+            log.warning("Value error parsing post-update summary from %s: %s", target, err)
+            return None
+
+    def acknowledge_last_update(self) -> bool:
+        """Marks the post-update summary record as acknowledged by the operator.
+
+        Returns:
+            bool: True if updated successfully, False otherwise.
+        """
+        target = self.post_update_file
+        if not target.is_file():
+            target = _resolve_post_update_file_path(self.repo_dir)
+            if not target.is_file():
+                return False
+
+        try:
+            raw_text = target.read_text(encoding="utf-8").strip()
+            data = json.loads(raw_text)
+            data["acknowledged"] = True
+            target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            return True
+        except OSError as err:
+            log.warning("Filesystem error acknowledging post-update summary at %s: %s", target, err)
+            return False
+        except json.JSONDecodeError as err:
+            log.warning("JSON decode error acknowledging post-update summary at %s: %s", target, err)
+            return False
+        except ValueError as err:
+            log.warning("Value error acknowledging post-update summary at %s: %s", target, err)
+            return False
+
+    # pylint: disable=too-many-branches,too-many-statements,too-many-locals
+    # Rationale: Progression parsing aggregates lock metadata, multi-step log scanning, and ETA math.
+    def get_deployment_progress(self, log_path: Path | None = None) -> DeploymentProgressResponse:
+        """Parses active deployment progression, elapsed time, ETA, and tail logs.
+
+        Args:
+            log_path: Optional custom path to deployment log file.
+
+        Returns:
+            DeploymentProgressResponse: Live telemetry status.
+        """
+        is_active = self.is_update_in_progress()
+        last_update = self.get_last_update_summary()
+
+        default_steps = [
+            DeploymentStepInfo(index=1, name="Pulling latest updates from origin", status="pending"),
+            DeploymentStepInfo(index=2, name="Syncing application code & systemd units", status="pending"),
+            DeploymentStepInfo(index=3, name="Enforcing POSIX ACLs & storage permissions", status="pending"),
+            DeploymentStepInfo(index=4, name="Updating Python dependencies via uv", status="pending"),
+            DeploymentStepInfo(index=5, name="Restarting palworld-manager.service", status="pending"),
+        ]
+
+        if not is_active:
+            if last_update and not last_update.acknowledged:
+                for step in default_steps:
+                    step.status = "completed"
+                return DeploymentProgressResponse(
+                    operation="portal_update",
+                    active=False,
+                    current_step=5,
+                    total_steps=5,
+                    step_name="Deployment completed successfully",
+                    percentage=100,
+                    elapsed_seconds=last_update.duration_seconds,
+                    estimated_remaining_seconds=0,
+                    steps=default_steps,
+                    log_tail=[],
+                    last_update=last_update,
+                )
+            return DeploymentProgressResponse(
+                operation="none",
+                active=False,
+                current_step=0,
+                total_steps=5,
+                step_name="",
+                percentage=0,
+                elapsed_seconds=0,
+                estimated_remaining_seconds=None,
+                steps=default_steps,
+                log_tail=[],
+                last_update=last_update,
+            )
+
+        started_at: float | None = None
+        timestamp_fallback: float | None = None
+        operation: Literal["portal_update", "tls_certificate", "server_restart", "none"] = "portal_update"
+        if self.lock_file.is_file():
+            try:
+                content = self.lock_file.read_text(encoding="utf-8")
+                for line in content.splitlines():
+                    if line.startswith("started_at="):
+                        started_at = float(line.split("=", 1)[1].strip())
+                    elif line.startswith("timestamp="):
+                        timestamp_fallback = float(line.split("=", 1)[1].strip())
+                    elif line.startswith("operation="):
+                        op_val = line.split("=", 1)[1].strip()
+                        if op_val in ("portal_update", "tls_certificate", "server_restart", "none"):
+                            operation = op_val  # type: ignore[assignment]
+            except OSError as err:
+                log.debug("Filesystem error reading lock file metadata: %s", err)
+            except ValueError as err:
+                log.debug("Value error parsing lock file metadata: %s", err)
+
+        effective_start = started_at if started_at is not None else (timestamp_fallback or time.time())
+        elapsed_seconds = max(0, int(time.time() - effective_start))
+
+        target_log = log_path or self.deploy_log_path or _resolve_default_deploy_log_path()
+        log_lines: list[str] = []
+        if target_log.is_file():
+            try:
+                with open(target_log, encoding="utf-8", errors="replace") as f:
+                    log_lines = [line.rstrip() for line in f.readlines()[-30:]]
+            except OSError as err:
+                log.debug("Error reading deployment log %s: %s", target_log, err)
+
+        completed_steps: set[int] = set()
+        started_steps: set[int] = set()
+        step_pattern = re.compile(r"\[(?:STEP\s+)?(\d+)/(\d+)\]\s+(.*?)(?:\.\.\.|\s*$)")
+
+        for line in log_lines:
+            match = step_pattern.search(line)
+            if match:
+                idx = int(match.group(1))
+                started_steps.add(idx)
+            if "[ OK ]" in line:
+                match_ok = step_pattern.search(line)
+                if match_ok:
+                    completed_steps.add(int(match_ok.group(1)))
+                elif started_steps:
+                    completed_steps.add(max(started_steps))
+
+        current_step_idx = 1
+        for s in range(1, 6):
+            if s in completed_steps:
+                default_steps[s - 1].status = "completed"
+            elif s in started_steps:
+                default_steps[s - 1].status = "running"
+                current_step_idx = s
+            elif s == 1 and not started_steps:
+                default_steps[0].status = "running"
+                current_step_idx = 1
+            else:
+                default_steps[s - 1].status = "pending"
+
+        if completed_steps:
+            max_comp = max(completed_steps)
+            if max_comp < 5:
+                current_step_idx = max_comp + 1
+                if current_step_idx <= 5 and default_steps[current_step_idx - 1].status == "pending":
+                    default_steps[current_step_idx - 1].status = "running"
+            else:
+                current_step_idx = 5
+
+        current_step_name = default_steps[current_step_idx - 1].name if 1 <= current_step_idx <= 5 else ""
+
+        comp_count = len(completed_steps)
+        if comp_count == 5:
+            percent = 100
+        else:
+            base_pct = comp_count * 20
+            partial = 10 if default_steps[current_step_idx - 1].status == "running" else 0
+            percent = min(95, max(5, base_pct + partial))
+
+        estimated_remaining: int | None = max(5, 45 - elapsed_seconds)
+        if percent >= 95:
+            estimated_remaining = 5
+
+        return DeploymentProgressResponse(
+            operation=operation,
+            active=True,
+            current_step=current_step_idx,
+            total_steps=5,
+            step_name=current_step_name,
+            percentage=percent,
+            elapsed_seconds=elapsed_seconds,
+            estimated_remaining_seconds=estimated_remaining,
+            steps=default_steps,
+            log_tail=log_lines,
+            last_update=last_update,
         )
 
     async def apply_update(self, branch: str | None = None) -> UpdateApplyResponse:
@@ -377,10 +630,17 @@ class UpdateWatcher:
                     detail="An update deployment is already in progress.",
                 )
 
-            # Acquire lock file by writing current PID and timestamp
+            # Acquire lock file by writing current PID, timestamp, and metadata
             try:
                 self.lock_file.parent.mkdir(parents=True, exist_ok=True)
-                lock_payload = f"pid={os.getpid()}\ntimestamp={time.time()}\nbranch={target_branch}\n"
+                now_epoch = time.time()
+                lock_payload = (
+                    f"pid={os.getpid()}\n"
+                    f"started_at={now_epoch}\n"
+                    f"timestamp={now_epoch}\n"
+                    f"branch={target_branch}\n"
+                    f"operation=portal_update\n"
+                )
                 self.lock_file.write_text(lock_payload, encoding="utf-8")
             except OSError as err:
                 log.error("Failed creating update lock file %s: %s", self.lock_file, err)

@@ -42,6 +42,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.schemas import (
     BootstrapAckResponse,
     BootstrapCredentialsResponse,
+    DeploymentProgressResponse,
     FeedbackResponse,
     FeedbackSubmitRequest,
     GameplaySettingsSchema,
@@ -55,6 +56,7 @@ from app.api.schemas import (
     PlayerBanRequest,
     PlayerKickRequest,
     PlayerWarnRequest,
+    PostUpdateAcknowledgeResponse,
     RebootCancelRequest,
     RebootRequest,
     SaveResponse,
@@ -2011,6 +2013,30 @@ async def apply_system_update(
         client_ip,
     )
     return await updater.apply_update(branch=target_branch)
+
+
+@app.get(
+    "/api/system/deploy/progress",
+    response_model=DeploymentProgressResponse,
+    tags=["System"],
+    dependencies=[Depends(get_current_user)],
+)
+async def get_deployment_progress() -> DeploymentProgressResponse:
+    """Returns real-time deployment progression, step status, elapsed time, and ETA."""
+    return updater.get_deployment_progress()
+
+
+@app.post(
+    "/api/system/update/acknowledge",
+    response_model=PostUpdateAcknowledgeResponse,
+    tags=["System"],
+    dependencies=[Depends(perm_system_update)],
+)
+async def acknowledge_system_update() -> PostUpdateAcknowledgeResponse:
+    """Acknowledges and dismisses the post-update completion notification banner."""
+    updater.acknowledge_last_update()
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    return PostUpdateAcknowledgeResponse(status="success", acknowledged_at=timestamp)
 
 
 @app.post("/api/server/shutdown", response_model=ShutdownResponse, tags=["Server"])

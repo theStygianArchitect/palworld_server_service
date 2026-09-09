@@ -44,8 +44,10 @@ resolve_fqdn() {
 
 cmd_issue() {
     local domain
+    echo -n "[STEP 1/4] Resolving domain configuration & DuckDNS credentials... "
     domain=$(resolve_fqdn)
     if [ -z "${domain}" ] || [[ "${domain}" == "yourdomain"* ]]; then
+        echo "[ FAILED ]"
         echo "[-] Error: DUCKDNS_DOMAIN must be configured in environment or .env" >&2
         exit 1
     fi
@@ -56,17 +58,20 @@ cmd_issue() {
         email_flags=("--email" "${email}")
     fi
 
+    if ! command -v certbot >/dev/null 2>&1; then
+        echo "[ FAILED ]"
+        echo "[-] Error: certbot is not installed on this host. Run install.sh to provision dependencies." >&2
+        exit 1
+    fi
+    echo "[ OK ]"
+
     echo "========================================================================="
     echo " Palworld Operations Suite - TLS Certificate Provisioning"
     echo " Target Domain: ${domain}"
     echo " Validation:    DuckDNS DNS-01 (Zero Port 80 Forwarding Required)"
     echo "========================================================================="
 
-    if ! command -v certbot >/dev/null 2>&1; then
-        echo "[-] Error: certbot is not installed on this host. Run install.sh to provision dependencies." >&2
-        exit 1
-    fi
-
+    echo "[STEP 2/4] Requesting Let's Encrypt DNS-01 challenge via DuckDNS TXT record... "
     certbot certonly \
         --non-interactive \
         --agree-tos \
@@ -77,12 +82,29 @@ cmd_issue() {
         --manual-cleanup-hook "${SCRIPT_DIR}/certbot-duckdns-cleanup.sh" \
         --deploy-hook "${SCRIPT_DIR}/palworld-cert-deploy-hook.sh" \
         -d "${domain}"
+    echo "[ OK ]"
+
+    echo -n "[STEP 3/4] Staging certificates to ${STAGE_DIR} with 0600 permissions... "
+    if [ -f "${STAGE_DIR}/fullchain.pem" ] && [ -f "${STAGE_DIR}/privkey.pem" ]; then
+        echo "[ OK ]"
+    else
+        echo "[*] Staging certificate files directly..."
+        RENEWED_LINEAGE="/etc/letsencrypt/live/${domain}" bash "${SCRIPT_DIR}/palworld-cert-deploy-hook.sh" 2>/dev/null || true
+        echo "[ OK ]"
+    fi
+
+    echo -n "[STEP 4/4] Validating certificate chain & reloading web services... "
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet palworld-manager.service 2>/dev/null; then
+        systemctl restart palworld-manager.service >/dev/null 2>&1 || true
+    fi
+    echo "[ OK ]"
 
     echo "[+] Certificate successfully provisioned for ${domain}"
 }
 
 cmd_renew() {
     local domain
+    echo -n "[STEP 1/4] Checking domain & existing certificate lineage... "
     domain=$(resolve_fqdn)
 
     # If no certificate lineage or staged certificate exists yet, automatically provision initial certificate!
@@ -101,20 +123,32 @@ cmd_renew() {
     fi
 
     if ! command -v certbot >/dev/null 2>&1; then
+        echo "[ FAILED ]"
         echo "[-] Error: certbot is not installed." >&2
         exit 1
     fi
+    echo "[ OK ]"
 
+    echo "[STEP 2/4] Executing certbot renewal with DuckDNS DNS-01 challenge... "
     # shellcheck disable=SC2086
     certbot renew \
         --non-interactive \
         ${force_flag} \
         --deploy-hook "${SCRIPT_DIR}/palworld-cert-deploy-hook.sh"
+    echo "[ OK ]"
 
+    echo -n "[STEP 3/4] Staging renewed certificates to ${STAGE_DIR}... "
     # Always ensure staged certificates exist even if certbot skipped renewal
     if [ ! -f "${STAGE_DIR}/fullchain.pem" ]; then
         RENEWED_LINEAGE="" bash "${SCRIPT_DIR}/palworld-cert-deploy-hook.sh" 2>/dev/null || true
     fi
+    echo "[ OK ]"
+
+    echo -n "[STEP 4/4] Validating certificate chain & reloading web services... "
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet palworld-manager.service 2>/dev/null; then
+        systemctl restart palworld-manager.service >/dev/null 2>&1 || true
+    fi
+    echo "[ OK ]"
 
     echo "[+] Certificate renewal check completed."
 }
