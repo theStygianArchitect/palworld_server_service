@@ -147,6 +147,8 @@ class SecurityMatrixInfo(TypedDict):
         password_status_label (str): Status label with emoji for the UI.
         server_password (str): Current plaintext server join password.
         rcon_port (int): Admin RCON listening port.
+        rcon_enabled (bool): Whether RCON is currently enabled in settings.
+        rcon_advisory (str): 'disabled_ok' when RCON is off; 'enabled_warn' when on.
         rest_port (int): Admin REST API listening port.
         max_players (int): Maximum player slot capacity.
         current_players (int): Number of currently connected tamers.
@@ -157,6 +159,8 @@ class SecurityMatrixInfo(TypedDict):
     password_status_label: str
     server_password: str
     rcon_port: int
+    rcon_enabled: bool
+    rcon_advisory: str
     rest_port: int
     max_players: int
     current_players: int

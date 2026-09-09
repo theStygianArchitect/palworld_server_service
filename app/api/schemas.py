@@ -792,3 +792,68 @@ class BootstrapAckResponse(BaseModel):
 
     status: str = Field(..., description="Operation status ('success')")
     message: str = Field(..., description="Confirmation that credentials have been locked and wiped from memory")
+
+
+class ShutdownRequest(BaseModel):
+    """Request payload for the graceful server shutdown endpoint.
+
+    Validates the countdown duration and broadcast message before enqueueing
+    the shutdown sequence. The sequence broadcasts countdown messages, forces
+    a world save, then invokes systemd to restart the palworld.service unit.
+
+    Attributes:
+        seconds (int): Countdown duration in seconds before the server restarts.
+            Must be between 30 and 3600 (1 hour). Defaults to 300 (5 minutes).
+        message (str): Broadcast message shown to players during the countdown.
+            Maximum 80 characters. Spaces will be replaced with underscores to
+            work around the Palworld RCON broadcast space-truncation bug (the
+            /v1/api/announce REST endpoint does not have this limitation).
+    """
+
+    seconds: int = Field(
+        default=300,
+        ge=30,
+        le=3600,
+        description="Countdown duration in seconds (30-3600). Defaults to 300.",
+    )
+    message: str = Field(
+        default="Server restarting",
+        max_length=80,
+        description="Broadcast message to display to players. Max 80 characters.",
+    )
+
+
+class ShutdownResponse(BaseModel):
+    """Response payload confirming a graceful shutdown has been scheduled.
+
+    Returned by POST /api/server/shutdown. The shutdown executes in a FastAPI
+    background task; this response is returned immediately after the task is
+    enqueued, not after the server has restarted.
+
+    Attributes:
+        status (str): Always 'scheduled'.
+        countdown_seconds (int): The countdown duration that was accepted.
+        message (str): The broadcast message that will be shown to players.
+    """
+
+    status: str = Field(..., description="Always 'scheduled'")
+    countdown_seconds: int = Field(..., description="Accepted countdown duration in seconds")
+    message: str = Field(..., description="Broadcast message shown to players during countdown")
+
+
+class SaveResponse(BaseModel):
+    """Response payload confirming a manual world save was triggered.
+
+    Returned by POST /api/server/save. The save is executed synchronously
+    against the Palworld REST API; this response is returned only after the
+    engine has confirmed the save completed.
+
+    Attributes:
+        status (str): 'ok' on success.
+        triggered_by (str): Username of the operator who requested the save.
+        timestamp (str): ISO 8601 UTC timestamp of when the save was triggered.
+    """
+
+    status: str = Field(..., description="'ok' on success")
+    triggered_by: str = Field(..., description="Username of the operator who triggered the save")
+    timestamp: str = Field(..., description="ISO 8601 UTC timestamp of the save trigger")

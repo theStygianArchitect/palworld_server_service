@@ -57,6 +57,9 @@ from app.api.schemas import (
     PlayerWarnRequest,
     RebootCancelRequest,
     RebootRequest,
+    SaveResponse,
+    ShutdownRequest,
+    ShutdownResponse,
     UpdateApplyRequest,
     UpdateApplyResponse,
     UpdateStatusResponse,
@@ -180,6 +183,7 @@ async def telemetry_streamer() -> None:
                 query_port=settings.QueryPort,
                 server_password=settings.ServerPassword,
                 rcon_port=settings.RCONPort,
+                rcon_enabled=settings.RCONEnabled,
                 rest_port=settings.RESTAPIPort,
                 max_players=metrics.get("max_players", 32),
                 current_players=metrics.get("current_players", 0),
@@ -1055,6 +1059,7 @@ async def get_community_tracker_data() -> dict[str, Any]:
         query_port=settings.QueryPort,
         server_password=settings.ServerPassword,
         rcon_port=settings.RCONPort,
+        rcon_enabled=settings.RCONEnabled,
         rest_port=settings.RESTAPIPort,
     )
     return {"status": "success", "data": data}
@@ -1986,6 +1991,89 @@ async def apply_system_update(
         client_ip,
     )
     return await updater.apply_update(branch=target_branch)
+
+
+@app.post("/api/server/shutdown", response_model=ShutdownResponse, tags=["Server"])
+async def shutdown_server(
+    payload: ShutdownRequest,
+    bg: BackgroundTasks,
+    _: UserRecord = Depends(perm_server_reboot),
+) -> ShutdownResponse:
+    """Schedules a graceful server shutdown with countdown broadcasts and a world save.
+
+    Enqueues a background task that: (1) broadcasts countdown announcements to
+    all connected players at 60-second intervals, (2) forces a world save via
+    POST /v1/api/save, and (3) triggers a systemd service restart. Returns
+    immediately after enqueueing; the caller does not wait for the restart.
+
+    Args:
+        payload (ShutdownRequest): Countdown seconds (30-3600) and broadcast message.
+        bg (BackgroundTasks): FastAPI background task manager.
+        _: Enforces server:reboot permission.
+
+    Returns:
+        ShutdownResponse: Confirmation of the scheduled shutdown.
+
+    Raises:
+        HTTPException: 409 if another reboot sequence is already in progress.
+    """
+    if LOCK_FILE.exists():
+        raise HTTPException(
+            status_code=409,
+            detail="Reboot sequence already in progress. Cancel it before scheduling a shutdown.",
+        )
+
+    log.info(
+        "Graceful shutdown scheduled: %ss countdown with message '%s'",
+        payload.seconds,
+        payload.message,
+    )
+    bg.add_task(
+        engine.execute_countdown_and_reboot,
+        payload.seconds,
+        False,  # trigger_steam_update=False for a plain restart
+        None,   # update_version_tag
+        payload.message,
+    )
+    return ShutdownResponse(
+        status="scheduled",
+        countdown_seconds=payload.seconds,
+        message=payload.message,
+    )
+
+
+@app.post("/api/server/save", response_model=SaveResponse, tags=["Server"])
+async def manual_world_save(
+    user: UserRecord = Depends(perm_server_reboot),
+) -> SaveResponse:
+    """Triggers an immediate Palworld world save and records an audit log entry.
+
+    Delegates to PalEngine.trigger_save(), which calls POST /v1/api/save on the
+    local Palworld REST API. The endpoint waits for the save to complete before
+    responding (up to the engine's 5-second save timeout).
+
+    Args:
+        user (UserRecord): Authenticated operator — used for the audit log entry.
+
+    Returns:
+        SaveResponse: Confirmation with operator username and ISO 8601 timestamp.
+
+    Raises:
+        HTTPException: 503 if the Palworld REST API save call fails.
+    """
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    ok = await engine.trigger_save()
+    if not ok:
+        raise HTTPException(
+            status_code=503,
+            detail="World save failed. Ensure the Palworld server is online and reachable.",
+        )
+    log.info("Manual world save triggered by operator '%s' at %s", user.username, timestamp)
+    return SaveResponse(
+        status="ok",
+        triggered_by=user.username,
+        timestamp=timestamp,
+    )
 
 
 if __name__ == "__main__":
