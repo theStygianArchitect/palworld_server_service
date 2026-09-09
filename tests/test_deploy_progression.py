@@ -17,18 +17,19 @@ from app.main import app, db, metrics_db, settings, updater
 @pytest.fixture
 def client_fixture(tmp_path: Path) -> Generator[tuple[TestClient, str, str], None, None]:
     """Provides isolated TestClient with admin and viewer tokens."""
-    test_db_path = str(tmp_path / "test_prog_palmanager.db")
-    test_metrics_path = str(tmp_path / "test_prog_metrics.db")
-    orig_db_path = db.db_path
-    orig_metrics_path = metrics_db.db_path
-    orig_updater_enabled = settings.updater_enabled
+    dbs_to_swap = (
+        (db, str(tmp_path / "prog_main.sqlite")),
+        (metrics_db, str(tmp_path / "prog_metrics.sqlite")),
+    )
+    saved_paths = []
+    saved_updater = settings.updater_enabled
     settings.updater_enabled = False
-    db.close()
-    metrics_db.close()
-    db.db_path = test_db_path
-    metrics_db.db_path = test_metrics_path
-    db.initialize()
-    metrics_db.initialize()
+    for database_instance, target_path in dbs_to_swap:
+        saved_paths.append((database_instance, database_instance.db_path))
+        database_instance.close()
+        database_instance.db_path = target_path
+        database_instance.initialize()
+
     bootstrap_admin_user(db, default_password=settings.AdminPassword)
 
     try:
@@ -61,13 +62,11 @@ def client_fixture(tmp_path: Path) -> Generator[tuple[TestClient, str, str], Non
 
             yield test_client, admin_token, viewer_token
     finally:
-        settings.updater_enabled = orig_updater_enabled
-        db.close()
-        metrics_db.close()
-        db.db_path = orig_db_path
-        metrics_db.db_path = orig_metrics_path
-        db.initialize()
-        metrics_db.initialize()
+        settings.updater_enabled = saved_updater
+        for database_instance, original_path in saved_paths:
+            database_instance.close()
+            database_instance.db_path = original_path
+            database_instance.initialize()
 
 
 def test_get_deploy_progress_idle(client_fixture: tuple[TestClient, str, str], tmp_path: Path):
@@ -103,12 +102,13 @@ def test_get_deploy_progress_active_streaming(client_fixture: tuple[TestClient, 
         f"pid=9999\nstarted_at={now_epoch - 20.0}\ntimestamp={now_epoch}\nbranch=main\noperation=portal_update\n",
         encoding="utf-8",
     )
-    log_file.write_text(
-        "[STEP 1/5] Pulling latest updates from origin/main... [ OK ]\n"
-        "[STEP 2/5] Syncing application code & systemd units... [ OK ]\n"
-        "[STEP 3/5] Enforcing cross-user POSIX ACLs and storage permissions...\n",
-        encoding="utf-8",
+    simulated_log_lines = (
+        "Execution initiated at 2026-09-09 14:00:00 UTC\n"
+        "[STEP 1/5] Synchronizing git tree against origin/main... [ OK ]\n"
+        "[STEP 2/5] Updating python dependencies via uv sync... [ OK ]\n"
+        "[STEP 3/5] Running database migrations on sqlite storage...\n"
     )
+    log_file.write_text(simulated_log_lines, encoding="utf-8")
 
     # Directly check updater calculation
     progress = updater.get_deployment_progress(log_path=log_file)
