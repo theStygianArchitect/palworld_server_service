@@ -4,6 +4,7 @@
 # pylint: disable=redefined-outer-name
 # Rationale: Pytest dependency injection requires test parameters to match fixture names.
 
+import re
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -248,3 +249,112 @@ def test_engine_readiness_probe_diagnostics(rbac_client: TestClient):
         assert res_200.status_code == 200
         assert res_200.json()["diagnostic_code"] == "OK"
         assert res_200.json()["server_name"] == "PalServer"
+
+
+# pylint: disable=too-many-branches,too-many-statements,too-many-nested-blocks,too-many-locals
+# Rationale: Lexical analysis of inline JavaScript requires multi-state parsing and token dispatching.
+def test_index_html_javascript_syntax_integrity():
+    """Verifies that all inline JavaScript in index.html is syntactically balanced and parseable."""
+    html_path = Path(__file__).resolve().parent.parent / "app" / "templates" / "index.html"
+    content = html_path.read_text(encoding="utf-8")
+
+    scripts = re.findall(r"<script(?:\s+[^>]*)?>(.*?)</script>", content, re.DOTALL)
+    assert len(scripts) >= 2, "Expected at least 2 inline script tags in index.html"
+
+    for script_idx, js_code in enumerate(scripts):
+        state_stack = ["NORMAL"]
+        brace_stack: list[tuple[str, int, int]] = []
+        errors: list[str] = []
+
+        lines = js_code.splitlines()
+        for line_idx, line in enumerate(lines):
+            col = 0
+            while col < len(line):
+                ch = line[col]
+                curr_state = state_stack[-1]
+
+                if curr_state == "COMMENT_LINE":
+                    break
+                if curr_state == "COMMENT_BLOCK":
+                    if ch == "*" and col + 1 < len(line) and line[col + 1] == "/":
+                        state_stack.pop()
+                        col += 2
+                        continue
+                    col += 1
+                    continue
+                if curr_state == "STRING_SINGLE":
+                    if ch == "\\":
+                        col += 2
+                        continue
+                    if ch == "'":
+                        state_stack.pop()
+                    col += 1
+                    continue
+                if curr_state == "STRING_DOUBLE":
+                    if ch == "\\":
+                        col += 2
+                        continue
+                    if ch == '"':
+                        state_stack.pop()
+                    col += 1
+                    continue
+                if curr_state == "STRING_TEMPLATE":
+                    if ch == "\\":
+                        col += 2
+                        continue
+                    if ch == "`":
+                        state_stack.pop()
+                        col += 1
+                        continue
+                    if ch == "$" and col + 1 < len(line) and line[col + 1] == "{":
+                        state_stack.append("TEMPLATE_EXPR")
+                        brace_stack.append(("EXPR", line_idx + 1, col + 1))
+                        col += 2
+                        continue
+                    col += 1
+                    continue
+
+                # NORMAL or TEMPLATE_EXPR
+                if ch == "/" and col + 1 < len(line) and line[col + 1] == "/":
+                    state_stack.append("COMMENT_LINE")
+                    break
+                if ch == "/" and col + 1 < len(line) and line[col + 1] == "*":
+                    state_stack.append("COMMENT_BLOCK")
+                    col += 2
+                    continue
+                if ch == "'":
+                    state_stack.append("STRING_SINGLE")
+                    col += 1
+                    continue
+                if ch == '"':
+                    state_stack.append("STRING_DOUBLE")
+                    col += 1
+                    continue
+                if ch == "`":
+                    state_stack.append("STRING_TEMPLATE")
+                    col += 1
+                    continue
+                if ch == "{":
+                    brace_stack.append(("{", line_idx + 1, col + 1))
+                    col += 1
+                    continue
+                if ch == "}":
+                    if not brace_stack:
+                        errors.append(f"Unexpected '}}' at script #{script_idx} line {line_idx+1}:{col+1}")
+                    else:
+                        top_type, _, _ = brace_stack.pop()
+                        if top_type == "EXPR":
+                            if state_stack[-1] == "TEMPLATE_EXPR":
+                                state_stack.pop()
+                            else:
+                                errors.append(f"Template expression mismatch at line {line_idx+1}:{col+1}")
+                    col += 1
+                    continue
+                col += 1
+
+            if state_stack and state_stack[-1] == "COMMENT_LINE":
+                state_stack.pop()
+
+        assert not errors, f"Syntax errors detected in script #{script_idx}: {errors}"
+        assert not brace_stack, f"Unclosed braces in script #{script_idx}: {brace_stack}"
+        assert state_stack == ["NORMAL"], f"Unterminated state in script #{script_idx}: {state_stack}"

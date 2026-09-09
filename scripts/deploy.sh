@@ -21,12 +21,40 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Resolve git repository root if deploy.sh is executed directly from /opt/palworld-web-manager
+if [ ! -d "${REPO_ROOT}/.git" ]; then
+    CANDIDATES=(
+        "${HOME}/palworld_server_service"
+        "${HOME}/projects/python/personal/palworld_server_service"
+        "/home/${SUDO_USER:-}/palworld_server_service"
+        "/home/tsa/palworld_server_service"
+        "/home/steam/palworld_server_service"
+        "/var/lib/palmanager/repo"
+    )
+    FOUND_REPO=""
+    for CANDIDATE in "${CANDIDATES[@]}"; do
+        if [ -d "${CANDIDATE}/.git" ]; then
+            FOUND_REPO="${CANDIDATE}"
+            break
+        fi
+    done
+
+    if [ -n "${FOUND_REPO}" ]; then
+        REPO_ROOT="${FOUND_REPO}"
+    else
+        echo "[!] No local git repository found at ${REPO_ROOT}. Initializing repository cache in /var/lib/palmanager/repo..."
+        mkdir -p /var/lib/palmanager
+        git clone "https://github.com/theStygianArchitect/palworld_server_service.git" /var/lib/palmanager/repo
+        REPO_ROOT="/var/lib/palmanager/repo"
+    fi
+fi
+
 cd "${REPO_ROOT}"
 
 echo -n "[1/5] Pulling latest updates from origin/${TARGET_BRANCH}... "
-git fetch origin "${TARGET_BRANCH}" > /dev/null 2>&1
-git checkout "${TARGET_BRANCH}" > /dev/null 2>&1
-git pull origin "${TARGET_BRANCH}" > /dev/null 2>&1
+git fetch origin "${TARGET_BRANCH}"
+git checkout "${TARGET_BRANCH}"
+git pull origin "${TARGET_BRANCH}"
 echo "[ OK ]"
 
 echo -n "[2/5] Syncing application code & systemd units... "
