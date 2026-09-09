@@ -82,6 +82,16 @@ cmd_issue() {
 }
 
 cmd_renew() {
+    local domain
+    domain=$(resolve_fqdn)
+
+    # If no certificate lineage or staged certificate exists yet, automatically provision initial certificate!
+    if [ -n "${domain}" ] && [ ! -d "/etc/letsencrypt/live/${domain}" ] && [ ! -f "${STAGE_DIR}/fullchain.pem" ]; then
+        echo "[*] No existing certificate found for '${domain}'. Triggering initial issuance..."
+        cmd_issue
+        return
+    fi
+
     local force_flag=""
     if [ "${1:-}" = "--force" ] || [ "${1:-}" = "-f" ]; then
         force_flag="--force-renewal"
