@@ -67,7 +67,7 @@
             <span class="text-indigo-400">👤</span>
             <span id="headerUsernameText" class="font-bold text-slate-200">Admin</span>
           </div>
-          <button onclick="openRebootModal()" class="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 font-semibold transition text-[11px] sm:text-xs">
+          <button id="rebootHeaderBtn" onclick="openRebootModal()" class="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 font-semibold transition text-[11px] sm:text-xs">
             🔄 Reboot
           </button>
         </div>
@@ -79,11 +79,12 @@
       <button onclick="switchTab('settings')" id="tab_settings" class="px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold transition whitespace-nowrap">⚙️ World Settings</button>
       <button onclick="switchTab('players')" id="tab_players" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">👥 Player Roster</button>
       <button onclick="switchTab('metrics')" id="tab_metrics" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📊 Telemetry, Discovery & Security</button>
+      <button onclick="switchTab('updates')" id="tab_updates" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">🚀 System Updates</button>
       <button onclick="switchTab('backups')" id="tab_backups" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">🕒 Snapshots & Backups</button>
       <button onclick="switchTab('logs')" id="tab_logs" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📜 Live Console</button>
       <button onclick="switchTab('feedback')" id="tab_feedback" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">📝 Feedback & Issues</button>
       <button onclick="switchTab('users')" id="tab_users" class="px-3 py-1.5 rounded-lg bg-dark-800 text-slate-300 hover:bg-slate-700 transition whitespace-nowrap">🛡️ Users & Audit</button>
-      <a href="/observability" class="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-700/60 font-semibold transition whitespace-nowrap flex items-center gap-1" title="Open Prometheus-Style Observability Dashboard"><span>📈</span> Prometheus View ↗</a>
+      <a href="/observability" id="navPrometheusLink" class="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-700/60 font-semibold transition whitespace-nowrap flex items-center gap-1" title="Open Prometheus-Style Observability Dashboard"><span>📈</span> Prometheus View ↗</a>
     </div>
   </header>
 
@@ -172,6 +173,20 @@
     </div>
   </section>
 
+  <!-- Palworld Game Server Probe Diagnostic Banner -->
+  <div id="probeDiagnosticBanner" class="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-3 hidden">
+    <div class="p-3.5 rounded-xl bg-amber-950/80 border border-amber-500/60 text-amber-200 text-xs sm:text-sm flex items-center justify-between shadow-xl">
+      <div class="flex items-center gap-2.5">
+        <span class="text-xl">⚠️</span>
+        <div>
+          <strong id="probeDiagTitle" class="font-bold block text-amber-300 font-mono text-xs uppercase tracking-wide">Game Server REST API Communication Warning</strong>
+          <span id="probeDiagMsg" class="text-xs text-amber-200/90 font-mono">Authentication rejected or connection refused.</span>
+        </div>
+      </div>
+      <button onclick="document.getElementById('probeDiagnosticBanner').classList.add('hidden')" class="text-xs font-mono px-2.5 py-1 bg-amber-900/60 hover:bg-amber-800 rounded-lg border border-amber-700 text-amber-300 uppercase transition">Dismiss</button>
+    </div>
+  </div>
+
   <!-- Alert Banner -->
   <div id="alertBox" class="max-w-7xl mx-auto w-full px-4 sm:px-6 pt-4 hidden">
     <div class="p-3.5 rounded-xl border text-xs sm:text-sm flex items-center justify-between shadow-lg" id="alertContainer">
@@ -202,7 +217,7 @@
           <h2 class="text-sm font-bold text-slate-200 uppercase tracking-wider font-mono flex items-center gap-2">
             <span>🟢</span> Active Sessions (<span id="activePlayerCount">0</span>)
           </h2>
-          <button onclick="promptWarnAll()" class="px-3 py-1 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-mono font-semibold transition">
+          <button id="broadcastBtn" onclick="promptWarnAll()" class="px-3 py-1 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-mono font-semibold transition">
             📢 Broadcast to Server & Discord
           </button>
         </div>
@@ -1062,6 +1077,56 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab 8: System Updates -->
+    <div id="page_updates" class="hidden space-y-6">
+      <div class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-5">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <h2 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <span class="text-indigo-400 text-lg">🚀</span> System Updates &amp; Engine Deployment
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Check for upstream GitHub commits, review changes, and deploy portal updates directly from the management plane.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="checkSystemUpdateStatus(true)" id="manualCheckUpdateBtn" class="px-3.5 py-2 bg-dark-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition text-xs font-mono font-semibold flex items-center gap-1.5 shadow-sm">
+              <span>🔄</span> Check for Updates Now
+            </button>
+            <button onclick="openUpdateModal()" id="deployUpdateBtn" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg transition text-xs font-mono font-semibold flex items-center gap-1.5">
+              <span>⚡</span> Deploy Update
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono">
+          <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl">
+            <span class="text-[10px] text-slate-500 block uppercase">Current Local Commit</span>
+            <span id="updateCurrentCommit" class="font-bold text-slate-200 truncate block">Loading...</span>
+          </div>
+          <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl">
+            <span class="text-[10px] text-slate-500 block uppercase">Latest Upstream Commit</span>
+            <span id="updateLatestCommit" class="font-bold text-indigo-400 truncate block">Loading...</span>
+          </div>
+          <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl">
+            <span class="text-[10px] text-slate-500 block uppercase">Tracking Branch</span>
+            <span id="updateBranch" class="font-bold text-slate-200">main</span>
+          </div>
+          <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl">
+            <span class="text-[10px] text-slate-500 block uppercase">Parity Status</span>
+            <span id="updateStatusText" class="font-bold text-emerald-400">Up to Date</span>
+          </div>
+        </div>
+
+        <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl space-y-2">
+          <span class="text-[11px] font-bold text-slate-400 uppercase font-mono">Latest Upstream Commit Summary:</span>
+          <p id="updateCommitMsgBox" class="text-xs font-mono text-slate-300 bg-dark-900 p-3 rounded-lg border border-slate-800/80">No update metadata loaded.</p>
+          <div class="flex flex-col sm:flex-row justify-between text-[10px] text-slate-500 font-mono pt-1 gap-1">
+            <span>Last Checked: <span id="updateLastChecked">--</span></span>
+            <span id="updateCommitsBehindText" class="font-bold text-indigo-300">0 commits behind</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </main>
 
   <!-- Reboot Modal with Customizable Message -->
@@ -1473,9 +1538,11 @@
     let logScrollLocked = true;
     let logDebounceTimer = null;
     let rawLogLinesCache = [];
+    let currentActiveTab = 'settings';
 
     function switchTab(tab) {
-      ['settings', 'players', 'metrics', 'backups', 'logs', 'feedback', 'users'].forEach(t => {
+      currentActiveTab = tab;
+      ['settings', 'players', 'metrics', 'updates', 'backups', 'logs', 'feedback', 'users'].forEach(t => {
         const p = document.getElementById(`page_${t}`);
         const b = document.getElementById(`tab_${t}`);
         if (p) p.classList.add('hidden');
@@ -1490,6 +1557,10 @@
       if (activeB) {
         activeB.classList.add('bg-brand-600', 'text-white', 'font-bold');
         activeB.classList.remove('bg-dark-800', 'text-slate-300');
+      }
+
+      if (tab === 'updates') {
+        checkSystemUpdateStatus(false);
       }
 
       if (tab === 'backups') {
@@ -1827,6 +1898,7 @@
     }
 
     function renderField(field) {
+      const isViewer = Boolean(window.currentAuthUser && window.currentAuthUser.role === 'viewer');
       const val = field.value !== undefined ? field.value : '';
       if (field.type === 'bool') {
         const isChecked = val === true || val === 'True';
@@ -1836,8 +1908,8 @@
               <label class="block text-xs font-semibold text-slate-200">${field.label || field.key}</label>
               <span class="text-[10px] text-slate-400 font-mono">${field.key}</span>
             </div>
-            <input type="checkbox" id="field_${field.key}" ${isChecked ? 'checked' : ''} 
-                   class="w-5 h-5 rounded text-brand-600 bg-slate-800 border-slate-700 focus:ring-brand-500">
+            <input type="checkbox" id="field_${field.key}" ${isChecked ? 'checked' : ''} ${isViewer ? 'disabled' : ''}
+                   class="w-5 h-5 rounded text-brand-600 bg-slate-800 border-slate-700 focus:ring-brand-500 ${isViewer ? 'opacity-50 cursor-not-allowed' : ''}">
           </div>
         `;
       } else {
@@ -1850,7 +1922,8 @@
             <input type="${field.type === 'float' || field.type === 'int' ? 'number' : 'text'}" 
                    step="${field.type === 'float' ? '0.05' : '1'}"
                    id="field_${field.key}" value="${val}"
-                   class="w-full px-3 py-1.5 bg-dark-900 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-brand-500">
+                   ${isViewer ? 'readonly' : ''}
+                   class="w-full px-3 py-1.5 bg-dark-900 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-brand-500 ${isViewer ? 'cursor-default bg-dark-950/60 border-slate-800 text-slate-300' : ''}">
           </div>
         `;
       }
@@ -1946,6 +2019,36 @@
 
     function updateTelemetry(data) {
       if (!data) return;
+
+      // Surface probe diagnostic banner if server probe failed
+      const probeBanner = document.getElementById('probeDiagnosticBanner');
+      const probeDiagTitle = document.getElementById('probeDiagTitle');
+      const probeDiagMsg = document.getElementById('probeDiagMsg');
+      if (probeBanner) {
+        if (!data.readiness && data.diagnostic_code && data.diagnostic_code !== 'OK') {
+          probeBanner.classList.remove('hidden');
+          if (probeDiagTitle) {
+            if (data.diagnostic_code === 'UNAUTHORIZED') {
+              probeDiagTitle.innerText = 'Game Server REST API: Authentication Rejected (HTTP 401)';
+            } else if (data.diagnostic_code === 'CONNECTION_REFUSED') {
+              probeDiagTitle.innerText = 'Game Server REST API: Connection Refused';
+            } else if (data.diagnostic_code === 'TIMEOUT') {
+              probeDiagTitle.innerText = 'Game Server REST API: Connection Timed Out';
+            } else {
+              probeDiagTitle.innerText = `Game Server REST API: ${data.diagnostic_code}`;
+            }
+          }
+          if (probeDiagMsg) {
+            if (data.diagnostic_code === 'UNAUTHORIZED') {
+              probeDiagMsg.innerText = data.diagnostic_message || 'AdminPassword mismatch in PalWorldSettings.ini. Server rejected portal credentials.';
+            } else {
+              probeDiagMsg.innerText = data.diagnostic_message || 'Cannot communicate with Palworld REST API on the configured port.';
+            }
+          }
+        } else if (data.readiness) {
+          probeBanner.classList.add('hidden');
+        }
+      }
 
       // 1. Connection Copy Box
       const sName = data.server_name || (data.security_matrix && data.security_matrix.server_name) || (data.a2s_telemetry && data.a2s_telemetry.server_name);
@@ -2202,8 +2305,10 @@
     }
 
     function renderActivePlayers(players) {
+      window.lastPlayersActiveCache = players || [];
+      const isViewer = Boolean(window.currentAuthUser && window.currentAuthUser.role === 'viewer');
       const grid = document.getElementById('activePlayersGrid');
-      if (!players.length) {
+      if (!players || !players.length) {
         grid.innerHTML = `<div class="p-6 bg-dark-900 border border-slate-800 rounded-2xl text-center text-slate-400 font-mono text-xs col-span-full">No players currently online.</div>`;
         return;
       }
@@ -2220,16 +2325,21 @@
             <div class="flex justify-between"><span>Coords:</span><span class="text-slate-200">${p.coords}</span></div>
           </div>
           <div class="flex gap-2 pt-1">
-            <button onclick="kickPlayer('${p.playerId}')" class="flex-1 px-2 py-1.5 bg-amber-900/40 border border-amber-700/50 hover:bg-amber-800/60 rounded-lg text-amber-300 font-semibold text-[11px] transition">Kick</button>
-            <button onclick="banPlayer('${p.playerId}')" class="flex-1 px-2 py-1.5 bg-red-900/40 border border-red-700/50 hover:bg-red-800/60 rounded-lg text-red-300 font-semibold text-[11px] transition">Ban</button>
+            ${isViewer 
+              ? `<span class="flex-1 py-1 text-center text-[10px] text-slate-500 font-mono italic">Connected Session</span>`
+              : `<button onclick="kickPlayer('${p.playerId}')" class="flex-1 px-2 py-1.5 bg-amber-900/40 border border-amber-700/50 hover:bg-amber-800/60 rounded-lg text-amber-300 font-semibold text-[11px] transition">Kick</button>
+                 <button onclick="banPlayer('${p.playerId}')" class="flex-1 px-2 py-1.5 bg-red-900/40 border border-red-700/50 hover:bg-red-800/60 rounded-lg text-red-300 font-semibold text-[11px] transition">Ban</button>`
+            }
           </div>
         </div>
       `).join('');
     }
 
     function renderOfflinePlayers(players) {
+      window.lastPlayersOfflineCache = players || [];
+      const isViewer = Boolean(window.currentAuthUser && window.currentAuthUser.role === 'viewer');
       const tbody = document.getElementById('offlinePlayersTable');
-      if (!players.length) {
+      if (!players || !players.length) {
         tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-500">No historical records logged yet.</td></tr>`;
         return;
       }
@@ -2241,7 +2351,10 @@
           <td class="p-2.5 text-slate-300">${p.level}</td>
           <td class="p-2.5 text-slate-400">${p.last_seen}</td>
           <td class="p-2.5 text-right">
-            <button onclick="banPlayer('${p.playerId}')" class="px-2 py-1 bg-red-950 border border-red-800 text-red-400 rounded text-[10px] hover:bg-red-900 transition">Ban</button>
+            ${isViewer
+              ? `<span class="text-slate-600 text-[10px]">—</span>`
+              : `<button onclick="banPlayer('${p.playerId}')" class="px-2 py-1 bg-red-950 border border-red-800 text-red-400 rounded text-[10px] hover:bg-red-900 transition">Ban</button>`
+            }
           </td>
         </tr>
       `).join('');
@@ -3096,6 +3209,61 @@
       }
     }
 
+    function applyRoleVisibility(role) {
+      const normRole = (role || '').toLowerCase();
+      const isViewer = normRole === 'viewer';
+      const isOperator = normRole === 'operator';
+      const isAdmin = normRole === 'admin' || !normRole;
+
+      const setVisible = (id, visible) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (visible) {
+          el.classList.remove('hidden');
+        } else {
+          el.classList.add('hidden');
+        }
+      };
+
+      // Navigation tabs
+      // Viewers: settings, players, feedback
+      // Operators: settings, players, metrics, updates, backups, logs, feedback
+      // Admins: everything including users
+      setVisible('tab_settings', true);
+      setVisible('tab_players', true);
+      setVisible('tab_feedback', true);
+      setVisible('tab_metrics', isAdmin || isOperator);
+      setVisible('tab_updates', isAdmin || isOperator);
+      setVisible('tab_backups', isAdmin || isOperator);
+      setVisible('tab_logs', isAdmin || isOperator);
+      setVisible('tab_users', isAdmin);
+      setVisible('navPrometheusLink', isAdmin || isOperator);
+
+      // Action buttons
+      // Viewers cannot save settings, broadcast to server, or reboot
+      setVisible('rebootHeaderBtn', isAdmin || isOperator);
+      setVisible('saveBtn', isAdmin || isOperator);
+      setVisible('broadcastBtn', isAdmin || isOperator);
+
+      // Route guard: if viewer is on a restricted tab, redirect to settings
+      if (isViewer && !['settings', 'players', 'feedback'].includes(currentActiveTab)) {
+        switchTab('settings');
+      } else if (isOperator && currentActiveTab === 'users') {
+        switchTab('settings');
+      }
+
+      // Re-render settings and players if present
+      if (typeof renderSettingsForm === 'function') {
+        renderSettingsForm();
+      }
+      if (window.lastPlayersActiveCache && typeof renderActivePlayers === 'function') {
+        renderActivePlayers(window.lastPlayersActiveCache);
+      }
+      if (window.lastPlayersOfflineCache && typeof renderOfflinePlayers === 'function') {
+        renderOfflinePlayers(window.lastPlayersOfflineCache);
+      }
+    }
+
     async function checkAuthMe() {
       const headerText = document.getElementById('headerUsernameText');
       const logoutBtn = document.getElementById('loginLogoutBtn');
@@ -3107,10 +3275,12 @@
           if ((json.status === 'success' && json.user) || json.username) {
             const user = json.user || json;
             currentAuthUser = user;
+            window.currentAuthUser = user;
             if (headerText) {
               headerText.innerText = `${user.username} (${user.role})`;
             }
             if (logoutBtn) logoutBtn.classList.remove('hidden');
+            applyRoleVisibility(user.role);
             return;
           }
         }
@@ -3119,8 +3289,10 @@
       }
 
       currentAuthUser = null;
+      window.currentAuthUser = null;
       if (headerText) headerText.innerText = "Admin (Localhost)";
       if (logoutBtn) logoutBtn.classList.add('hidden');
+      applyRoleVisibility('admin');
     }
 
     let currentMetricsWindow = '24h';
@@ -3264,7 +3436,21 @@
     let updateBannerDismissed = false;
 
     async function checkSystemUpdateStatus(force = false) {
+      const manualBtn = document.getElementById('manualCheckUpdateBtn');
+      if (force && manualBtn) {
+        manualBtn.disabled = true;
+        manualBtn.innerHTML = '<span>⏳</span> Checking...';
+      }
+
       try {
+        if (force) {
+          try {
+            await fetch('/api/system/update/check', { method: 'POST' });
+          } catch (probeErr) {
+            console.debug('Update check trigger error:', probeErr);
+          }
+        }
+
         const url = force ? '/api/system/update/status?force=true' : '/api/system/update/status';
         const res = await fetch(url);
         if (!res.ok) return;
@@ -3290,8 +3476,46 @@
         } else {
           if (banner) banner.classList.add('hidden');
         }
+
+        // Populate dedicated #page_updates dashboard tab
+        const curEl = document.getElementById('updateCurrentCommit');
+        const remEl = document.getElementById('updateLatestCommit');
+        const brEl = document.getElementById('updateBranch');
+        const statusEl = document.getElementById('updateStatusText');
+        const msgBox = document.getElementById('updateCommitMsgBox');
+        const lastCheckedEl = document.getElementById('updateLastChecked');
+        const behindEl = document.getElementById('updateCommitsBehindText');
+
+        if (curEl) curEl.innerText = data.current_commit ? data.current_commit.substring(0, 7) : 'Unknown';
+        if (remEl) remEl.innerText = data.remote_commit ? data.remote_commit.substring(0, 7) : 'Unknown';
+        if (brEl) brEl.innerText = data.target_branch || 'main';
+        if (statusEl) {
+          if (data.update_available) {
+            statusEl.innerText = 'Update Available';
+            statusEl.className = 'font-bold text-amber-400 animate-pulse';
+          } else {
+            statusEl.innerText = 'Up to Date';
+            statusEl.className = 'font-bold text-emerald-400';
+          }
+        }
+        if (msgBox) {
+          msgBox.innerText = data.remote_commit_message || (data.update_available ? 'Upstream commits ready to pull.' : 'Local repository matches upstream tracking branch.');
+        }
+        if (lastCheckedEl) {
+          lastCheckedEl.innerText = new Date().toLocaleTimeString();
+        }
+        if (behindEl) {
+          const behindCount = data.commits_behind || 0;
+          behindEl.innerText = `${behindCount} commit${behindCount === 1 ? '' : 's'} behind`;
+          behindEl.className = behindCount > 0 ? 'font-bold text-amber-300' : 'font-bold text-slate-400';
+        }
       } catch (err) {
         console.debug('Failed to check system update status:', err);
+      } finally {
+        if (force && manualBtn) {
+          manualBtn.disabled = false;
+          manualBtn.innerHTML = '<span>🔄</span> Check for Updates Now';
+        }
       }
     }
 

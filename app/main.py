@@ -195,6 +195,10 @@ async def telemetry_streamer() -> None:
                     "liveness": liveness,
                     "readiness": readiness_data["ready"],
                     "version": readiness_data["version"],
+                    "diagnostic_code": readiness_data.get(
+                        "diagnostic_code", "OK" if readiness_data["ready"] else "UNKNOWN"
+                    ),
+                    "diagnostic_message": readiness_data.get("diagnostic_message", ""),
                     "server_name": settings.ServerName,
                     "server_password": settings.ServerPassword,
                     "server_fps": metrics.get("server_fps", 0),
@@ -725,11 +729,13 @@ async def readiness_check() -> dict[str, Any]:
     """
     readiness = await engine.check_readiness()
     if not readiness["ready"]:
-        raise HTTPException(status_code=503, detail="Palworld server engine is starting or unreachable.")
+        detail = readiness.get("diagnostic_message") or "Palworld server engine is starting or unreachable."
+        raise HTTPException(status_code=503, detail=detail)
     return {
         "status": "ready",
         "server_name": readiness["server_name"],
         "version": readiness["version"],
+        "diagnostic_code": readiness.get("diagnostic_code", "OK"),
     }
 
 
@@ -1968,6 +1974,17 @@ async def get_system_update_status(
     if force:
         return await updater.check_for_updates()
     return updater.get_status()
+
+
+@app.post(
+    "/api/system/update/check",
+    response_model=UpdateStatusResponse,
+    tags=["System"],
+    dependencies=[Depends(perm_system_update)],
+)
+async def check_system_update_on_demand() -> UpdateStatusResponse:
+    """Dispatches on-demand GitHub probe checking for upstream commits."""
+    return await updater.check_for_updates()
 
 
 @app.post(

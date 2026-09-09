@@ -5,6 +5,7 @@
 # Rationale: Mock coroutines and monkeypatch fixtures must accept standard signature arguments.
 
 import asyncio
+from unittest.mock import Mock
 
 import httpx
 import pytest
@@ -26,6 +27,32 @@ async def test_pal_engine_check_readiness_offline():
     readiness = await engine.check_readiness()
     assert readiness["ready"] is False
     assert readiness["version"] is None
+    assert readiness["diagnostic_code"] in ("CONNECTION_REFUSED", "TIMEOUT")
+
+
+@pytest.mark.asyncio
+async def test_pal_engine_check_readiness_diagnostics(monkeypatch):
+    engine = PalEngine(admin_password="test_password", rest_port=8212)  # nosec B105,B106
+
+    async def mock_get_200(self, url, *a, **kw):
+        return Mock(status_code=200, json=lambda: {"version": "v0.3.5", "servername": "TestPal"})
+
+    async def mock_get_401(self, url, *a, **kw):
+        return Mock(status_code=401, json=dict)
+
+    # Test 200 OK
+    monkeypatch.setattr(httpx.AsyncClient, "get", mock_get_200)
+    res_ok = await engine.check_readiness()
+    assert res_ok["ready"] is True
+    assert res_ok["diagnostic_code"] == "OK"
+    assert res_ok["version"] == "v0.3.5"
+
+    # Test 401 Unauthorized
+    monkeypatch.setattr(httpx.AsyncClient, "get", mock_get_401)
+    res_unauth = await engine.check_readiness()
+    assert res_unauth["ready"] is False
+    assert res_unauth["diagnostic_code"] == "UNAUTHORIZED"
+    assert "AdminPassword" in res_unauth["diagnostic_message"]
 
 
 @pytest.mark.asyncio
