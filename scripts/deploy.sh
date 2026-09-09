@@ -84,7 +84,27 @@ if [ -f "${REPO_ROOT}/scripts/palworld-maintenance.sh" ]; then
     chmod 0755 /home/steam/palworld-maintenance.sh
     chown steam:steam /home/steam/palworld-maintenance.sh 2>/dev/null || true
 fi
+if [ -f "${REPO_ROOT}/scripts/palworld-cert-renew.service" ]; then
+    cp "${REPO_ROOT}/scripts/palworld-cert-renew.service" /etc/systemd/system/palworld-cert-renew.service
+fi
+if [ -f "${REPO_ROOT}/scripts/palworld-cert-renew.timer" ]; then
+    cp "${REPO_ROOT}/scripts/palworld-cert-renew.timer" /etc/systemd/system/palworld-cert-renew.timer
+fi
 systemctl daemon-reload
+systemctl enable --now palworld-cert-renew.timer 2>/dev/null || true
+
+# Provision certbot if not already present
+if ! command -v certbot >/dev/null 2>&1; then
+    if command -v apt-get >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq && apt-get install -y -qq certbot >/dev/null 2>&1 || true
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y -q certbot >/dev/null 2>&1 || true
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm --needed certbot >/dev/null 2>&1 || true
+    fi
+fi
+
 if [ -f "${REPO_ROOT}/scripts/duck.sh" ] && [ -d "/home/steam/duckdns" ]; then
     cp "${REPO_ROOT}/scripts/duck.sh" /home/steam/duckdns/duck.sh
     chmod 0755 /home/steam/duckdns/duck.sh
@@ -123,8 +143,27 @@ if command -v setfacl >/dev/null 2>&1; then
 fi
 
 mkdir -p /var/lib/palmanager/backups
+mkdir -p /var/lib/palmanager/certs
 chown -R "${APP_USER}:${APP_USER}" /var/lib/palmanager
 chmod -R 0775 /var/lib/palmanager
+chmod 0750 /var/lib/palmanager/certs
+
+# Ensure sudoers rules for palworld-cert-manager.sh
+SUDOERS_FILE="/etc/sudoers.d/palmanager"
+if [ -f "${SUDOERS_FILE}" ] && ! grep -q "palworld-cert-manager.sh" "${SUDOERS_FILE}" 2>/dev/null; then
+    echo "${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/palworld-cert-manager.sh *" >> "${SUDOERS_FILE}"
+    echo "${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/palworld-cert-manager.sh *" >> "${SUDOERS_FILE}"
+    chmod 0440 "${SUDOERS_FILE}"
+fi
+
+# Register fallback daily root crontab for certificate renewal
+if command -v crontab >/dev/null 2>&1; then
+    ROOT_CRON="0 3 * * * ${APP_DIR}/scripts/palworld-cert-manager.sh renew >/dev/null 2>&1"
+    EXISTING_ROOT_CRON=$(crontab -l 2>/dev/null || true)
+    if ! echo "${EXISTING_ROOT_CRON}" | grep -q "palworld-cert-manager.sh"; then
+        printf "%s\n%s\n" "${EXISTING_ROOT_CRON}" "${ROOT_CRON}" | sed '/^$/d' | crontab - 2>/dev/null || true
+    fi
+fi
 
 # Multi-path update flags provisioning
 touch /home/steam/.update_requested 2>/dev/null || true

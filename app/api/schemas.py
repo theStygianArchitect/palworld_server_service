@@ -522,9 +522,7 @@ class FeedbackSubmitRequest(BaseModel):
         description (str): Custom markdown summary overview.
     """
 
-    category: IssueCategory = Field(
-        ..., description="Target issue template category"
-    )
+    category: IssueCategory = Field(..., description="Target issue template category")
     title: str = Field(..., min_length=3, max_length=200, description="Summary title of the issue")
     description: str = Field(default="", max_length=5000, description="Optional custom markdown overview")
 
@@ -857,3 +855,83 @@ class SaveResponse(BaseModel):
     status: str = Field(..., description="'ok' on success")
     triggered_by: str = Field(..., description="Username of the operator who triggered the save")
     timestamp: str = Field(..., description="ISO 8601 UTC timestamp of the save trigger")
+
+
+# =========================================================================
+# 11. TLS / SSL Infrastructure Schemas
+# =========================================================================
+
+
+class TLSCertificateInfo(BaseModel):
+    """Parsed X.509 certificate metadata.
+
+    Attributes:
+        subject (str): Common Name or subject DN of the certificate.
+        issuer (str): Certificate authority that issued the certificate.
+        valid_from (str): ISO 8601 UTC timestamp when certificate becomes valid.
+        expires_at (str): ISO 8601 UTC timestamp when certificate expires.
+        days_remaining (int): Integer days remaining until certificate expiration.
+        is_expired (bool): True if current time is past expiration date.
+        san_list (list[str]): Subject Alternative Names registered to certificate.
+    """
+
+    subject: str = Field(..., description="Certificate subject Common Name or DN")
+    issuer: str = Field(..., description="Certificate issuing authority")
+    valid_from: str = Field(..., description="ISO 8601 UTC start of validity period")
+    expires_at: str = Field(..., description="ISO 8601 UTC expiration timestamp")
+    days_remaining: int = Field(..., description="Days remaining before certificate expires")
+    is_expired: bool = Field(..., description="Whether certificate is currently expired")
+    san_list: list[str] = Field(default_factory=list, description="Subject Alternative Names")
+
+
+class TLSStatusResponse(BaseModel):
+    """Runtime TLS/HTTPS status payload for dashboard and REST consumers.
+
+    Attributes:
+        enabled (bool): Whether HTTPS / TLS encryption is actively running.
+        scheme (Literal['http', 'https']): Active URL scheme.
+        domain (str): Configured domain hostname.
+        port (int): Web management plane listening port.
+        certificate (TLSCertificateInfo | None): Parsed certificate metadata if available.
+        cert_path (str | None): Filesystem path to certificate chain if loaded.
+        auto_renew_active (bool): Whether background systemd renewal timer is registered.
+        warning (str | None): Optional warning message if certificate is nearing expiration or invalid.
+    """
+
+    enabled: bool = Field(..., description="Whether HTTPS encryption is actively running")
+    scheme: Literal["http", "https"] = Field(..., description="Active protocol scheme")
+    domain: str = Field(..., description="Configured server domain hostname")
+    port: int = Field(..., description="Active web server port")
+    certificate: TLSCertificateInfo | None = Field(default=None, description="Active certificate metadata")
+    cert_path: str | None = Field(default=None, description="Filesystem path to certificate file")
+    auto_renew_active: bool = Field(default=False, description="Whether automated renewal is active")
+    warning: str | None = Field(default=None, description="Operational warning or configuration issue")
+
+
+class TLSRenewRequest(BaseModel):
+    """Request payload for triggering an on-demand TLS certificate renewal.
+
+    Attributes:
+        force (bool): When True, passes --force-renewal to certbot to renew even if not nearing expiration.
+    """
+
+    force: bool = Field(
+        default=False,
+        description="Whether to force immediate renewal even if the certificate is not yet near expiration.",
+    )
+
+
+class TLSRenewResponse(BaseModel):
+    """Response returned upon triggering an automated certificate renewal.
+
+    Attributes:
+        status (Literal['queued', 'success', 'failed', 'skipped']): Execution status.
+        message (str): Informational outcome message.
+        triggered_at (str): ISO 8601 UTC timestamp when renewal was triggered.
+    """
+
+    status: Literal["queued", "success", "failed", "skipped"] = Field(
+        ..., description="Execution status of the renewal trigger"
+    )
+    message: str = Field(..., description="Informational outcome message")
+    triggered_at: str = Field(..., description="ISO 8601 timestamp of execution")

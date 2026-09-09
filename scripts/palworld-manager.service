@@ -10,7 +10,8 @@ WorkingDirectory=/opt/palworld-web-manager
 Environment="PATH=/opt/palworld-web-manager/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PALWORLD_SERVICE_NAME=palworld.service"
 ExecStartPre=-/bin/bash -c 'if [ -f /home/steam/duckdns/duck.sh ]; then /bin/bash /home/steam/duckdns/duck.sh >/dev/null 2>&1 || true; fi'
-ExecStart=/bin/bash -c 'ETH0_IP=$(ip -4 -o addr show dev eth0 2>/dev/null | awk -F "[ /]+" "{print \$4}" || true); if [ -x /usr/local/bin/palworld-manager ]; then exec /usr/local/bin/palworld-manager --host "${ETH0_IP:-0.0.0.0}" --port 8080; else exec /opt/palworld-web-manager/.venv/bin/uvicorn app.main:app --host "${ETH0_IP:-0.0.0.0}" --port 8080; fi'
+ExecStart=/bin/bash -c 'ETH0_IP=$(ip -4 -o addr show dev eth0 2>/dev/null | awk -F "[ /]+" "{print \$4}" || true); SSL_ARGS=""; if [ -f /var/lib/palmanager/certs/fullchain.pem ] && [ -f /var/lib/palmanager/certs/privkey.pem ]; then SSL_ARGS="--ssl-keyfile /var/lib/palmanager/certs/privkey.pem --ssl-certfile /var/lib/palmanager/certs/fullchain.pem"; fi; if [ -x /usr/local/bin/palworld-manager ]; then exec /usr/local/bin/palworld-manager --host "${ETH0_IP:-0.0.0.0}" --port 8080 ${SSL_ARGS}; else exec /opt/palworld-web-manager/.venv/bin/uvicorn app.main:app --host "${ETH0_IP:-0.0.0.0}" --port 8080 ${SSL_ARGS}; fi'
+
 Restart=always
 RestartSec=5
 

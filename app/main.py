@@ -60,6 +60,9 @@ from app.api.schemas import (
     SaveResponse,
     ShutdownRequest,
     ShutdownResponse,
+    TLSRenewRequest,
+    TLSRenewResponse,
+    TLSStatusResponse,
     UpdateApplyRequest,
     UpdateApplyResponse,
     UpdateStatusResponse,
@@ -74,7 +77,7 @@ from app.api.schemas import (
 )
 from app.config_manager.parser import SETTING_METADATA
 from app.config_manager.pipeline import ConfigPipeline
-from app.core.config import get_settings, reload_settings
+from app.core.config import get_settings, inspect_certificate, reload_settings, resolve_ssl_paths
 from app.core.logger import log
 from app.database import (
     DatabaseManager,
@@ -2049,7 +2052,7 @@ async def shutdown_server(
         engine.execute_countdown_and_reboot,
         payload.seconds,
         False,  # trigger_steam_update=False for a plain restart
-        None,   # update_version_tag
+        None,  # update_version_tag
         payload.message,
     )
     return ShutdownResponse(
@@ -2093,25 +2096,212 @@ async def manual_world_save(
     )
 
 
+def _check_auto_renew_active() -> bool:
+    """Checks if palworld-cert-renew.timer is present or active on the host."""
+    timer_path = Path("/etc/systemd/system/palworld-cert-renew.timer")
+    if timer_path.is_file():
+        return True
+    if os.name != "nt":
+        try:
+            res = subprocess.run(  # nosec B603, B607
+                ["systemctl", "is-active", "--quiet", "palworld-cert-renew.timer"],
+                capture_output=True,
+                check=False,
+                timeout=2,
+            )
+            return res.returncode == 0
+        except subprocess.SubprocessError as err:
+            log.debug("Subprocess error checking palworld-cert-renew.timer: %s", err)
+            return False
+        except OSError as err:
+            log.debug("OS error checking palworld-cert-renew.timer: %s", err)
+            return False
+    return False
+
+
+@app.get("/api/system/tls/status", response_model=TLSStatusResponse, tags=["System"])
+async def get_tls_status(
+    _: UserRecord = Depends(get_current_user),
+) -> TLSStatusResponse:
+    """Returns the current TLS encryption status, certificate details, and domain config.
+
+    Accessible to any authenticated user (Viewer, Operator, Admin).
+
+    Args:
+        _: Authenticated user requesting status.
+
+    Returns:
+        TLSStatusResponse: Operational status of SSL/TLS and certificate metadata.
+    """
+    domain = settings.duckdns_domain or "localhost"
+    resolved_paths = resolve_ssl_paths(settings)
+    auto_renew_active = await asyncio.to_thread(_check_auto_renew_active)
+
+    if resolved_paths is None:
+        return TLSStatusResponse(
+            enabled=False,
+            scheme="http",
+            domain=domain,
+            port=settings.web_port,
+            certificate=None,
+            cert_path=None,
+            auto_renew_active=auto_renew_active,
+            warning="Running unencrypted plaintext HTTP. No valid certificate pair detected.",
+        )
+
+    cert_path, _key_path = resolved_paths
+    cert_info = inspect_certificate(cert_path)
+    warning = None
+    if cert_info is not None and cert_info.days_remaining <= 15:
+        warning = f"Certificate expires in {cert_info.days_remaining} days. Renewal recommended."
+
+    return TLSStatusResponse(
+        enabled=True,
+        scheme="https",
+        domain=domain,
+        port=settings.ssl_port if settings.ssl_enabled else settings.web_port,
+        certificate=cert_info,
+        cert_path=str(cert_path),
+        auto_renew_active=auto_renew_active,
+        warning=warning,
+    )
+
+
+@app.post("/api/system/tls/renew", response_model=TLSRenewResponse, tags=["System"])
+async def trigger_tls_renewal(
+    payload: TLSRenewRequest,
+    user: UserRecord = Depends(perm_system_update),
+) -> TLSRenewResponse:
+    """Triggers an on-demand TLS certificate renewal via palworld-cert-manager.sh.
+
+    Restricted to operators and administrators with system:update permissions.
+    Supports early renewal via payload.force=True.
+
+    Args:
+        payload (TLSRenewRequest): Renewal trigger parameters.
+        user (UserRecord): Authenticated operator triggering the action.
+
+    Returns:
+        TLSRenewResponse: Outcome status and informational message.
+
+    Raises:
+        HTTPException: 500 if the certificate renewal script encounters an error.
+    """
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    log.info(
+        "Operator '%s' requested TLS certificate renewal (force=%s) at %s",
+        user.username,
+        payload.force,
+        timestamp,
+    )
+
+    candidate_scripts = [
+        Path("/opt/palworld-web-manager/scripts/palworld-cert-manager.sh"),
+        Path(__file__).parent.parent / "scripts" / "palworld-cert-manager.sh",
+    ]
+    cert_script: Path | None = None
+    for s in candidate_scripts:
+        if s.is_file():
+            cert_script = s
+            break
+
+    if cert_script is None:
+        log.warning("palworld-cert-manager.sh script not found on host filesystem")
+        return TLSRenewResponse(
+            status="skipped",
+            message="Certificate manager script not installed. Please deploy scripts/palworld-cert-manager.sh.",
+            triggered_at=timestamp,
+        )
+
+    cmd = [str(cert_script), "renew"]
+    if payload.force:
+        cmd.append("--force")
+
+    if os.name != "nt":
+        sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
+        cmd.insert(0, sudo_bin)
+
+    try:
+        proc = await asyncio.to_thread(
+            subprocess.run,  # nosec B603
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        if proc.returncode != 0:
+            log.error("Certificate renewal script returned error code %d: %s", proc.returncode, proc.stderr)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Certificate renewal failed: {proc.stderr.strip() or 'Unknown error'}",
+            )
+
+        log.info("Certificate renewal completed successfully: %s", proc.stdout.strip())
+        return TLSRenewResponse(
+            status="success",
+            message=f"Certificate renewal completed successfully: {proc.stdout.strip()[:200]}",
+            triggered_at=timestamp,
+        )
+    except subprocess.TimeoutExpired as err:
+        log.error("Certificate renewal script timed out after 120s: %s", err)
+        raise HTTPException(
+            status_code=504,
+            detail="Certificate renewal script timed out after 120 seconds. Check DNS propagation.",
+        ) from err
+    except OSError as err:
+        log.error("OS error invoking certificate renewal: %s", err)
+        raise HTTPException(
+            status_code=500,
+            detail=f"OS execution error: {err}",
+        ) from err
+
+
 if __name__ == "__main__":
     import argparse
 
     import uvicorn
 
-    cli_parser = argparse.ArgumentParser(
-        description="Palworld Unified Operations Suite & Web Management Plane"
-    )
+    cli_parser = argparse.ArgumentParser(description="Palworld Unified Operations Suite & Web Management Plane")
     cli_parser.add_argument(
         "--host",
-        default=settings.host,
+        default=settings.host_ip,
         help="Bind host IP address (default: configured setting)",
     )
     cli_parser.add_argument(
         "--port",
         type=int,
-        default=settings.port,
+        default=settings.web_port,
         help="Bind port number (default: configured setting)",
+    )
+    cli_parser.add_argument(
+        "--ssl-keyfile",
+        default=None,
+        help="Path to TLS private key PEM file",
+    )
+    cli_parser.add_argument(
+        "--ssl-certfile",
+        default=None,
+        help="Path to TLS certificate fullchain PEM file",
     )
     cli_args = cli_parser.parse_args()
 
-    uvicorn.run(app, host=cli_args.host, port=cli_args.port)
+    active_ssl_cert = cli_args.ssl_certfile
+    active_ssl_key = cli_args.ssl_keyfile
+
+    if not active_ssl_cert or not active_ssl_key:
+        discovered = resolve_ssl_paths(settings)
+        if discovered is not None:
+            active_ssl_cert = str(discovered[0])
+            active_ssl_key = str(discovered[1])
+
+    uvicorn_kwargs: dict[str, Any] = {
+        "host": cli_args.host,
+        "port": cli_args.port,
+    }
+    if active_ssl_cert and active_ssl_key:
+        log.info("Starting with TLS encryption enabled (cert: %s)", active_ssl_cert)
+        uvicorn_kwargs["ssl_certfile"] = active_ssl_cert
+        uvicorn_kwargs["ssl_keyfile"] = active_ssl_key
+
+    uvicorn.run(app, **uvicorn_kwargs)

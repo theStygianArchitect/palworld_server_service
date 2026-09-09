@@ -36,25 +36,26 @@ if [ "${EUID}" -ne 0 ]; then
 fi
 
 # 1. System Dependencies & Build Toolchain
-echo -n "[1/8] Installing system dependencies and build toolchain... "
+echo -n "[1/8] Installing system dependencies, build toolchain, and certbot... "
 if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq curl git tar acl build-essential python3 python3-venv python3-pip iproute2 dnsutils ufw >/dev/null 2>&1 || true
+    apt-get install -y -qq curl git tar acl build-essential python3 python3-venv python3-pip iproute2 dnsutils ufw certbot >/dev/null 2>&1 || true
 elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y -q curl git tar acl gcc make python3 python3-pip python3-devel iproute bind-utils >/dev/null 2>&1 || true
+    dnf install -y -q curl git tar acl gcc make python3 python3-pip python3-devel iproute bind-utils certbot >/dev/null 2>&1 || true
 elif command -v yum >/dev/null 2>&1; then
-    yum install -y -q curl git tar acl gcc make python3 python3-pip python3-devel iproute bind-utils >/dev/null 2>&1 || true
+    yum install -y -q curl git tar acl gcc make python3 python3-pip python3-devel iproute bind-utils certbot >/dev/null 2>&1 || true
 elif command -v pacman >/dev/null 2>&1; then
-    pacman -Sy --noconfirm --needed curl git tar acl base-devel python python-pip iproute2 bind >/dev/null 2>&1 || true
+    pacman -Sy --noconfirm --needed curl git tar acl base-devel python python-pip iproute2 bind certbot >/dev/null 2>&1 || true
 elif command -v zypper >/dev/null 2>&1; then
-    zypper --non-interactive install -y curl git tar acl gcc make python3 python3-pip python3-devel iproute2 bind-utils >/dev/null 2>&1 || true
+    zypper --non-interactive install -y curl git tar acl gcc make python3 python3-pip python3-devel iproute2 bind-utils certbot >/dev/null 2>&1 || true
 elif command -v apk >/dev/null 2>&1; then
-    apk add --no-cache curl git tar acl build-base python3 py3-pip python3-dev iproute2 bind-tools >/dev/null 2>&1 || true
+    apk add --no-cache curl git tar acl build-base python3 py3-pip python3-dev iproute2 bind-tools certbot >/dev/null 2>&1 || true
 else
-    echo "[-] Warning: Unrecognized package manager. Ensure Python 3.10+, gcc, and make are available." >&2
+    echo "[-] Warning: Unrecognized package manager. Ensure Python 3.10+, gcc, make, and certbot are available." >&2
 fi
 echo "[ OK ]"
+
 
 # 2. Service Account Provisioning
 echo -n "[2/8] Provisioning dedicated system users '${APP_USER}' and '${STEAM_USER}'... "
@@ -118,11 +119,12 @@ touch "${STEAM_HOME}/.update_requested" 2>/dev/null || true
 chmod 0666 "${STEAM_HOME}/.update_requested" 2>/dev/null || true
 setfacl -m u:"${APP_USER}":rw "${STEAM_HOME}/.update_requested" 2>/dev/null || true
 
-mkdir -p /var/lib/palmanager
+mkdir -p /var/lib/palmanager/certs
 touch /var/lib/palmanager/update_requested 2>/dev/null || true
 : > /var/lib/palmanager/update_requested 2>/dev/null || true
 chown -R "${APP_USER}:${APP_USER}" /var/lib/palmanager 2>/dev/null || true
 chmod 0775 /var/lib/palmanager 2>/dev/null || true
+chmod 0750 /var/lib/palmanager/certs 2>/dev/null || true
 chmod 0666 /var/lib/palmanager/update_requested 2>/dev/null || true
 setfacl -m u:steam:rw /var/lib/palmanager/update_requested 2>/dev/null || true
 setfacl -m u:steam:rwx /var/lib/palmanager 2>/dev/null || true
@@ -138,6 +140,8 @@ ${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *, /usr/bin/
 ${APP_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status
 ${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh *
 ${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/deploy.sh *
+${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/palworld-cert-manager.sh *
+${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/palworld-cert-manager.sh *
 SUDO_EOF
 chmod 0440 "${SUDOERS_FILE}"
 if command -v visudo >/dev/null 2>&1; then
@@ -159,7 +163,14 @@ fi
 if [ -f "${SCRIPT_DIR}/palworld-manager.service" ]; then
     cp "${SCRIPT_DIR}/palworld-manager.service" "${MANAGER_SERVICE_FILE}"
 fi
+if [ -f "${SCRIPT_DIR}/palworld-cert-renew.service" ]; then
+    cp "${SCRIPT_DIR}/palworld-cert-renew.service" "/etc/systemd/system/palworld-cert-renew.service"
+fi
+if [ -f "${SCRIPT_DIR}/palworld-cert-renew.timer" ]; then
+    cp "${SCRIPT_DIR}/palworld-cert-renew.timer" "/etc/systemd/system/palworld-cert-renew.timer"
+fi
 echo "[ OK ]"
+
 
 # 6. Standalone Binary Deployment or Virtualenv Environment Build
 echo -n "[6/8] Building operations plane execution runtime... "
@@ -208,9 +219,10 @@ if command -v crontab >/dev/null 2>&1; then
     printf "%s\n%s\n" "${FILTERED_STEAM_CRON}" "${STEAM_CRON}" | sed '/^$/d' | crontab -u steam - 2>/dev/null || true
 
     CRON_JOB="0 */4 * * * curl -s -X POST http://127.0.0.1:${APP_PORT}/api/service/reboot -H 'Content-Type: application/json' -d '{\"settings\":{}, \"countdown_seconds\":600, \"trigger_steam_update\":false}' > /dev/null 2>&1"
+    CERT_CRON="0 3 * * * /opt/palworld-web-manager/scripts/palworld-cert-manager.sh renew >/dev/null 2>&1"
     EXISTING_CRON=$(crontab -l 2>/dev/null || true)
-    FILTERED_CRON=$(echo "${EXISTING_CRON}" | grep -v "/api/service/reboot" || true)
-    printf "%s\n%s\n" "${FILTERED_CRON}" "${CRON_JOB}" | sed '/^$/d' | crontab - 2>/dev/null || true
+    FILTERED_CRON=$(echo "${EXISTING_CRON}" | grep -v "/api/service/reboot" | grep -v "palworld-cert-manager.sh" || true)
+    printf "%s\n%s\n%s\n" "${FILTERED_CRON}" "${CRON_JOB}" "${CERT_CRON}" | sed '/^$/d' | crontab - 2>/dev/null || true
 fi
 
 if [ -f "/home/steam/duckdns/duck.sh" ]; then
@@ -231,6 +243,8 @@ if command -v systemctl >/dev/null 2>&1; then
 
     systemctl restart palworld-manager.service >/dev/null 2>&1 || true
     systemctl enable palworld-manager.service >/dev/null 2>&1 || true
+    systemctl enable palworld-cert-renew.timer >/dev/null 2>&1 || true
+    systemctl start palworld-cert-renew.timer >/dev/null 2>&1 || true
 fi
 echo "[ OK ]"
 
@@ -242,13 +256,19 @@ if [ -z "${ETH0_DETECTED:-}" ] && command -v hostname >/dev/null 2>&1; then
     ETH0_DETECTED=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
 fi
 
+PORT_SCHEME="http"
+if [ -f "/var/lib/palmanager/certs/fullchain.pem" ] && [ -f "/var/lib/palmanager/certs/privkey.pem" ]; then
+    PORT_SCHEME="https"
+fi
+
 echo ""
 echo "========================================================================="
 echo " Palworld Operations Suite Deployed Successfully!"
-echo " Web UI Dashboard:        http://${ETH0_DETECTED:-localhost}:${APP_PORT}"
+echo " Web UI Dashboard:        ${PORT_SCHEME}://${ETH0_DETECTED:-localhost}:${APP_PORT}"
 echo " Pages Available:         World Settings | Player Roster | Hardware | Backups | Observability"
 echo " Game Server State:       $(systemctl is-active palworld.service 2>/dev/null || echo 'inactive')"
 echo "========================================================================="
+
 
 ADMIN_CRED_FILE="/etc/palmanager/initial_admin_credential.txt"
 if [ ! -f "${ADMIN_CRED_FILE}" ] && [ -f "${HOME}/.palmanager/initial_admin_credential.txt" ]; then

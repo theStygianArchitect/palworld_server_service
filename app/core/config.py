@@ -6,8 +6,10 @@ hot-reloading of server configuration using Pydantic Settings and pathlib.Path.
 
 from __future__ import annotations
 
+import datetime
 import os
 import socket
+import ssl
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +20,8 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
+
+from app.api.schemas import TLSCertificateInfo
 
 from .logger import log
 
@@ -209,12 +213,7 @@ def resolve_host_lan_ip() -> str:
     if env_ip and env_ip != "127.0.0.1":
         return env_ip
 
-    return (
-        _probe_socket_lan_ip()
-        or _probe_iface_lan_ip()
-        or _probe_hostname_lan_ip()
-        or "127.0.0.1"
-    )
+    return _probe_socket_lan_ip() or _probe_iface_lan_ip() or _probe_hostname_lan_ip() or "127.0.0.1"
 
 
 def _resolve_default_ini_path() -> str:
@@ -501,6 +500,32 @@ class AppSettings(BaseSettings):
         ),
     )
 
+    # HTTPS / TLS Configuration
+    ssl_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("PALWORLD_SSL_ENABLED", "SSL_ENABLED", "ssl_enabled"),
+    )
+    ssl_cert_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PALWORLD_SSL_CERT_PATH", "SSL_CERT_PATH", "ssl_cert_path"),
+    )
+    ssl_key_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PALWORLD_SSL_KEY_PATH", "SSL_KEY_PATH", "ssl_key_path"),
+    )
+    ssl_port: int = Field(
+        default=8443,
+        validation_alias=AliasChoices("PALWORLD_SSL_PORT", "SSL_PORT", "ssl_port"),
+    )
+    ssl_auto_detect: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("PALWORLD_SSL_AUTO_DETECT", "SSL_AUTO_DETECT", "ssl_auto_detect"),
+    )
+    letsencrypt_email: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PALWORLD_LETSENCRYPT_EMAIL", "LETSENCRYPT_EMAIL", "letsencrypt_email"),
+    )
+
     @field_validator("github_repo_url")
     @classmethod
     def validate_github_repo_url(cls, v: str) -> str:
@@ -596,3 +621,174 @@ def resolve_admin_credential_export_path(custom_path: str | Path | None = None) 
     home_dir = Path.home() / ".palmanager"
     home_dir.mkdir(parents=True, exist_ok=True)
     return home_dir / "initial_admin_credential.txt"
+
+
+def _extract_dn_field(dn_tuples: tuple[Any, ...], field_name: str) -> str | None:
+    """Extracts a specific attribute (e.g. commonName) from decoded X.509 RDN tuples.
+
+    Args:
+        dn_tuples: Decoded Relative Distinguished Name structure from ssl._ssl._test_decode_cert.
+        field_name: Target attribute key name.
+
+    Returns:
+        str | None: String value if present, else None.
+    """
+    for rdn in dn_tuples:
+        for key, val in rdn:
+            if key == field_name:
+                return str(val)
+    return None
+
+
+def _decode_x509_file(path_str: str) -> dict[str, Any] | None:
+    """Invokes CPython's internal _ssl._test_decode_cert with safe fallback."""
+    # pylint: disable=protected-access,assignment-from-no-return
+    # Rationale: CPython standard library _ssl._test_decode_cert returns dict of parsed ASN.1 fields.
+    c_ssl: Any = getattr(ssl, "_ssl", None)
+    if c_ssl is None or not hasattr(c_ssl, "_test_decode_cert"):
+        log.warning("CPython internal _ssl._test_decode_cert is unavailable on this Python runtime")
+        return None
+    raw_dict: dict[str, Any] = c_ssl._test_decode_cert(path_str)
+    return raw_dict
+
+
+def _build_tls_cert_info(decoded: dict[str, Any]) -> TLSCertificateInfo:
+    """Builds a TLSCertificateInfo model from a decoded X.509 cert dictionary."""
+    subject_cn = _extract_dn_field(decoded.get("subject", ()), "commonName") or "Unknown"
+    issuer_cn = (
+        _extract_dn_field(decoded.get("issuer", ()), "commonName")
+        or _extract_dn_field(decoded.get("issuer", ()), "organizationName")
+        or "Unknown"
+    )
+
+    not_after_str = decoded.get("notAfter", "")
+    not_before_str = decoded.get("notBefore", "")
+
+    dt_expires = (
+        datetime.datetime.strptime(not_after_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=datetime.timezone.utc)
+        if not_after_str
+        else datetime.datetime.now(datetime.timezone.utc)
+    )
+    dt_valid_from = (
+        datetime.datetime.strptime(not_before_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=datetime.timezone.utc)
+        if not_before_str
+        else datetime.datetime.now(datetime.timezone.utc)
+    )
+
+    dt_now = datetime.datetime.now(datetime.timezone.utc)
+    days_remaining = (dt_expires - dt_now).days
+
+    san_tuples = decoded.get("subjectAltName", ())
+    san_list = [str(val) for kind, val in san_tuples if kind in ("DNS", "IP Address")]
+
+    return TLSCertificateInfo(
+        subject=subject_cn,
+        issuer=issuer_cn,
+        valid_from=dt_valid_from.isoformat(),
+        expires_at=dt_expires.isoformat(),
+        days_remaining=days_remaining,
+        is_expired=dt_now > dt_expires,
+        san_list=san_list,
+    )
+
+
+def inspect_certificate(cert_path: Path | str) -> TLSCertificateInfo | None:
+    """Inspects and parses an X.509 PEM certificate file using pure standard library.
+
+    Args:
+        cert_path: Filesystem path to the certificate PEM file.
+
+    Returns:
+        TLSCertificateInfo | None: Populated metadata model if valid, or None if missing/invalid.
+    """
+    path_obj = Path(cert_path).expanduser().resolve()
+    if not path_obj.is_file():
+        log.debug("Certificate file does not exist at %s", path_obj)
+        return None
+
+    res: TLSCertificateInfo | None = None
+    try:
+        decoded = _decode_x509_file(str(path_obj))
+        if decoded:
+            res = _build_tls_cert_info(decoded)
+        else:
+            log.warning("Certificate at %s decoded to empty payload", path_obj)
+    except FileNotFoundError as err:
+        log.warning("Certificate file not found at %s: %s", path_obj, err)
+    except PermissionError as err:
+        log.warning("Permission denied reading certificate at %s: %s", path_obj, err)
+    except OSError as err:
+        log.warning("OS error decoding certificate at %s: %s", path_obj, err)
+    except ValueError as err:
+        log.warning("Value error decoding certificate at %s: %s", path_obj, err)
+    except KeyError as err:
+        log.warning("Key error decoding certificate fields at %s: %s", path_obj, err)
+
+    return res
+
+
+def resolve_ssl_paths(settings_obj: AppSettings | None = None) -> tuple[Path, Path] | None:
+    """Discovers and validates active SSL/TLS certificate and private key filepaths.
+
+    Validates that candidate certificate and private key files exist, are readable,
+    and form a cryptographically matching key pair via ssl.SSLContext.load_cert_chain.
+
+    Args:
+        settings_obj: Optional AppSettings instance (defaults to get_settings()).
+
+    Returns:
+        tuple[Path, Path] | None: Valid (cert_path, key_path) pair, or None if unavailable.
+    """
+    cfg = settings_obj or get_settings()
+
+    candidates: list[tuple[Path, Path]] = []
+
+    # 1. Explicitly configured paths
+    if cfg.ssl_cert_path and cfg.ssl_key_path:
+        candidates.append((Path(cfg.ssl_cert_path), Path(cfg.ssl_key_path)))
+
+    # 2. Standard auto-detection paths
+    if cfg.ssl_auto_detect or cfg.ssl_enabled:
+        candidates.append(
+            (
+                Path("/var/lib/palmanager/certs/fullchain.pem"),
+                Path("/var/lib/palmanager/certs/privkey.pem"),
+            )
+        )
+        if cfg.duckdns_domain:
+            clean_domain = cfg.duckdns_domain.strip().lower()
+            candidates.append(
+                (
+                    Path(f"/etc/letsencrypt/live/{clean_domain}/fullchain.pem"),
+                    Path(f"/etc/letsencrypt/live/{clean_domain}/privkey.pem"),
+                )
+            )
+        candidates.append(
+            (
+                Path.home() / ".palmanager" / "certs" / "fullchain.pem",
+                Path.home() / ".palmanager" / "certs" / "privkey.pem",
+            )
+        )
+
+    for cert_candidate, key_candidate in candidates:
+        try:
+            resolved_cert = cert_candidate.expanduser().resolve()
+            resolved_key = key_candidate.expanduser().resolve()
+            if not resolved_cert.is_file() or not resolved_key.is_file():
+                continue
+
+            # Cryptographic validation of certificate and private key match
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(certfile=str(resolved_cert), keyfile=str(resolved_key))
+            log.info("Validated active TLS certificate pair at %s and %s", resolved_cert, resolved_key)
+            return resolved_cert, resolved_key
+        except FileNotFoundError as err:
+            log.debug("TLS path candidate %s / %s not found: %s", cert_candidate, key_candidate, err)
+        except PermissionError as err:
+            log.debug("TLS path candidate %s / %s permission denied: %s", cert_candidate, key_candidate, err)
+        except ssl.SSLError as err:
+            log.debug("TLS path candidate %s / %s SSL mismatch: %s", cert_candidate, key_candidate, err)
+        except OSError as err:
+            log.debug("TLS path candidate %s / %s OS error: %s", cert_candidate, key_candidate, err)
+
+    return None

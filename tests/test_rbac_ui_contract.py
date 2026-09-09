@@ -45,9 +45,7 @@ def rbac_client(tmp_path: Path) -> Generator[TestClient, None, None]:
         metrics_db.initialize()
 
 
-def _create_user_and_token(
-    client: TestClient, username: str, password: str, role: str
-) -> str:
+def _create_user_and_token(client: TestClient, username: str, password: str, role: str) -> str:
     """Helper to create or promote a user to the specified role and return a bearer token."""
     # 1. Register public user (starts as viewer)
     reg_res = client.post(
@@ -148,12 +146,8 @@ def test_rbac_permission_matrix_contract(rbac_client: TestClient):
 
     # Viewer: Can view tracker/community, but cannot kick or ban players
     assert rbac_client.get("/api/tracker/community", headers=viewer_headers).status_code == 200
-    assert rbac_client.post(
-        "/api/players/kick", json={"player_id": "p1"}, headers=viewer_headers
-    ).status_code == 403
-    assert rbac_client.post(
-        "/api/players/ban", json={"player_id": "p1"}, headers=viewer_headers
-    ).status_code == 403
+    assert rbac_client.post("/api/players/kick", json={"player_id": "p1"}, headers=viewer_headers).status_code == 403
+    assert rbac_client.post("/api/players/ban", json={"player_id": "p1"}, headers=viewer_headers).status_code == 403
 
     # Viewer: Can view and create feedback
     assert rbac_client.get("/api/feedback", headers=viewer_headers).status_code == 200
@@ -340,14 +334,14 @@ def test_index_html_javascript_syntax_integrity():
                     continue
                 if ch == "}":
                     if not brace_stack:
-                        errors.append(f"Unexpected '}}' at script #{script_idx} line {line_idx+1}:{col+1}")
+                        errors.append(f"Unexpected '}}' at script #{script_idx} line {line_idx + 1}:{col + 1}")
                     else:
                         top_type, _, _ = brace_stack.pop()
                         if top_type == "EXPR":
                             if state_stack[-1] == "TEMPLATE_EXPR":
                                 state_stack.pop()
                             else:
-                                errors.append(f"Template expression mismatch at line {line_idx+1}:{col+1}")
+                                errors.append(f"Template expression mismatch at line {line_idx + 1}:{col + 1}")
                     col += 1
                     continue
                 col += 1
@@ -358,3 +352,16 @@ def test_index_html_javascript_syntax_integrity():
         assert not errors, f"Syntax errors detected in script #{script_idx}: {errors}"
         assert not brace_stack, f"Unclosed braces in script #{script_idx}: {brace_stack}"
         assert state_stack == ["NORMAL"], f"Unterminated state in script #{script_idx}: {state_stack}"
+
+
+def test_dashboard_ui_tls_elements_present(rbac_client: TestClient) -> None:
+    """Verifies that HTTPS header badge, TLS security card, and TLS modal are present in dashboard HTML."""
+    resp = rbac_client.get("/")
+    assert resp.status_code == 200
+    html = resp.text
+    assert 'id="httpsHeaderBadge"' in html
+    assert 'id="tlsCard"' in html
+    assert 'id="tlsModal"' in html
+    assert 'id="btnRenewTlsNow"' in html
+    assert "fetchTlsStatus()" in html
+    assert "triggerTlsRenewal()" in html
