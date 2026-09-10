@@ -613,6 +613,28 @@ perm_users_manage = require_permission("users:manage")
 perm_system_update = require_permission("system:update")
 
 
+def require_admin():
+    """Factory creating a FastAPI route dependency that restricts access strictly to administrators.
+
+    Returns:
+        Callable dependency validating admin authorization.
+    """
+
+    def _dependency(user: UserRecord = Depends(get_current_user)) -> UserRecord:
+        if user.role != "admin":
+            log.warning("Admin access denied: user '%s' has role '%s', admin required", user.username, user.role)
+            raise HTTPException(
+                status_code=403,
+                detail="Forbidden: Administrator role required.",
+            )
+        return user
+
+    return _dependency
+
+
+perm_admin = require_admin()
+
+
 def render_feedback_markdown(req: FeedbackSubmitRequest) -> str:
     """Renders formatted Markdown matching GitHub issue templates from validated submission.
 
@@ -2147,14 +2169,14 @@ def _check_auto_renew_active() -> bool:
 
 @app.get("/api/system/tls/status", response_model=TLSStatusResponse, tags=["System"])
 async def get_tls_status(
-    _: UserRecord = Depends(get_current_user),
+    _: UserRecord = Depends(perm_admin),
 ) -> TLSStatusResponse:
     """Returns the current TLS encryption status, certificate details, and domain config.
 
-    Accessible to any authenticated user (Viewer, Operator, Admin).
+    Restricted strictly to administrators.
 
     Args:
-        _: Authenticated user requesting status.
+        _: Authenticated administrator requesting status.
 
     Returns:
         TLSStatusResponse: Operational status of SSL/TLS and certificate metadata.
@@ -2196,16 +2218,16 @@ async def get_tls_status(
 @app.post("/api/system/tls/renew", response_model=TLSRenewResponse, tags=["System"])
 async def trigger_tls_renewal(
     payload: TLSRenewRequest,
-    user: UserRecord = Depends(perm_system_update),
+    user: UserRecord = Depends(perm_admin),
 ) -> TLSRenewResponse:
     """Triggers an on-demand TLS certificate renewal via palworld-cert-manager.sh.
 
-    Restricted to operators and administrators with system:update permissions.
+    Restricted strictly to administrators.
     Supports early renewal via payload.force=True.
 
     Args:
         payload (TLSRenewRequest): Renewal trigger parameters.
-        user (UserRecord): Authenticated operator triggering the action.
+        user (UserRecord): Authenticated administrator triggering the action.
 
     Returns:
         TLSRenewResponse: Outcome status and informational message.
@@ -2215,7 +2237,7 @@ async def trigger_tls_renewal(
     """
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
     log.info(
-        "Operator '%s' requested TLS certificate renewal (force=%s) at %s",
+        "Administrator '%s' requested TLS certificate renewal (force=%s) at %s",
         user.username,
         payload.force,
         timestamp,
@@ -2245,7 +2267,7 @@ async def trigger_tls_renewal(
 
     if os.name != "nt":
         sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
-        cmd.insert(0, sudo_bin)
+        cmd[0:0] = [sudo_bin, "-n"]
 
     try:
         proc = await asyncio.to_thread(
@@ -2257,10 +2279,18 @@ async def trigger_tls_renewal(
             check=False,
         )
         if proc.returncode != 0:
-            log.error("Certificate renewal script returned error code %d: %s", proc.returncode, proc.stderr)
+            err_msg = proc.stderr.strip() or "Unknown error"
+            log.error("Certificate renewal script returned error code %d: %s", proc.returncode, err_msg)
+            if "password is required" in err_msg or "terminal is required" in err_msg:
+                detail_msg = (
+                    "Certificate renewal failed: passwordless sudo is not configured for palworld-cert-manager.sh. "
+                    "Please run 'sudo ./scripts/deploy.sh' on the host or provision '/etc/sudoers.d/palmanager-certs'."
+                )
+            else:
+                detail_msg = f"Certificate renewal failed: {err_msg}"
             raise HTTPException(
                 status_code=500,
-                detail=f"Certificate renewal failed: {proc.stderr.strip() or 'Unknown error'}",
+                detail=detail_msg,
             )
 
         log.info("Certificate renewal completed successfully: %s", proc.stdout.strip())

@@ -1537,6 +1537,7 @@
             <button type="button" id="btnRenewTlsNow" onclick="triggerTlsRenewal()" class="px-3.5 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-bold transition flex items-center gap-1.5 shadow-lg shadow-brand-500/20 text-xs">
               <span>🔄</span> Renew Certificate Now
             </button>
+          </div>
           <!-- TLS Renewal Progression & Shimmer Progress Bar -->
           <div id="tlsProgressSection" class="hidden space-y-2 pt-2 border-t border-slate-800">
             <div class="flex justify-between items-center text-[10px]">
@@ -3614,6 +3615,12 @@
       setVisible('saveBtn', isAdmin || isOperator);
       setVisible('broadcastBtn', isAdmin || isOperator);
 
+      // Certificate & TLS Infrastructure (Strictly Admin-Only per security policy)
+      setVisible('updatesTlsCard', isAdmin);
+      setVisible('settingsTlsCard', isAdmin);
+      setVisible('tlsCard', isAdmin);
+      setVisible('httpsHeaderBadge', isAdmin);
+
       // Route guard: if viewer is on a restricted tab, redirect to settings
       if (isViewer && !['settings', 'players', 'feedback'].includes(currentActiveTab)) {
         switchTab('settings');
@@ -4246,6 +4253,9 @@
     }
 
     async function fetchTlsStatus() {
+      if (window.currentAuthUser && window.currentAuthUser.role !== 'admin') {
+        return;
+      }
       try {
         const res = await fetch('/api/system/tls/status');
         if (!res.ok) return;
@@ -4365,6 +4375,10 @@
     }
 
     function openTlsModal() {
+      if (window.currentAuthUser && window.currentAuthUser.role !== 'admin') {
+        console.warn("Access denied: TLS settings are restricted to administrators.");
+        return;
+      }
       fetchTlsStatus();
       const modal = document.getElementById('tlsModal');
       if (modal) modal.classList.remove('hidden');
@@ -4380,6 +4394,10 @@
     }
 
     async function triggerTlsRenewal() {
+      if (window.currentAuthUser && window.currentAuthUser.role !== 'admin') {
+        alert("Access Denied: Administrator role required to renew certificates.");
+        return;
+      }
       const btn = document.getElementById('btnRenewTlsNow');
       const out = document.getElementById('tlsRenewalOutput');
       const force = Boolean(document.getElementById('tlsForceEarlyRenewalCheck')?.checked);
