@@ -267,7 +267,7 @@ def test_execute_atomic_swap_invalid_inputs(tmp_path: Path) -> None:
 
 def test_deployment_plan_and_result_dataclasses() -> None:
     """Verifies schema invariants, immutability, and typing for Deployment dataclasses."""
-    tarball = Path("/tmp/palworld-v0.3.0.tar.gz")
+    tarball = Path("/opt/staging/palworld-v0.3.0.tar.gz")
     app_dir = Path("/opt/palmanager")
     backup_dir = Path("/opt/palmanager/backups")
 
@@ -291,7 +291,7 @@ def test_deployment_plan_and_result_dataclasses() -> None:
     # String path coercion check
     plan_str = DeploymentPlan(
         version="0.3.1",
-        release_tarball="/tmp/pkg.tar.gz",  # type: ignore[arg-type]
+        release_tarball="/opt/staging/pkg.tar.gz",  # type: ignore[arg-type]
         target_app_dir="/var/www",  # type: ignore[arg-type]
         backup_dir="/var/backups",  # type: ignore[arg-type]
     )

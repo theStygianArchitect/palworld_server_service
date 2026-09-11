@@ -282,7 +282,7 @@ def stage_release_package(tarball_path: Path, target_dir: Path) -> Path:
                 if hasattr(tarfile, "data_filter"):
                     archive.extractall(path=stage_path, filter="data")
                 else:
-                    archive.extractall(path=stage_path)
+                    archive.extractall(path=stage_path, members=members)  # nosec B202 - members pre-validated
         except tarfile.ReadError as err:
             log.error("Failed to read release tarball %s: %s", resolved_tarball, err)
             raise ValueError(f"Invalid tarball archive: {resolved_tarball}") from err
@@ -448,14 +448,14 @@ def execute_atomic_swap(staged_dir: Path, target_dir: Path, backup_dir: Path | N
 
 
 __all__ = [
-    "DeployStage",
-    "compute_sha256",
-    "DeploymentPlan",
-    "verify_checksum",
-    "DeploymentResult",
-    "stage_release_package",
-    "SecurityError",
-    "execute_atomic_swap",
-    "SHA256_BLOCK_SIZE",
     "DEFAULT_DEPLOY_PREFIX",
+    "SHA256_BLOCK_SIZE",
+    "DeployStage",
+    "DeploymentPlan",
+    "DeploymentResult",
+    "SecurityError",
+    "compute_sha256",
+    "execute_atomic_swap",
+    "stage_release_package",
+    "verify_checksum",
 ]
