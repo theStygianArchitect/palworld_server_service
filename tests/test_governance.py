@@ -59,6 +59,7 @@ def test_issue_4_ci_workflow_contract():
         "suppression-audit",
         "mypy",
         "matrix",
+        "package-build",
         "all-passed",
     ]
 
@@ -75,6 +76,7 @@ def test_issue_4_ci_workflow_contract():
         "suppression-audit": {"suppression-audit"},
         "mypy": {"mypy"},
         "matrix": {"matrix", "python-matrix"},
+        "package-build": {"package-build", "uv-build", "build"},
         "all-passed": {"all-passed", "ci-gate"},
     }
 
@@ -142,4 +144,22 @@ def test_issue_36_version_and_changelog_contract():
     assert pyproject_version == "0.2.0", f"pyproject.toml version must be '0.2.0', got '{pyproject_version}'"
     assert pyproject_version == app.__version__, (
         f"pyproject.toml version ({pyproject_version}) does not match app.__version__ ({app.__version__})"
+    )
+
+
+def test_issue_38_deploy_script_atomic_staging_contract() -> None:
+    """Validates Issue #38: deploy.sh wraps execution in main() and uses atomic staging for self-updates."""
+    repo_root = Path(__file__).resolve().parent.parent
+    deploy_script_path = repo_root / "scripts" / "deploy.sh"
+    assert deploy_script_path.exists(), f"deploy.sh not found at {deploy_script_path}"
+
+    content = deploy_script_path.read_text(encoding="utf-8")
+    assert "main() {" in content, "deploy.sh must declare 'main() {' to ensure full AST memory parsing"
+    assert 'main "$@"' in content, "deploy.sh must invoke 'main \"$@\"'"
+
+    # Atomic staging assertions
+    assert "deploy.sh.tmp" in content, "deploy.sh must use 'deploy.sh.tmp' staging"
+    assert "mv -f" in content, "deploy.sh must use atomic 'mv -f' to replace deploy.sh"
+    assert 'mv -f "${APP_DIR}/scripts/deploy.sh.tmp" "${APP_DIR}/scripts/deploy.sh"' in content, (
+        "deploy.sh must atomically mv deploy.sh.tmp into deploy.sh"
     )

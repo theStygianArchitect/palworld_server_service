@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Package Build & Distribution (uv build) CI Gate (#38)
+
+### Fixed
+- Deployer Self-Overwrite & Atomic Script Staging (#38)
+
 ### Planned
 - Modular APIRouters (#21)
 - React 19 + Vite SPA (#22, #23)

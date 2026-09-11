@@ -16,7 +16,10 @@ echo "========================================================================="
 
 # 1. Static Syntax & Bash Integrity Check
 echo -n "[1/4] Verifying bash script syntax integrity... "
-bash -n "${INSTALL_SCRIPT}"
+for f in "${REPO_ROOT}/scripts/"*.sh; do
+    [ -f "$f" ] || continue
+    bash -n "$f"
+done
 echo "[ OK ]"
 
 # 2. ShellCheck Static Analysis Check (if available)
