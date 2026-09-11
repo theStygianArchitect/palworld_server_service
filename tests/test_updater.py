@@ -301,3 +301,41 @@ def test_spawn_detached_deployer_uses_non_interactive_sudo(tmp_path: Path, monke
     _spawn_detached_deployer(script_path, "main")
     assert len(captured_cmds) == 1
     assert captured_cmds[0][:2] == ["/usr/bin/sudo", "-n"]
+
+
+def test_get_deployment_progress_aborted_in_log(temp_watcher: UpdateWatcher, tmp_path: Path):
+    """Verifies that when deploy.log contains an abort message, the active step is marked failed and active=False."""
+    temp_watcher.lock_file.write_text(
+        f"pid=1234\nstarted_at={time.time() - 10.0}\nbranch=main\noperation=portal_update\n",
+        encoding="utf-8",
+    )
+    log_file = tmp_path / "deploy.log"
+    log_file.write_text(
+        "[STEP 1/5] Pulling latest updates from origin/main...\n"
+        "git config --global --add safe.directory /home/tsa/palworld_server_service\n"
+        "[-] Deployment aborted with error exit code: 128\n",
+        encoding="utf-8",
+    )
+
+    prog = temp_watcher.get_deployment_progress(log_path=log_file)
+    assert prog.active is False
+    assert prog.current_step == 1
+    assert prog.steps[0].status == "failed"
+    assert "Deployment aborted at step 1" in prog.step_name
+
+
+def test_get_deployment_progress_failed_post_update_record(temp_watcher: UpdateWatcher, tmp_path: Path):
+    """Verifies that an inactive deployment with a failed last_update record reports failure."""
+    post_update_file = tmp_path / "last_update.json"
+    temp_watcher.post_update_file = post_update_file
+    post_update_file.write_text(
+        '{"status": "failed", "error_message": "Deployment aborted with exit code 128", "exit_code": 128}',
+        encoding="utf-8",
+    )
+
+    prog = temp_watcher.get_deployment_progress()
+    assert prog.active is False
+    assert prog.percentage == 0
+    assert prog.steps[0].status == "failed"
+    assert prog.last_update is not None
+    assert prog.last_update.status == "failed"

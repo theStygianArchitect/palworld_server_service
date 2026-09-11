@@ -18,6 +18,22 @@ cleanup_on_exit() {
     local exit_code=$?
     if [ "${exit_code}" -ne 0 ]; then
         echo "[-] Deployment aborted with error exit code: ${exit_code}"
+        NOW_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u +"%Y-%m-%d %H:%M:%S")
+        mkdir -p /var/lib/palmanager 2>/dev/null || true
+        cat <<EOF > "${POST_UPDATE_FILE}"
+{
+  "status": "failed",
+  "target_branch": "${TARGET_BRANCH}",
+  "deployed_commit": "unknown",
+  "deployed_commit_short": "unknown",
+  "deployed_at": "${NOW_ISO}",
+  "duration_seconds": 0,
+  "summary": "Deployment aborted with error exit code: ${exit_code}",
+  "acknowledged": false
+}
+EOF
+        chmod 0644 "${POST_UPDATE_FILE}" 2>/dev/null || true
+        chown "${APP_USER}:${APP_USER}" "${POST_UPDATE_FILE}" 2>/dev/null || true
         rm -f "${LOCK_FILE}" 2>/dev/null || true
     fi
 }
@@ -61,6 +77,11 @@ if [ ! -d "${REPO_ROOT}/.git" ]; then
     fi
 fi
 
+# Configure Git safe directory exemptions to prevent dubious ownership exit 128
+if command -v git >/dev/null 2>&1; then
+    git config --global --add safe.directory "${REPO_ROOT}" 2>/dev/null || true
+    git config --global --add safe.directory "*" 2>/dev/null || true
+fi
 cd "${REPO_ROOT}"
 
 echo -n "[STEP 1/5] Pulling latest updates from origin/${TARGET_BRANCH}... "
@@ -188,19 +209,6 @@ if command -v crontab >/dev/null 2>&1; then
     fi
 fi
 
-# Multi-path update flags provisioning
-touch /home/steam/.update_requested 2>/dev/null || true
-chown steam:steam /home/steam/.update_requested 2>/dev/null || true
-chmod 0664 /home/steam/.update_requested 2>/dev/null || true
-
-touch /var/lib/palmanager/update_requested 2>/dev/null || true
-chown "${APP_USER}:${APP_USER}" /var/lib/palmanager/update_requested 2>/dev/null || true
-chmod 0664 /var/lib/palmanager/update_requested 2>/dev/null || true
-
-if command -v setfacl >/dev/null 2>&1; then
-    setfacl -m u:"${APP_USER}":rw /home/steam/.update_requested 2>/dev/null || true
-    setfacl -m u:steam:rw /var/lib/palmanager/update_requested 2>/dev/null || true
-fi
 echo "[ OK ]"
 
 echo -n "[STEP 4/5] Updating Python dependencies via uv... "
