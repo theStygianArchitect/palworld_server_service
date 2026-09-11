@@ -38,9 +38,9 @@ git pull origin main
 
 ---
 
-## 🧪 The 15 Parallel CI Quality Gates
+## 🧪 The 16 Parallel CI Quality Gates
 
-When your Pull Request is submitted against `main`, GitHub Actions automatically runs **15 parallel verification jobs**:
+When your Pull Request is submitted against `main`, GitHub Actions automatically runs **16 parallel verification jobs**:
 
 | Category | Status Check | Tool Executed | Pass Criteria |
 | :--- | :--- | :--- | :--- |
@@ -56,11 +56,12 @@ When your Pull Request is submitted against `main`, GitHub Actions automatically
 | | Google Docstring Validation | `pydocstyle` | Full Google-style docstrings |
 | **Testing** | Unit Tests & Coverage | `pytest --cov` | 100% test pass rate |
 | | Clean Install & Idempotency | `test_install_idempotency.sh` | Clean multi-distro install |
+| **Packaging** | Package Build & Distribution | `uv build` | Clean wheel and sdist build |
 | **Matrix** | Matrix Test (Python 3.10) | `pytest` on 3.10 | 100% pass rate |
 | | Matrix Test (Python 3.11) | `pytest` on 3.11 | 100% pass rate |
 | | Matrix Test (Python 3.12) | `pytest` on 3.12 | 100% pass rate |
 | | Matrix Test (Python 3.13) | `pytest` on 3.13 | 100% pass rate |
-| **Gate** | All CI Quality Gates Passed | `ci-gate` | Evaluates all 15 checks |
+| **Gate** | All CI Quality Gates Passed | `ci-gate` | Evaluates all 16 checks |
 
 ---
 

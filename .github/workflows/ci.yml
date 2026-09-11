@@ -261,6 +261,25 @@ jobs:
       - name: Run Unit Tests on Python ${{ matrix.python-version }}
         run: uv run pytest tests
 
+  package-build:
+    name: Package Build & Distribution (uv build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Sync Dependencies
+        run: uv sync --all-groups
+
+      - name: Build Wheel and Source Distribution
+        run: uv build --wheel --sdist
+
   ci-gate:
     name: All CI Quality Gates Passed
     needs:
@@ -277,6 +296,7 @@ jobs:
       - pytest-coverage
       - idempotent-install
       - python-matrix
+      - package-build
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -286,4 +306,4 @@ jobs:
             echo "::error::One or more parallel quality gate jobs failed."
             exit 1
           fi
-          echo "[+] All 15 parallel quality gate jobs passed successfully."
+          echo "[+] All 16 parallel quality gate jobs passed successfully."

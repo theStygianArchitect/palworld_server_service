@@ -42,6 +42,7 @@ Required Status Checks Configured:
   - Google Docstring Validation
   - Unit Tests & Coverage (pytest)
   - Clean Install & Idempotency Test
+  - Package Build & Distribution (uv build)
   - Matrix Test (Python 3.10)
   - Matrix Test (Python 3.11)
   - Matrix Test (Python 3.12)
@@ -111,6 +112,7 @@ PAYLOAD=$(cat <<EOF
       "Google Docstring Validation",
       "Unit Tests & Coverage (pytest)",
       "Clean Install & Idempotency Test",
+      "Package Build & Distribution (uv build)",
       "Matrix Test (Python 3.10)",
       "Matrix Test (Python 3.11)",
       "Matrix Test (Python 3.12)",

@@ -5,14 +5,12 @@ set -euo pipefail
 # Palworld Unified Operations Suite - Zero-Drift Deployer
 # ==============================================================================
 
-TARGET_BRANCH="${1:-main}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+TARGET_BRANCH="main"
 APP_DIR="/opt/palworld-web-manager"
 APP_USER="palmanager"
-DEPLOY_START_TIME=$(date +%s 2>/dev/null || echo 0)
 LOCK_FILE="/tmp/palmanager_update.lock"
 POST_UPDATE_FILE="/var/lib/palmanager/last_update.json"
+REPO_ROOT=""
 
 cleanup_on_exit() {
     local exit_code=$?
@@ -20,7 +18,7 @@ cleanup_on_exit() {
         echo "[-] Deployment aborted with error exit code: ${exit_code}"
         NOW_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u +"%Y-%m-%d %H:%M:%S")
         DEPLOYED_VERSION="0.2.0"
-        if [ -f "${REPO_ROOT}/pyproject.toml" ]; then
+        if [ -n "${REPO_ROOT}" ] && [ -f "${REPO_ROOT}/pyproject.toml" ]; then
             DEPLOYED_VERSION=$(grep -m1 '^version =' "${REPO_ROOT}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.2.0")
         elif [ -f "${APP_DIR}/pyproject.toml" ]; then
             DEPLOYED_VERSION=$(grep -m1 '^version =' "${APP_DIR}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.2.0")
@@ -45,6 +43,16 @@ EOF
     fi
 }
 trap cleanup_on_exit EXIT
+
+main() {
+    TARGET_BRANCH="${1:-main}"
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+    APP_DIR="/opt/palworld-web-manager"
+    APP_USER="palmanager"
+    DEPLOY_START_TIME=$(date +%s 2>/dev/null || echo 0)
+    LOCK_FILE="/tmp/palmanager_update.lock"
+    POST_UPDATE_FILE="/var/lib/palmanager/last_update.json"
 
 echo "========================================================================="
 echo " Deploying Palworld Operations Suite"
@@ -115,7 +123,20 @@ if [ -f "${REPO_ROOT}/CHANGELOG.md" ]; then
 fi
 if [ -d "${REPO_ROOT}/scripts" ]; then
     mkdir -p "${APP_DIR}/scripts"
-    cp -r "${REPO_ROOT}/scripts/"* "${APP_DIR}/scripts/"
+    # Copy all non-deploy scripts first
+    for script_file in "${REPO_ROOT}/scripts/"*; do
+        [ -e "${script_file}" ] || continue
+        base_name=$(basename "${script_file}")
+        if [ "${base_name}" != "deploy.sh" ]; then
+            cp -r "${script_file}" "${APP_DIR}/scripts/"
+        fi
+    done
+    # Atomically stage deploy.sh to prevent in-place truncation of running script
+    if [ -f "${REPO_ROOT}/scripts/deploy.sh" ]; then
+        cp "${REPO_ROOT}/scripts/deploy.sh" "${APP_DIR}/scripts/deploy.sh.tmp"
+        chmod 0755 "${APP_DIR}/scripts/deploy.sh.tmp"
+        mv -f "${APP_DIR}/scripts/deploy.sh.tmp" "${APP_DIR}/scripts/deploy.sh"
+    fi
     chmod 0755 "${APP_DIR}/scripts/"*.sh 2>/dev/null || true
 fi
 if command -v git >/dev/null 2>&1 && [ -d "${REPO_ROOT}/.git" ]; then
@@ -206,6 +227,8 @@ ${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld.service, /usr/
 ${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *, /usr/bin/journalctl -u palworld.service *
 ${APP_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status
 ${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh *
+${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh.tmp *
+${APP_USER} ALL=(ALL) NOPASSWD: /tmp/palmanager_deploy*.sh *
 ${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/deploy.sh *
 ${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/palworld-cert-manager.sh *
 ${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/palworld-cert-manager.sh *
@@ -289,3 +312,7 @@ rm -f "${LOCK_FILE}" 2>/dev/null || true
 echo "========================================================================="
 echo " Deployment Complete! Service status: $(systemctl is-active palworld-manager.service)"
 echo "========================================================================="
+}
+
+main "$@"
+exit 0
