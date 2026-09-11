@@ -39,9 +39,11 @@ from fastapi import (
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from app import __version__
 from app.api.schemas import (
     BootstrapAckResponse,
     BootstrapCredentialsResponse,
+    ChangelogResponse,
     DeploymentProgressResponse,
     FeedbackResponse,
     FeedbackSubmitRequest,
@@ -62,6 +64,7 @@ from app.api.schemas import (
     SaveResponse,
     ShutdownRequest,
     ShutdownResponse,
+    SystemVersionResponse,
     TLSRenewRequest,
     TLSRenewResponse,
     TLSStatusResponse,
@@ -95,6 +98,7 @@ from app.database import (
     verify_password,
     verify_session_token,
 )
+from app.engine.changelog import get_changelog
 from app.engine.notifications import DiscordNotifier
 from app.engine.service import LOCK_FILE, PalEngine
 from app.engine.updater import UpdateWatcher
@@ -467,7 +471,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Palworld Operations Suite",
     description="Web Management Plane & Community Discovery Hub",
-    version="1.0.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -611,6 +615,7 @@ perm_logs_view = require_permission("logs:view")
 perm_feedback_submit = require_permission("feedback:submit")
 perm_users_manage = require_permission("users:manage")
 perm_system_update = require_permission("system:update")
+perm_view = get_current_user
 
 
 def require_admin():
@@ -2078,6 +2083,31 @@ async def acknowledge_system_update() -> PostUpdateAcknowledgeResponse:
     updater.acknowledge_last_update()
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
     return PostUpdateAcknowledgeResponse(status="success", acknowledged_at=timestamp)
+
+
+@app.get(
+    "/api/system/changelog",
+    response_model=ChangelogResponse,
+    tags=["System"],
+    dependencies=[Depends(perm_view)],
+)
+async def get_system_changelog() -> ChangelogResponse:
+    """Returns parsed changelog releases, categories, and unreleased roadmap items.
+
+    Protected by standard authentication (perm_view). Accessible to all authenticated roles.
+    """
+    return get_changelog()
+
+
+@app.get(
+    "/api/system/version",
+    response_model=SystemVersionResponse,
+    tags=["System"],
+    dependencies=[Depends(perm_view)],
+)
+async def get_system_version() -> SystemVersionResponse:
+    """Returns current application semantic version string."""
+    return SystemVersionResponse(version=__version__)
 
 
 @app.post("/api/server/shutdown", response_model=ShutdownResponse, tags=["Server"])
