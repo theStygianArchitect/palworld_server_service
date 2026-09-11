@@ -249,7 +249,7 @@ The installer automatically adapts to the host operating system:
 3. **Security & Privilege Isolation**:
    - Provisions the dedicated unprivileged service account `palmanager`.
    - Applies strict POSIX Access Control Lists (ACLs) across `/home/steam` and DuckDNS.
-   - Configures granular `/etc/sudoers.d/palworld_manager_palmanager` scoped only to `systemctl` actions on `palworld.service` and `ufw status`.
+   - Configures granular `/etc/sudoers.d/palmanager` scoped only to `systemctl` actions on `palworld.service`, `ufw status`, `deploy.sh`, and `palworld-cert-manager.sh`.
 4. **Daemon Deployment & Crontab Registration**:
    - Installs dual-mode `palworld-manager.service` (port 8080).
    - Configures DuckDNS dynamic DNS synchronization (every 5 minutes).
