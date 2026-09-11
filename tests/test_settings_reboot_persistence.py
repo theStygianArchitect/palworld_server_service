@@ -1,4 +1,4 @@
-"""Unit tests verifying settings staging and persistence across server reboot."""
+"""Regression test for Issue #30: Settings save validation and two-stage persistence across PalServer reboot."""
 
 # pylint: disable=protected-access
 # Rationale: Direct validation of private staging caches during reboot simulation.
@@ -14,7 +14,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_maintenance_script_has_staged_configuration_step() -> None:
-    """Verifies that palworld-maintenance.sh checks and synchronizes staged INI config."""
+    """Verify that palworld-maintenance.sh checks and synchronizes staged INI config.
+
+    Regression test for Issue #30: Settings save validation and two-stage persistence across PalServer reboot.
+    """
     script = REPO_ROOT / "scripts" / "palworld-maintenance.sh"
     assert script.is_file(), f"Maintenance script not found: {script}"
 
@@ -26,7 +29,10 @@ def test_maintenance_script_has_staged_configuration_step() -> None:
 
 
 def test_engine_stage_settings_and_apply(tmp_path: Path) -> None:
-    """Verifies that PalworldEngine stages settings and writes to target path during maintenance."""
+    """Verify that PalworldEngine stages settings and writes to target path during maintenance.
+
+    Regression test for Issue #30: Settings save validation and two-stage persistence across PalServer reboot.
+    """
     ini_path = tmp_path / "PalWorldSettings.ini"
     paths = EnginePaths(
         ini_path=ini_path,
@@ -48,7 +54,10 @@ def test_engine_stage_settings_and_apply(tmp_path: Path) -> None:
 
 
 def test_stage_settings_for_reboot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verifies that stage_settings_for_reboot writes drop-in files to candidate directories."""
+    """Verify that stage_settings_for_reboot writes drop-in files to candidate directories.
+
+    Regression test for Issue #30: Settings save validation and two-stage persistence across PalServer reboot.
+    """
     mock_home = tmp_path / "home"
     mock_home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(Path, "home", lambda: mock_home)

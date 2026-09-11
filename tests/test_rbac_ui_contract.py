@@ -184,6 +184,10 @@ def test_rbac_permission_matrix_contract(rbac_client: TestClient):
 
 
 def test_dashboard_ui_rbac_and_diagnostic_contract(rbac_client: TestClient):
+    """Verify dashboard UI RBAC gating elements and probe diagnostic banners.
+
+    Regression test for Issue #16: RBAC permission matrix enforcement and PalServer REST probe diagnostics.
+    """
     response = rbac_client.get("/")
     assert response.status_code == 200
     content = response.text
@@ -217,6 +221,10 @@ def test_dashboard_ui_rbac_and_diagnostic_contract(rbac_client: TestClient):
 
 
 def test_engine_readiness_probe_diagnostics(rbac_client: TestClient):
+    """Verify PalServer engine readiness probe returns diagnostic details on failure and success.
+
+    Regression test for Issue #16: RBAC permission matrix enforcement and PalServer REST probe diagnostics.
+    """
     # 1. Unauthorized Palworld REST API probe returns 503 with explicit diagnostic message
     unauth_diag = {
         "ready": False,
@@ -248,7 +256,10 @@ def test_engine_readiness_probe_diagnostics(rbac_client: TestClient):
 # pylint: disable=too-many-branches,too-many-statements,too-many-nested-blocks,too-many-locals
 # Rationale: Lexical analysis of inline JavaScript requires multi-state parsing and token dispatching.
 def test_index_html_javascript_syntax_integrity():
-    """Verifies that all inline JavaScript in index.html is syntactically balanced and parseable."""
+    """Verify that all inline JavaScript in index.html is syntactically balanced and parseable.
+
+    Regression test for Issue #19: Frontend JavaScript syntax tokenizer and template literal integrity.
+    """
     html_path = Path(__file__).resolve().parent.parent / "app" / "templates" / "index.html"
     content = html_path.read_text(encoding="utf-8")
 

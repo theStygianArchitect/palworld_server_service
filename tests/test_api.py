@@ -790,7 +790,10 @@ def test_login_page_served(client: TestClient) -> None:
 
 
 def test_login_page_unauthenticated(tmp_path: Path) -> None:
-    """GET /login from a non-localhost origin returns 200 with login form HTML."""
+    """GET /login from a non-localhost origin returns 200 with login form HTML.
+
+    Regression test for Issue #12: Unauthenticated root access HTTP 307 redirect and first-spin admin modal.
+    """
     # Use a custom TestClient with a custom base URL that isn't in the localhost passthrough set
     # We rely on the fact that /login is served to unauthenticated users
     test_db_path = str(tmp_path / "auth_test.db")
@@ -815,7 +818,10 @@ def test_login_page_unauthenticated(tmp_path: Path) -> None:
 
 
 def test_setup_page_redirects_to_login(client: TestClient) -> None:
-    """GET /setup always redirects to /login."""
+    """GET /setup always redirects to /login.
+
+    Regression test for Issue #12: Unauthenticated root access HTTP 307 redirect and first-spin admin modal.
+    """
     res = client.get("/setup", follow_redirects=False)
     assert res.status_code == 302
     assert "/login" in res.headers.get("location", "")

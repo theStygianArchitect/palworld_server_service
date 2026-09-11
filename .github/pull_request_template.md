@@ -59,3 +59,5 @@
 - [ ] If my change requires a change to documentation, I have updated the documentation accordingly.
 - [ ] All tests described above executed successfully.
 - [ ] For New Features and Breaking changes I added new tests.
+- [ ] For Bug Fixes, I added an automated regression test in `tests/` reproducing and verifying the fix for Issue #<id>.
+
