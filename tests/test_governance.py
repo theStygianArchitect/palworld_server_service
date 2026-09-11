@@ -188,3 +188,25 @@ def test_issue_20_atomic_config_persistence_contract() -> None:
     )
 
     assert callable(pipeline_atomic_write_ini), "pipeline.atomic_write_ini must be callable"
+
+
+def test_issue_43_deploy_runner_isolation_contract() -> None:
+    """Validates Issue #43: deploy runner isolation and DEPLOY_REEXEC re-exec guard."""
+    repo_root = Path(__file__).resolve().parent.parent
+
+    # 1. Assert app/engine/updater.py references isolated deploy runner
+    updater_path = repo_root / "app" / "engine" / "updater.py"
+    assert updater_path.exists(), f"updater.py not found at {updater_path}"
+    updater_content = updater_path.read_text(encoding="utf-8")
+    assert "palmanager_deploy_runner.sh" in updater_content, (
+        "app/engine/updater.py must reference 'palmanager_deploy_runner.sh'"
+    )
+
+    # 2. Assert scripts/deploy.sh contains DEPLOY_REEXEC guard and out-of-tree runner pattern
+    deploy_script_path = repo_root / "scripts" / "deploy.sh"
+    assert deploy_script_path.exists(), f"deploy.sh not found at {deploy_script_path}"
+    deploy_content = deploy_script_path.read_text(encoding="utf-8")
+    assert "DEPLOY_REEXEC" in deploy_content, "scripts/deploy.sh must contain 'DEPLOY_REEXEC' guard"
+    assert "palmanager_deploy_runner" in deploy_content, (
+        "scripts/deploy.sh must reference out-of-tree runner pattern 'palmanager_deploy_runner'"
+    )

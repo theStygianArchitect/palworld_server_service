@@ -33,6 +33,7 @@ from app.api.schemas import (
 from app.core.logger import log
 
 DEFAULT_UPDATE_LOCK_FILE: Path = Path(tempfile.gettempdir()) / "palmanager_update.lock"
+DEFAULT_DEPLOY_RUNNER: Path = Path(tempfile.gettempdir()) / "palmanager_deploy_runner.sh"
 DEFAULT_POST_UPDATE_FILE: Path = Path("/var/lib/palmanager/last_update.json")
 STALE_LOCK_TIMEOUT_SECONDS: float = 1800.0  # 30 minutes
 
@@ -90,10 +91,19 @@ def _spawn_detached_deployer(deploy_script: Path, target_branch: str) -> None:
     if os.name == "posix":
         # sudo(8) must run as root to restart systemd service after deployment.
         # The deploy.sh script path is validated as an existing file before reaching this call.
+        runner_path = DEFAULT_DEPLOY_RUNNER
+        script_to_exec = deploy_script
+        try:
+            shutil.copy2(deploy_script, runner_path)
+            os.chmod(runner_path, 0o755)  # nosec B103 - runner requires execution permissions for sudo
+            script_to_exec = runner_path
+        except OSError as err:
+            log.warning("Could not stage deploy script to %s: %s. Falling back to %s", runner_path, err, deploy_script)
+
         # start_new_session=True ensures the child process outlives the parent web process restart.
         sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"  # nosec B607 - absolute path resolved
         subprocess.Popen(  # nosec B603 - argument list is validated; no shell=True; setuid binary required
-            [sudo_bin, "-n", str(deploy_script), target_branch],
+            [sudo_bin, "-n", str(script_to_exec), target_branch],
             stdout=log_fd,
             stderr=subprocess.STDOUT,
             start_new_session=True,
