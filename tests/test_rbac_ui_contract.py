@@ -387,3 +387,18 @@ def test_dashboard_ui_deployment_progression_elements_present(rbac_client: TestC
     assert 'id="rebootProgressBar"' in html
     assert "acknowledgePostUpdate()" in html
     assert "pollDeployProgress()" in html
+
+
+def test_dashboard_ui_updater_dto_contracts(rbac_client: TestClient) -> None:
+    """Verifies that index.html aligns with backend DTO models for updates and validation error handling."""
+    resp = rbac_client.get("/")
+    assert resp.status_code == 200
+    html = resp.text
+    # DTO alignment
+    assert "data.latest_commit" in html
+    assert "data.last_update.deployed_commit" in html
+    assert "latestUpdateStatus.target_branch" in html
+    # Validation error formatting (avoid [object Object])
+    assert "Array.isArray(data.detail)" in html
+    assert "Array.isArray(msg)" in html
+    assert "whitespace-pre-line" in html

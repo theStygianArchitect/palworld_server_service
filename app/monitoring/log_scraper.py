@@ -275,7 +275,8 @@ class PalLogScraper:
                 continue
             try:
                 with log_file.open("r", encoding="utf-8", errors="ignore") as f:
-                    raw_lines = f.readlines()[-tail * 3:]
+                    slice_start = -tail * 3
+                    raw_lines = f.readlines()[slice_start:]
                 source_path = str(log_file)
                 break
             except OSError as err:

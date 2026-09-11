@@ -2023,12 +2023,31 @@
       const box = document.getElementById('alertBox');
       const container = document.getElementById('alertContainer');
       const text = document.getElementById('alertMsg');
+      if (!box || !container || !text) return;
+
+      let displayMsg = msg;
+      if (typeof msg !== 'string') {
+        if (Array.isArray(msg)) {
+          displayMsg = msg.map(m => {
+            if (typeof m === 'object' && m !== null) {
+              const field = Array.isArray(m.loc) ? m.loc[m.loc.length - 1] : 'Field';
+              return `• ${field}: ${m.msg || JSON.stringify(m)}`;
+            }
+            return String(m);
+          }).join('\n');
+        } else if (typeof msg === 'object' && msg !== null) {
+          displayMsg = msg.detail || msg.message || JSON.stringify(msg);
+        } else {
+          displayMsg = String(msg);
+        }
+      }
+
       box.classList.remove('hidden');
-      text.innerText = msg;
+      text.innerText = displayMsg;
       container.className = isError 
-        ? "p-3.5 rounded-xl border text-xs sm:text-sm flex items-center justify-between shadow-lg bg-red-950/90 border-red-800 text-red-200"
-        : "p-3.5 rounded-xl border text-xs sm:text-sm flex items-center justify-between shadow-lg bg-emerald-950/90 border-emerald-800 text-emerald-200";
-      setTimeout(() => box.classList.add('hidden'), 5000);
+        ? "p-3.5 rounded-xl border text-xs sm:text-sm flex items-center justify-between shadow-lg bg-red-950/90 border-red-800 text-red-200 whitespace-pre-line"
+        : "p-3.5 rounded-xl border text-xs sm:text-sm flex items-center justify-between shadow-lg bg-emerald-950/90 border-emerald-800 text-emerald-200 whitespace-pre-line";
+      setTimeout(() => box.classList.add('hidden'), 6000);
     }
 
     function triggerCopyFeedback(btn) {
@@ -2312,13 +2331,24 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
-        if (data.status === 'success') {
-          showAlert(`Settings saved! Git snapshot: ${data.commit || 'created'}`);
+        if (res.ok && data.status === 'success') {
+          showAlert(`Settings saved cleanly! Git snapshot: ${data.commit || 'created'}`);
         } else {
-          showAlert(data.detail || 'Save failed.', true);
+          let errorMsg = 'Save failed.';
+          if (typeof data.detail === 'string') {
+            errorMsg = data.detail;
+          } else if (Array.isArray(data.detail)) {
+            errorMsg = data.detail.map(err => {
+              const field = Array.isArray(err.loc) ? err.loc[err.loc.length - 1] : 'Field';
+              return `• ${field}: ${err.msg || 'Invalid value'}`;
+            }).join('\n');
+          } else if (data.message) {
+            errorMsg = data.message;
+          }
+          showAlert(errorMsg, true);
         }
       } catch (err) {
-        showAlert('Network error while saving settings.', true);
+        showAlert('Network error while saving settings: ' + err, true);
       } finally {
         btn.disabled = false;
         btn.innerHTML = `<span>💾</span> Save Changes`;
@@ -3852,13 +3882,15 @@
         if (data.last_update && !data.last_update.acknowledged) {
           if (data.last_update.status === 'success') {
             if (successBanner) {
-              const shortSha = data.last_update.applied_commit ? data.last_update.applied_commit.substring(0, 7) : 'vNext';
+              const shortSha = data.last_update.deployed_commit_short 
+                || (data.last_update.deployed_commit ? data.last_update.deployed_commit.substring(0, 7) : (data.last_update.applied_commit ? data.last_update.applied_commit.substring(0, 7) : 'vNext'));
               const shaBadge = document.getElementById('postUpdateShaBadge');
               const durBadge = document.getElementById('postUpdateDurationBadge');
               const succMsg = document.getElementById('postUpdateSuccessMsg');
               if (shaBadge) shaBadge.innerText = shortSha;
               if (durBadge) durBadge.innerText = `${data.last_update.duration_seconds || 0}s`;
-              if (succMsg) succMsg.innerText = data.last_update.commit_summary ? `[${shortSha}] ${data.last_update.commit_summary}` : 'Update applied and services restarted cleanly.';
+              const summaryTitle = data.last_update.summary || data.last_update.commit_summary;
+              if (succMsg) succMsg.innerText = summaryTitle ? `[${shortSha}] ${summaryTitle}` : 'Update applied and services restarted cleanly.';
               successBanner.classList.remove('hidden');
             }
             if (failedBanner) failedBanner.classList.add('hidden');
@@ -3883,8 +3915,9 @@
               : 'Update Available';
           }
           if (msgText) {
-            const shortSha = data.remote_commit ? data.remote_commit.substring(0, 7) : '';
-            const msg = data.remote_commit_message || 'A new update is available upstream.';
+            const remoteSha = data.latest_commit || data.remote_commit;
+            const shortSha = remoteSha ? remoteSha.substring(0, 7) : '';
+            const msg = data.latest_commit_message || data.remote_commit_message || 'A new update is available upstream.';
             msgText.innerText = shortSha ? `[${shortSha}] ${msg}` : msg;
           }
           if (updateBanner) updateBanner.classList.remove('hidden');
@@ -3902,7 +3935,8 @@
         const behindEl = document.getElementById('updateCommitsBehindText');
 
         if (curEl) curEl.innerText = data.current_commit ? data.current_commit.substring(0, 7) : 'Unknown';
-        if (remEl) remEl.innerText = data.remote_commit ? data.remote_commit.substring(0, 7) : 'Unknown';
+        const remoteShaVal = data.latest_commit || data.remote_commit;
+        if (remEl) remEl.innerText = remoteShaVal ? remoteShaVal.substring(0, 7) : 'Unknown';
         if (brEl) brEl.innerText = data.target_branch || 'main';
 
         const isJustUpdated = data.last_update && !data.last_update.acknowledged && data.last_update.status === 'success';
@@ -3916,7 +3950,7 @@
           }
         }
         if (msgBox) {
-          msgBox.innerText = data.remote_commit_message || (data.update_available ? 'Upstream commits ready to pull.' : 'Local repository matches upstream tracking branch.');
+          msgBox.innerText = data.latest_commit_message || data.remote_commit_message || (data.update_available ? 'Upstream commits ready to pull.' : 'Local repository matches upstream tracking branch.');
         }
         if (lastCheckedEl) {
           lastCheckedEl.innerText = new Date().toLocaleTimeString();
@@ -3974,10 +4008,15 @@
         const msg = document.getElementById('modalCommitMsg');
         const confirmBtn = document.getElementById('confirmUpdateBtn');
 
-        if (curSha) curSha.innerText = latestUpdateStatus.current_commit ? latestUpdateStatus.current_commit.substring(0, 7) : 'unknown';
-        if (remSha) remSha.innerText = latestUpdateStatus.remote_commit ? latestUpdateStatus.remote_commit.substring(0, 7) : 'unknown';
-        if (branch) branch.innerText = latestUpdateStatus.target_branch || 'main';
-        if (msg) msg.innerText = latestUpdateStatus.remote_commit_message || 'No commit message available.';
+        const curCommit = latestUpdateStatus.current_commit;
+        const remCommit = latestUpdateStatus.latest_commit || latestUpdateStatus.remote_commit;
+        const branchName = latestUpdateStatus.target_branch || 'main';
+        const commitMsg = latestUpdateStatus.latest_commit_message || latestUpdateStatus.remote_commit_message || 'No commit message available.';
+
+        if (curSha) curSha.innerText = curCommit ? curCommit.substring(0, 7) : 'unknown';
+        if (remSha) remSha.innerText = remCommit ? remCommit.substring(0, 7) : 'unknown';
+        if (branch) branch.innerText = branchName;
+        if (msg) msg.innerText = commitMsg;
 
         if (confirmBtn) {
           if (currentAuthUser && currentAuthUser.role === 'viewer') {
@@ -4022,6 +4061,11 @@
         console.debug('Error probing deployment progress on modal open:', err);
       }
 
+      // Ensure status is loaded so preflight fields are populated
+      if (!latestUpdateStatus) {
+        await checkSystemUpdateStatus(false);
+      }
+
       showDeployPreflightView();
     }
 
@@ -4037,7 +4081,10 @@
     async function confirmApplyUpdate() {
       const confirmBtn = document.getElementById('confirmUpdateBtn');
       const errBox = document.getElementById('updateModalError');
-      if (confirmBtn) confirmBtn.disabled = true;
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = `<span>⏳</span> Applying...`;
+      }
 
       try {
         const targetBranch = latestUpdateStatus ? latestUpdateStatus.target_branch : 'main';
@@ -4051,14 +4098,22 @@
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
-          const errMsg = errData.detail || `Update failed with HTTP ${res.status}`;
+          let errMsg = `Update failed with HTTP ${res.status}`;
+          if (typeof errData.detail === 'string') {
+            errMsg = errData.detail;
+          } else if (Array.isArray(errData.detail)) {
+            errMsg = errData.detail.map(e => e.msg || JSON.stringify(e)).join(', ');
+          }
           if (errBox) {
             errBox.innerText = errMsg;
             errBox.classList.remove('hidden');
           } else {
-            alert(errMsg);
+            showAlert(errMsg, true);
           }
-          if (confirmBtn) confirmBtn.disabled = false;
+          if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = `<span>⚡</span> Confirm &amp; Apply Update`;
+          }
           return;
         }
 
@@ -4070,9 +4125,12 @@
           errBox.innerText = 'Network error while dispatching update: ' + err;
           errBox.classList.remove('hidden');
         } else {
-          alert('Network error: ' + err);
+          showAlert('Network error: ' + err, true);
         }
-        if (confirmBtn) confirmBtn.disabled = false;
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+          confirmBtn.innerHTML = `<span>⚡</span> Confirm &amp; Apply Update`;
+        }
       }
     }
 

@@ -708,9 +708,7 @@ class DatabaseManager:  # pylint: disable=too-many-public-methods
         with self._lock:
             conn = self.get_connection()
             try:
-                row = conn.execute(
-                    "SELECT value FROM system_metadata WHERE key = ?", (key,)
-                ).fetchone()
+                row = conn.execute("SELECT value FROM system_metadata WHERE key = ?", (key,)).fetchone()
                 return str(row["value"]) if row else None
             except sqlite3.OperationalError as err:
                 log.debug("Error reading metadata key '%s': %s", key, err)

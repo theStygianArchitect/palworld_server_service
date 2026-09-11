@@ -15,10 +15,10 @@ ExecStart=/bin/bash -c 'ETH0_IP=$(ip -4 -o addr show dev eth0 2>/dev/null | awk 
 Restart=always
 RestartSec=5
 
-ProtectSystem=full
+ProtectSystem=true
 ProtectHome=false
 PrivateTmp=true
-ReadWritePaths=/var/lib/palmanager /home/steam /opt/palworld-web-manager /tmp
+ReadWritePaths=/var/lib/palmanager /home/steam /opt/palworld-web-manager /tmp /etc/letsencrypt /var/log/letsencrypt /etc/sudoers.d /etc/systemd/system
 
 [Install]
 WantedBy=multi-user.target

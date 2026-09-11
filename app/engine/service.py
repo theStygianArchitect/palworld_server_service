@@ -82,7 +82,7 @@ class CancellationControl:
     reason: str = ""
 
 
-class PalEngine:
+class PalEngine:  # pylint: disable=too-many-instance-attributes
     """Core orchestrator for Palworld REST API, systemd operations, and reboot lifecycle.
 
     Attributes:
@@ -122,9 +122,7 @@ class PalEngine:
             )
 
             self.config = EngineConfig(
-                admin_password=kwargs.get("admin_password")
-                or os.getenv("PALWORLD_ADMIN_PASSWORD")
-                or "admin_password",
+                admin_password=kwargs.get("admin_password") or os.getenv("PALWORLD_ADMIN_PASSWORD") or "admin_password",
                 rest_port=kwargs.get("rest_port") or int(os.getenv("PALWORLD_REST_PORT", "8212")),
                 server_name=kwargs.get("server_name")
                 or os.getenv("PALWORLD_SERVER_NAME")
@@ -147,6 +145,7 @@ class PalEngine:
             "current_broadcast": "",
             "is_updating": False,
         }
+        self._staged_ini: str | None = None
 
     def __getattr__(self, name: str) -> Any:
         """Delegates attribute access to self.config for backwards compatibility."""
@@ -258,8 +257,7 @@ class PalEngine:
                 "server_name": self.server_name,
                 "diagnostic_code": "CONNECTION_REFUSED",
                 "diagnostic_message": (
-                    f"Connection refused on port {self.config.rest_port}. "
-                    "Palworld server is offline or starting."
+                    f"Connection refused on port {self.config.rest_port}. Palworld server is offline or starting."
                 ),
             }
         except httpx.HTTPError as err:
@@ -608,6 +606,43 @@ class PalEngine:
 
         return True
 
+    def stage_settings(self, serialized_ini: str) -> None:
+        """Stages serialized INI configuration for synchronization during reboot maintenance.
+
+        Args:
+            serialized_ini (str): Raw INI format configuration string.
+        """
+        self._staged_ini = serialized_ini
+
+    def _apply_staged_configuration(self) -> None:
+        """Writes staged INI configuration to both primary target and staged drop-in paths."""
+        if not self._staged_ini:
+            return
+
+        candidate_paths = [
+            Path("/var/lib/palmanager/staged_PalWorldSettings.ini"),
+            Path.home() / ".palmanager" / "staged_PalWorldSettings.ini",
+            Path("/home/steam/.staged_PalWorldSettings.ini"),
+        ]
+
+        try:
+            target_ini = Path(self.config.paths.ini_path)
+            target_ini.parent.mkdir(parents=True, exist_ok=True)
+            target_ini.write_text(self._staged_ini, encoding="utf-8")
+            log.info("Persisted staged configuration to primary path: %s", target_ini)
+        except OSError as err:
+            log.warning("Could not write staged configuration to primary path %s: %s", self.config.paths.ini_path, err)
+
+        for p in candidate_paths:
+            try:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(self._staged_ini, encoding="utf-8")
+                log.info("Wrote staged configuration drop-in: %s", p)
+            except OSError as err:
+                log.debug("Could not write staged configuration drop-in %s: %s", p, err)
+
+        self._staged_ini = None
+
     async def _restart_and_await_readiness(self) -> None:
         """Saves world state, issues systemctl restart, and probes engine readiness."""
         # 1. World Save Phase
@@ -623,24 +658,30 @@ class PalEngine:
         self.lifecycle_state["current_broadcast"] = "Executing systemctl restart & backup hooks..."
         await self.broadcast_ws({"type": "LIFECYCLE_UPDATE", "data": self.lifecycle_state})
 
+        # Apply staged configuration so maintenance hooks and restart consume updated settings
+        if self._staged_ini:
+            self._apply_staged_configuration()
+
         if os.name != "nt":
             log.info("Triggering systemctl restart for %s", self.service_name)
             try:
                 sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
                 systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"
                 cmd = [sudo_bin, "-n", systemctl_bin, "restart", self.service_name]
-                proc = await asyncio.to_thread(
-                    subprocess.run, cmd, capture_output=True, text=True, check=False
-                )  # nosec B603
-                if proc.returncode != 0:
+                restart_proc = await asyncio.to_thread(
+                    subprocess.run,
+                    cmd,
+                    check=False,
+                    text=True,
+                    capture_output=True,  # nosec B603
+                )
+                if restart_proc.returncode != 0:
                     log.error(
                         "systemctl restart failed with returncode %d: %s; attempting fallback binary path.",
-                        proc.returncode,
-                        proc.stderr.strip(),
+                        restart_proc.returncode,
+                        restart_proc.stderr.strip(),
                     )
-                    fallback_systemctl = (
-                        "/bin/systemctl" if systemctl_bin != "/bin/systemctl" else "/usr/bin/systemctl"
-                    )
+                    fallback_systemctl = "/bin/systemctl" if systemctl_bin != "/bin/systemctl" else "/usr/bin/systemctl"
                     fallback_cmd = [sudo_bin, "-n", fallback_systemctl, "restart", self.service_name]
                     fallback_proc = await asyncio.to_thread(
                         subprocess.run, fallback_cmd, capture_output=True, text=True, check=False

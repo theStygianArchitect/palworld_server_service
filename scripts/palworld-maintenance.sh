@@ -94,6 +94,24 @@ SAVED_DIR="${INSTALL_DIR}/Pal/Saved"
 
     echo "[3/3] Pruning backups older than $RETENTION_DAYS days..."
     find "$BACKUP_DIR" -mtime "+$RETENTION_DAYS" -type f -name "*.tar.gz" -delete -print 2>/dev/null || true
+
+    echo "[4/4] Checking for staged world configuration..."
+    STAGED_INI_1="/var/lib/palmanager/staged_PalWorldSettings.ini"
+    STAGED_INI_2="/home/steam/.staged_PalWorldSettings.ini"
+    TARGET_INI="${SAVED_DIR}/Config/LinuxServer/PalWorldSettings.ini"
+
+    for staged in "$STAGED_INI_1" "$STAGED_INI_2"; do
+        if [ -f "$staged" ]; then
+            echo "--> Staged configuration detected at $staged. Synchronizing to $TARGET_INI..."
+            mkdir -p "$(dirname "$TARGET_INI")"
+            cp -f "$staged" "$TARGET_INI"
+            chown steam:steam "$TARGET_INI" 2>/dev/null || true
+            chmod 0644 "$TARGET_INI" 2>/dev/null || true
+            rm -f "$staged"
+            echo "--> Staged configuration synchronized successfully."
+            break
+        fi
+    done
     echo "========================================================="
     echo "Maintenance completed on: $(date '+%Y-%m-%d %H:%M:%S')"
     echo "========================================================="

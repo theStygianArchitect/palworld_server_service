@@ -241,9 +241,10 @@ def test_api_reboot_cancel_endpoint(client: TestClient):
         assert "Cannot cancel reboot during phase 'IDLE'" in res.json()["detail"]
 
     # 2. 200 OK when engine is in COUNTDOWN phase
-    with patch.object(engine, "lifecycle_state", {"phase": "COUNTDOWN"}), patch.object(
-        engine, "cancel_countdown", new_callable=AsyncMock, return_value=True
-    ) as mock_cancel:
+    with (
+        patch.object(engine, "lifecycle_state", {"phase": "COUNTDOWN"}),
+        patch.object(engine, "cancel_countdown", new_callable=AsyncMock, return_value=True) as mock_cancel,
+    ):
         res = client.post("/api/service/reboot/cancel", json={"reason": "Boss fight underway"})
         assert res.status_code == 200
         assert res.json()["status"] == "success"
@@ -251,9 +252,10 @@ def test_api_reboot_cancel_endpoint(client: TestClient):
         mock_cancel.assert_awaited_once_with(reason="Boss fight underway")
 
     # 3. 200 OK via alias /api/reboot/cancel with empty payload
-    with patch.object(engine, "lifecycle_state", {"phase": "COUNTDOWN"}), patch.object(
-        engine, "cancel_countdown", new_callable=AsyncMock, return_value=True
-    ) as mock_cancel:
+    with (
+        patch.object(engine, "lifecycle_state", {"phase": "COUNTDOWN"}),
+        patch.object(engine, "cancel_countdown", new_callable=AsyncMock, return_value=True) as mock_cancel,
+    ):
         res = client.post("/api/reboot/cancel")
         assert res.status_code == 200
         assert res.json()["status"] == "success"
@@ -618,15 +620,16 @@ def test_api_user_role_promotion_and_lockout(client: TestClient):
     assert "users:manage" not in promote_res.json()["permissions"]
 
     # Admin promotes operator to admin
-    assert client.patch(
-        f"/api/users/{target_id}/role", json={"role": "admin"}, headers=admin_headers
-    ).status_code == 200
+    assert (
+        client.patch(f"/api/users/{target_id}/role", json={"role": "admin"}, headers=admin_headers).status_code == 200
+    )
     assert db.count_active_admins() == 2
 
     # Admin demotes bob back to operator
-    assert client.patch(
-        f"/api/users/{target_id}/role", json={"role": "operator"}, headers=admin_headers
-    ).status_code == 200
+    assert (
+        client.patch(f"/api/users/{target_id}/role", json={"role": "operator"}, headers=admin_headers).status_code
+        == 200
+    )
     assert db.count_active_admins() == 1
 
     # Cannot demote or deactivate the last administrator

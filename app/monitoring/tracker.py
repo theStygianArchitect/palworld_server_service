@@ -312,7 +312,7 @@ class CommunityTracker:
             target_hosts.append(host)
 
         probed_ports: list[int] = []
-        for candidate in (candidate_ports or [port, 27015, 8211]):
+        for candidate in candidate_ports or [port, 27015, 8211]:
             if candidate not in probed_ports:
                 probed_ports.append(candidate)
 
@@ -449,11 +449,7 @@ class CommunityTracker:
 
         lan_ip = resolve_host_lan_ip()
         public_port = 8211
-        direct_host = (
-            self.domain
-            if (self.domain and "yourdomain" not in self.domain)
-            else self.dns["cached_public_ip"]
-        )
+        direct_host = self.domain if (self.domain and "yourdomain" not in self.domain) else self.dns["cached_public_ip"]
 
         return {
             "public_ip": self.dns["cached_public_ip"] or "Unknown",
@@ -709,9 +705,7 @@ class CommunityTracker:
 
         return {
             "is_password_protected": bool(server_password),
-            "password_status_label": (
-                "🔒 Password Protected" if server_password else "🔓 Public Access (No Password)"
-            ),
+            "password_status_label": ("🔒 Password Protected" if server_password else "🔓 Public Access (No Password)"),
             "server_password": server_password,
             "rcon_port": int(kwargs.get("rcon_port", 25575)),
             "rcon_enabled": rcon_enabled,

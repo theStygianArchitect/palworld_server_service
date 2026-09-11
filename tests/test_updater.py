@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import subprocess  # nosec B404 - required for mocking Popen in test harness
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,6 +17,7 @@ from app.engine.updater import (
     STALE_LOCK_TIMEOUT_SECONDS,
     UpdateWatcher,
     _resolve_default_deploy_log_path,
+    _spawn_detached_deployer,
 )
 
 
@@ -38,16 +40,12 @@ def temp_watcher(tmp_path: Path) -> UpdateWatcher:
 
 
 def test_parse_repo_slug():
-    owner, repo = UpdateWatcher.parse_repo_slug(
-        "https://github.com/theStygianArchitect/palworld_server_service"
-    )
+    owner, repo = UpdateWatcher.parse_repo_slug("https://github.com/theStygianArchitect/palworld_server_service")
     assert owner == "theStygianArchitect"
     assert repo == "palworld_server_service"
 
     # Trailing .git
-    owner, repo = UpdateWatcher.parse_repo_slug(
-        "https://github.com/theStygianArchitect/palworld_server_service.git"
-    )
+    owner, repo = UpdateWatcher.parse_repo_slug("https://github.com/theStygianArchitect/palworld_server_service.git")
     assert owner == "theStygianArchitect"
     assert repo == "palworld_server_service"
 
@@ -275,3 +273,31 @@ def test_get_deployment_progress_active_and_parsing(temp_watcher: UpdateWatcher,
     assert prog.elapsed_seconds >= 14
     assert prog.estimated_remaining_seconds is not None
     assert len(prog.log_tail) == 3
+
+
+def test_get_status_includes_target_branch(temp_watcher: UpdateWatcher) -> None:
+    """Verifies that UpdateStatusResponse includes target_branch matching watcher branch."""
+    temp_watcher.branch = "feature-xyz"
+    status = temp_watcher.get_status()
+    assert status.target_branch == "feature-xyz"
+
+
+def test_spawn_detached_deployer_uses_non_interactive_sudo(tmp_path: Path, monkeypatch) -> None:
+    """Verifies that on posix systems, _spawn_detached_deployer invokes sudo with -n."""
+    captured_cmds = []
+
+    def mock_popen(cmd, *args, **kwargs):
+        captured_cmds.append(cmd)
+        return MagicMock(pid=99999)
+
+    monkeypatch.setattr(subprocess, "Popen", mock_popen)
+    monkeypatch.setattr("app.engine.updater._resolve_default_deploy_log_path", lambda: tmp_path / "deploy.log")
+    monkeypatch.setattr("os.name", "posix")
+    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/sudo" if x == "sudo" else None)
+
+    script_path = tmp_path / "deploy.sh"
+    script_path.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+
+    _spawn_detached_deployer(script_path, "main")
+    assert len(captured_cmds) == 1
+    assert captured_cmds[0][:2] == ["/usr/bin/sudo", "-n"]

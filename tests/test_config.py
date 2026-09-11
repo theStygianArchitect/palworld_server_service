@@ -18,7 +18,7 @@ from app.core.config import (
 
 SAMPLE_INI = (
     "[/Script/Pal.PalGameWorldSettings]\n"
-    "OptionSettings=(ServerName=\"Test Server Name\",AdminPassword=\"SecureAdminPassword123\","
+    'OptionSettings=(ServerName="Test Server Name",AdminPassword="SecureAdminPassword123",'
     "PublicPort=8211,RCONPort=25575,RESTAPIPort=8212,RESTAPIEnabled=True)\n"
 )
 
