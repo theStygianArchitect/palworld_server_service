@@ -92,18 +92,14 @@ def audit_pyproject_toml(config_path: Path) -> list[str]:
     disabled_rules = messages_control.get("disable", [])
 
     if disabled_rules:
-        violations.append(
-            f"[PYLINT SUPPRESSION] pyproject.toml contains project-wide disable rules: {disabled_rules}"
-        )
+        violations.append(f"[PYLINT SUPPRESSION] pyproject.toml contains project-wide disable rules: {disabled_rules}")
 
     # 2. Check Ruff ignored rules
     ruff_section = tool_section.get("ruff", {})
     ruff_lint = ruff_section.get("lint", {})
     ignored_rules = ruff_lint.get("ignore", [])
     if ignored_rules:
-        violations.append(
-            f"[RUFF SUPPRESSION] pyproject.toml contains project-wide ignore rules: {ignored_rules}"
-        )
+        violations.append(f"[RUFF SUPPRESSION] pyproject.toml contains project-wide ignore rules: {ignored_rules}")
 
     # 3. Check Mypy ignore_errors or broad ignores
     mypy_section = tool_section.get("mypy", {})
@@ -154,7 +150,7 @@ def main() -> int:
     for v in violations:
         sys.stderr.write(f"  [-] {v}\n")
     sys.stderr.write("\nTo authorize project-wide suppressions, the user must explicitly provide:\n")
-    sys.stderr.write("    \"I solemnly swear I know what I'm doing\"\n")
+    sys.stderr.write('    "I solemnly swear I know what I\'m doing"\n')
     sys.stderr.write("via environment variable PROJECT_WIDE_OVERRIDE_PASSPHRASE or commit message.\n")
     return 1
 

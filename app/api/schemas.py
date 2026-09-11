@@ -740,6 +740,7 @@ class UpdateStatusResponse(BaseModel):
     update_available: bool = Field(..., description="Whether upstream changes are available")
     current_commit: str = Field(..., description="Active deployed git commit SHA")
     latest_commit: str = Field(..., description="Latest upstream git commit SHA on branch")
+    target_branch: str = Field(default="main", description="Active tracking git branch name")
     commits_behind: int = Field(default=0, ge=0, description="Commit count difference")
     latest_commit_message: str = Field(default="", description="Summary of newest upstream commit")
     last_checked: str = Field(..., description="ISO-8601 UTC timestamp of latest probe")

@@ -160,16 +160,24 @@ chown -R "${APP_USER}:${APP_USER}" /var/lib/palmanager
 chmod -R 0775 /var/lib/palmanager
 chmod 0750 /var/lib/palmanager/certs
 
-# Ensure scoped sudoers rules for palworld-cert-manager.sh via dedicated drop-in
-SUDOERS_CERTS_FILE="/etc/sudoers.d/palmanager-certs"
-cat << SUDO_EOF > "${SUDOERS_CERTS_FILE}"
+# Ensure scoped sudoers rules for management operations via dedicated drop-in
+SUDOERS_FILE="/etc/sudoers.d/palmanager"
+cat << SUDO_EOF > "${SUDOERS_FILE}"
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart palworld.service, /usr/bin/systemctl restart palworld.service
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status palworld.service, /usr/bin/systemctl status palworld.service
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld.service, /usr/bin/systemctl is-active palworld.service
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *, /usr/bin/journalctl -u palworld.service *
+${APP_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status
+${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh *
+${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/deploy.sh *
 ${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/palworld-cert-manager.sh *
 ${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/palworld-cert-manager.sh *
 SUDO_EOF
-chmod 0440 "${SUDOERS_CERTS_FILE}"
+chmod 0440 "${SUDOERS_FILE}"
 if command -v visudo >/dev/null 2>&1; then
-    visudo -cf "${SUDOERS_CERTS_FILE}" >/dev/null 2>&1 || true
+    visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1 || true
 fi
+rm -f /etc/sudoers.d/palmanager-certs /etc/sudoers.d/palworld_manager_palmanager 2>/dev/null || true
 
 # Register fallback daily root crontab for certificate renewal
 if command -v crontab >/dev/null 2>&1; then

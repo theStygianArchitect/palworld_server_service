@@ -116,9 +116,7 @@ def scan_file(file_path: Path) -> list[str]:
 
                 if not is_safe:
                     preview = f"{matched_str[:4]}...{matched_str[-4:]}"
-                    violations.append(
-                        f"{file_path}:{line_no} -> [{label}] Potential secret found: '{preview}'"
-                    )
+                    violations.append(f"{file_path}:{line_no} -> [{label}] Potential secret found: '{preview}'")
 
     return violations
 

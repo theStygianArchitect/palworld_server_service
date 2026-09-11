@@ -21,7 +21,7 @@ MAINTENANCE_SCRIPT="${STEAM_HOME}/palworld-maintenance.sh"
 DUCKDNS_DIR="${STEAM_HOME}/duckdns"
 DUCKDNS_SCRIPT="${DUCKDNS_DIR}/duck.sh"
 MANAGER_SERVICE_FILE="/etc/systemd/system/palworld-manager.service"
-SUDOERS_FILE="/etc/sudoers.d/palworld_manager_palmanager"
+SUDOERS_FILE="/etc/sudoers.d/palmanager"
 STANDALONE_BIN="/usr/local/bin/palworld-manager"
 APP_PORT=8080
 
@@ -147,8 +147,7 @@ chmod 0440 "${SUDOERS_FILE}"
 if command -v visudo >/dev/null 2>&1; then
     visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1 || true
 fi
-cp "${SUDOERS_FILE}" /etc/sudoers.d/palmanager-certs 2>/dev/null || true
-chmod 0440 /etc/sudoers.d/palmanager-certs 2>/dev/null || true
+rm -f /etc/sudoers.d/palmanager-certs /etc/sudoers.d/palworld_manager_palmanager 2>/dev/null || true
 echo "[ OK ]"
 
 # 5. Service Files & Maintenance Scripts

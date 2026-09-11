@@ -254,8 +254,7 @@ def evaluate_diagnostics_verdict(metrics: dict[str, Any]) -> tuple[str, str, str
             "⚠️ Local LAN / Router Jitter Detected",
             f"Local router gateway latency variance is high (Jitter: {gw_jitter:.1f}ms, Loss: {gw_loss:.1f}%). "
             "This indicates local Wi-Fi interference, powerline ethernet instability, or router CPU saturation.",
-            "Connect the server directly via Cat6 Ethernet cable, bypass Wi-Fi repeaters, "
-            "and check router CPU load.",
+            "Connect the server directly via Cat6 Ethernet cable, bypass Wi-Fi repeaters, and check router CPU load.",
         )
     if net_loss > 2.0 or udp_drops:
         return (

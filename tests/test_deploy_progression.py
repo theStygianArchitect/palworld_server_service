@@ -137,16 +137,18 @@ def test_get_deploy_progress_completed_unacknowledged(client_fixture: tuple[Test
     updater.post_update_file = post_update_file
 
     post_update_file.write_text(
-        json.dumps({
-            "status": "success",
-            "target_branch": "main",
-            "deployed_commit": "abcdef1234567890abcdef1234567890abcdef12",
-            "deployed_commit_short": "abcdef1",
-            "deployed_at": "2026-09-09T12:00:00Z",
-            "duration_seconds": 38,
-            "summary": "feat: unified deployment progression",
-            "acknowledged": False,
-        }),
+        json.dumps(
+            {
+                "status": "success",
+                "target_branch": "main",
+                "deployed_commit": "abcdef1234567890abcdef1234567890abcdef12",
+                "deployed_commit_short": "abcdef1",
+                "deployed_at": "2026-09-09T12:00:00Z",
+                "duration_seconds": 38,
+                "summary": "feat: unified deployment progression",
+                "acknowledged": False,
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -167,29 +169,27 @@ def test_post_update_acknowledge_rbac(client_fixture: tuple[TestClient, str, str
     post_update_file = tmp_path / "last_update_ack.json"
     updater.post_update_file = post_update_file
     post_update_file.write_text(
-        json.dumps({
-            "status": "success",
-            "target_branch": "main",
-            "deployed_commit": "abcdef1234567890abcdef1234567890abcdef12",
-            "deployed_commit_short": "abcdef1",
-            "deployed_at": "2026-09-09T12:00:00Z",
-            "duration_seconds": 38,
-            "summary": "feat: update",
-            "acknowledged": False,
-        }),
+        json.dumps(
+            {
+                "status": "success",
+                "target_branch": "main",
+                "deployed_commit": "abcdef1234567890abcdef1234567890abcdef12",
+                "deployed_commit_short": "abcdef1",
+                "deployed_at": "2026-09-09T12:00:00Z",
+                "duration_seconds": 38,
+                "summary": "feat: update",
+                "acknowledged": False,
+            }
+        ),
         encoding="utf-8",
     )
 
     # Viewer should be forbidden (403)
-    resp_viewer = client.post(
-        "/api/system/update/acknowledge", headers={"Authorization": f"Bearer {viewer_token}"}
-    )
+    resp_viewer = client.post("/api/system/update/acknowledge", headers={"Authorization": f"Bearer {viewer_token}"})
     assert resp_viewer.status_code == 403
 
     # Admin should succeed (200)
-    resp_admin = client.post(
-        "/api/system/update/acknowledge", headers={"Authorization": f"Bearer {admin_token}"}
-    )
+    resp_admin = client.post("/api/system/update/acknowledge", headers={"Authorization": f"Bearer {admin_token}"})
     assert resp_admin.status_code == 200
     assert resp_admin.json()["status"] == "success"
 
@@ -204,16 +204,18 @@ def test_update_status_includes_last_update(client_fixture: tuple[TestClient, st
     post_update_file = tmp_path / "last_update_status.json"
     updater.post_update_file = post_update_file
     post_update_file.write_text(
-        json.dumps({
-            "status": "success",
-            "target_branch": "main",
-            "deployed_commit": "9876543210fedcba",
-            "deployed_commit_short": "9876543",
-            "deployed_at": "2026-09-09T12:00:00Z",
-            "duration_seconds": 25,
-            "summary": "feat: fast update",
-            "acknowledged": False,
-        }),
+        json.dumps(
+            {
+                "status": "success",
+                "target_branch": "main",
+                "deployed_commit": "9876543210fedcba",
+                "deployed_commit_short": "9876543",
+                "deployed_at": "2026-09-09T12:00:00Z",
+                "duration_seconds": 25,
+                "summary": "feat: fast update",
+                "acknowledged": False,
+            }
+        ),
         encoding="utf-8",
     )
 

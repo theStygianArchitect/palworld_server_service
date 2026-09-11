@@ -93,7 +93,7 @@ def _spawn_detached_deployer(deploy_script: Path, target_branch: str) -> None:
         # start_new_session=True ensures the child process outlives the parent web process restart.
         sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"  # nosec B607 - absolute path resolved
         subprocess.Popen(  # nosec B603 - argument list is validated; no shell=True; setuid binary required
-            [sudo_bin, str(deploy_script), target_branch],
+            [sudo_bin, "-n", str(deploy_script), target_branch],
             stdout=log_fd,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -380,6 +380,7 @@ class UpdateWatcher:
             update_available=self._update_available,
             current_commit=self._current_commit or "unknown",
             latest_commit=self._latest_commit or "unknown",
+            target_branch=self.branch,
             commits_behind=self._commits_behind,
             latest_commit_message=self._latest_commit_message,
             last_checked=self._last_checked,
@@ -671,7 +672,7 @@ class UpdateWatcher:
 
             try:
                 await asyncio.to_thread(_spawn_detached_deployer, deploy_script, target_branch)
-            except OSError as err:
+            except Exception as err:
                 self.lock_file.unlink(missing_ok=True)
                 log.error("Failed spawning deployer subprocess: %s", err)
                 raise HTTPException(

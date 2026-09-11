@@ -114,9 +114,7 @@ def test_tracker_probe_local_logs_eos_session_extraction(tmp_path):
     fake_proc.returncode = 0
     fake_proc.stdout = "Aug 30 06:00:00 server: Created public lobby session [SessionId: 0002a89bf12]\n"
 
-    with patch("subprocess.run", return_value=fake_proc), patch(
-        "app.monitoring.tracker.is_posix", return_value=True
-    ):
+    with patch("subprocess.run", return_value=fake_proc), patch("app.monitoring.tracker.is_posix", return_value=True):
         res = tracker.probe_local_logs()
         assert res["registered"] is True
         assert res["session_id"] == "0002a89bf12"

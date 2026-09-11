@@ -162,10 +162,7 @@ class DiscordNotifier:
             else (" (with SteamCMD update)" if is_updating else "")
         )
         if time_remaining_str.lower() == "immediately":
-            desc = (
-                f"Server is restarting **immediately**{update_text}."
-                " World save and maintenance in progress."
-            )
+            desc = f"Server is restarting **immediately**{update_text}. World save and maintenance in progress."
         else:
             desc = (
                 f"Server restart scheduled in **{time_remaining_str}**{update_text}."

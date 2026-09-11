@@ -1041,6 +1041,21 @@ def _write_ini_file_with_fallback(target_path_str: str, serialized_content: str)
         fallback_file.write_text(serialized_content, encoding="utf-8")
 
 
+def stage_settings_for_reboot(serialized_content: str) -> None:
+    """Stages serialized INI content to survive in-memory server reboot overwrites."""
+    candidates = [
+        Path("/var/lib/palmanager/staged_PalWorldSettings.ini"),
+        Path.home() / ".palmanager" / "staged_PalWorldSettings.ini",
+        Path("/home/steam/.staged_PalWorldSettings.ini"),
+    ]
+    for cand in candidates:
+        try:
+            cand.parent.mkdir(parents=True, exist_ok=True)
+            cand.write_text(serialized_content, encoding="utf-8")
+        except OSError as err:
+            log.debug("Unable to stage settings to candidate %s: %s", cand, err)
+
+
 @app.post("/api/settings")
 async def save_sanitized_settings(
     payload: GameplaySettingsSchema,
@@ -1062,8 +1077,10 @@ async def save_sanitized_settings(
         sanitized_dict = payload.model_dump(exclude_unset=True)
         serialized_ini = pipeline.merge_and_serialize(sanitized_dict)
         await asyncio.to_thread(_write_ini_file_with_fallback, settings.ini_path, serialized_ini)
+        engine.stage_settings(serialized_ini)
+        stage_settings_for_reboot(serialized_ini)
         reload_settings()
-        log.info("Saved settings cleanly to disk.")
+        log.info("Saved and staged settings cleanly to disk.")
         return {"status": "success", "message": "Settings saved cleanly to disk."}
     except PermissionError as e:
         log.error("Permission denied saving settings: %s", e)
@@ -1123,8 +1140,10 @@ async def trigger_reboot(
     if payload.settings:
         serialized_ini = pipeline.merge_and_serialize(payload.settings)
         await asyncio.to_thread(_write_ini_file_with_fallback, settings.ini_path, serialized_ini)
+        engine.stage_settings(serialized_ini)
+        stage_settings_for_reboot(serialized_ini)
         reload_settings()
-        log.info("Saved configuration cleanly before reboot.")
+        log.info("Saved and staged configuration cleanly before reboot.")
 
     log.info(
         "Initiating reboot sequence (%ss, update=%s, msg=%s)",
