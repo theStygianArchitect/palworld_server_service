@@ -1,6 +1,6 @@
 [project]
 name = "palworld-web-manager"
-version = "1.0.0"
+version = "0.2.0"
 description = "Palworld Dedicated Server Operations Suite & Web Management Plane"
 readme = "README.md"
 authors = [

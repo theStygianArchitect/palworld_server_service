@@ -2,10 +2,12 @@
 # pylint: disable=missing-function-docstring,redefined-outer-name
 # Rationale: Standard pytest idioms with fixtures and self-describing test functions.
 
+import re
 from pathlib import Path
 
 import yaml
 
+import app
 from app.api.schemas import GameplaySettingsSchema
 from app.config_manager.parser import serialize_ini_settings
 
@@ -114,4 +116,30 @@ def test_issue_13_negative_rcon_disabled_by_default():
     sample_ini = serialize_ini_settings(schema.model_dump(exclude_none=True))
     assert "RCONEnabled=False" in sample_ini or "RCONEnabled=false" in sample_ini, (
         "Default serialized INI must specify RCONEnabled=False"
+    )
+
+
+def test_issue_36_version_and_changelog_contract():
+    """Validates Issue #36: root CHANGELOG.md exists, unreleased/0.2.0 sections, and pyproject matches __version__."""
+    repo_root = Path(__file__).resolve().parent.parent
+    changelog_path = repo_root / "CHANGELOG.md"
+    assert changelog_path.exists(), f"CHANGELOG.md not found at {changelog_path}"
+
+    content = changelog_path.read_text(encoding="utf-8")
+    assert "## [Unreleased]" in content, "CHANGELOG.md must contain '## [Unreleased]'"
+    assert "## [0.2.0]" in content, "CHANGELOG.md must contain '## [0.2.0]'"
+
+    # pyproject.toml version matches app.__version__ and is 0.2.0
+    pyproject_path = repo_root / "pyproject.toml"
+    assert pyproject_path.exists(), f"pyproject.toml not found at {pyproject_path}"
+
+    pyproject_text = pyproject_path.read_text(encoding="utf-8")
+    match = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', pyproject_text, re.MULTILINE)
+    assert match is not None, "version string not found in pyproject.toml"
+    pyproject_version = match.group(1)
+
+    assert app.__version__ == "0.2.0", f"app.__version__ must be '0.2.0', got '{app.__version__}'"
+    assert pyproject_version == "0.2.0", f"pyproject.toml version must be '0.2.0', got '{pyproject_version}'"
+    assert pyproject_version == app.__version__, (
+        f"pyproject.toml version ({pyproject_version}) does not match app.__version__ ({app.__version__})"
     )

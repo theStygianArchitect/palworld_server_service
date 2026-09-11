@@ -96,22 +96,39 @@
 
   <!-- Post-Update Celebration & Status Banners -->
   <div id="postUpdateSuccessBanner" class="hidden max-w-7xl mx-auto w-full px-4 sm:px-6 pt-3">
-    <div class="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 border border-emerald-500/50 rounded-2xl p-4 shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-      <div class="flex items-start sm:items-center gap-3">
-        <span class="text-2xl animate-bounce">🎉</span>
-        <div>
-          <div class="flex items-center gap-2">
-            <h3 class="text-sm font-bold text-white tracking-tight">Portal Successfully Updated!</h3>
-            <span id="postUpdateShaBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">vNext</span>
-            <span id="postUpdateDurationBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">0s</span>
+    <div class="bg-gradient-to-r from-emerald-950 via-slate-900 to-emerald-950 border border-emerald-500/50 rounded-2xl p-4 shadow-2xl flex flex-col gap-3">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 w-full">
+        <div class="flex items-start sm:items-center gap-3">
+          <span class="text-2xl animate-bounce">🎉</span>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-bold text-white tracking-tight">Portal Successfully Updated!</h3>
+              <span id="postUpdateShaBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30" title="Version / Deployed Commit">v0.2.0</span>
+              <span id="postUpdateDurationBadge" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">0s</span>
+            </div>
+            <p id="postUpdateSuccessMsg" class="text-xs text-emerald-200/90 font-mono mt-0.5 truncate max-w-xl">Update deployed and services restarted cleanly.</p>
           </div>
-          <p id="postUpdateSuccessMsg" class="text-xs text-emerald-200/90 font-mono mt-0.5 truncate max-w-xl">Update deployed and services restarted cleanly.</p>
+        </div>
+        <div class="flex items-center gap-2 ml-auto sm:ml-0">
+          <button id="postUpdateWhatsNewBtn" onclick="togglePostUpdateWhatsNew()" class="px-3.5 py-1.5 rounded-xl bg-emerald-800/60 hover:bg-emerald-700/70 border border-emerald-500/40 text-emerald-200 font-semibold text-xs font-mono shadow-lg transition flex items-center gap-1.5" title="View Highlights for Deployed Version">
+            <span>✨</span> What's New <span id="postUpdateWhatsNewChevron" class="text-[10px] transition-transform duration-200">▼</span>
+          </button>
+          <button id="postUpdateAckBtn" onclick="acknowledgePostUpdate()" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs font-mono shadow-lg transition flex items-center gap-1.5">
+            <span>✓</span> Acknowledge
+          </button>
         </div>
       </div>
-      <div class="flex items-center gap-2 ml-auto sm:ml-0">
-        <button id="postUpdateAckBtn" onclick="acknowledgePostUpdate()" class="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs font-mono shadow-lg transition flex items-center gap-1.5">
-          <span>✓</span> Acknowledge
-        </button>
+      <!-- Inline "What's New" Summary Expander Panel -->
+      <div id="postUpdateWhatsNewPanel" class="hidden pt-3 border-t border-emerald-500/30 font-mono text-xs text-slate-200 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] uppercase tracking-wider font-bold text-emerald-400 flex items-center gap-1.5">
+            <span>🚀</span> Highlights for <span id="postUpdateWhatsNewVersion">v0.2.0</span>
+          </span>
+          <span id="postUpdateWhatsNewDate" class="text-[10px] text-slate-400 font-mono"></span>
+        </div>
+        <div id="postUpdateWhatsNewContent" class="space-y-1.5 max-h-60 overflow-y-auto pr-2">
+          <p class="text-slate-400 text-xs italic">Loading release highlights...</p>
+        </div>
       </div>
     </div>
   </div>
@@ -1214,6 +1231,46 @@
         </div>
       </div>
 
+      <!-- Release Notes & Changelog Card (Tab 8) -->
+      <div id="releaseNotesCard" class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-5 font-mono text-xs">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div>
+            <h3 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
+              <span class="text-indigo-400 text-lg">📋</span> Release Notes &amp; Running Changelog
+            </h3>
+            <p class="text-xs text-slate-400 mt-1">Semantic versioning (0.x.y) release history, verified milestones, and categorized changelog entries.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="changelogCurrentVersionBadge" class="text-[10px] font-mono px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">v0.2.0</span>
+            <button onclick="fetchChangelog(true)" id="refreshChangelogBtn" class="px-3 py-1.5 bg-dark-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition text-xs font-mono font-semibold flex items-center gap-1.5 shadow-sm" title="Reload Changelog">
+              <span>🔄</span> Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Release selector tabs / filter pills -->
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Select Release:</span>
+          <span class="text-[10px] text-slate-500">Keep a Changelog 1.1.0 Standard</span>
+        </div>
+        <div id="changelogVersionTabs" class="flex flex-wrap items-center gap-2 pb-1">
+          <button onclick="filterChangelogRelease('all')" id="changelogTab_all" class="px-2.5 py-1 rounded-lg bg-brand-600 text-white font-bold transition text-xs font-mono">All Releases</button>
+        </div>
+
+        <!-- Release Accordion / Detail Container -->
+        <div id="changelogReleaseContainer" class="space-y-3">
+          <div class="p-4 bg-dark-950 border border-slate-800 rounded-xl text-slate-400 text-xs text-center font-mono">
+            Loading release notes...
+          </div>
+        </div>
+
+        <!-- Fallback notice if changelog unavailable -->
+        <div id="changelogFallbackNotice" class="hidden p-4 rounded-xl bg-dark-950 border border-amber-500/30 text-amber-300 text-xs font-mono space-y-1">
+          <p class="font-bold flex items-center gap-1.5"><span>⚠️</span> Changelog Unavailable</p>
+          <p class="text-slate-400 text-[11px]">Unable to load release notes from the server at this time. Operations are unaffected.</p>
+        </div>
+      </div>
+
       <!-- TLS / HTTPS Certificate Management Card in Tab 8 -->
       <div id="updatesTlsCard" class="bg-dark-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl space-y-4 font-mono text-xs">
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
@@ -1874,6 +1931,7 @@
 
       if (tab === 'updates') {
         checkSystemUpdateStatus(false);
+        fetchChangelog(false);
       }
 
       if (tab === 'backups') {
@@ -3891,15 +3949,26 @@
           if (data.last_update.status === 'success') {
             if (successBanner) {
               const shortSha = data.last_update.deployed_commit_short 
-                || (data.last_update.deployed_commit ? data.last_update.deployed_commit.substring(0, 7) : (data.last_update.applied_commit ? data.last_update.applied_commit.substring(0, 7) : 'vNext'));
+                || (data.last_update.deployed_commit ? data.last_update.deployed_commit.substring(0, 7) : (data.last_update.applied_commit ? data.last_update.applied_commit.substring(0, 7) : ''));
+              const rawDeployedVer = data.last_update.deployed_version || data.current_version;
+              const displayVersion = rawDeployedVer
+                ? (rawDeployedVer.startsWith('v') ? rawDeployedVer : `v${rawDeployedVer}`)
+                : (shortSha ? shortSha : 'v0.2.0');
               const shaBadge = document.getElementById('postUpdateShaBadge');
               const durBadge = document.getElementById('postUpdateDurationBadge');
               const succMsg = document.getElementById('postUpdateSuccessMsg');
-              if (shaBadge) shaBadge.innerText = shortSha;
+              if (shaBadge) {
+                shaBadge.innerText = displayVersion;
+                if (shortSha) {
+                  shaBadge.title = `Commit SHA: ${shortSha}`;
+                }
+              }
               if (durBadge) durBadge.innerText = `${data.last_update.duration_seconds || 0}s`;
               const summaryTitle = data.last_update.summary || data.last_update.commit_summary;
-              if (succMsg) succMsg.innerText = summaryTitle ? `[${shortSha}] ${summaryTitle}` : 'Update applied and services restarted cleanly.';
+              const commitPrefix = shortSha ? `[${shortSha}] ` : '';
+              if (succMsg) succMsg.innerText = summaryTitle ? `${commitPrefix}${summaryTitle}` : 'Update applied and services restarted cleanly.';
               successBanner.classList.remove('hidden');
+              fetchChangelog(false);
             }
             if (failedBanner) failedBanner.classList.add('hidden');
           } else if (data.last_update.status === 'failed') {
@@ -3984,11 +4053,342 @@
         if (res.ok) {
           document.getElementById('postUpdateSuccessBanner')?.classList.add('hidden');
           document.getElementById('postUpdateFailedBanner')?.classList.add('hidden');
+          document.getElementById('postUpdateWhatsNewPanel')?.classList.add('hidden');
+          const chevron = document.getElementById('postUpdateWhatsNewChevron');
+          if (chevron) chevron.style.transform = '';
           checkSystemUpdateStatus(true);
         }
       } catch (err) {
         console.debug('Failed to acknowledge post update:', err);
       }
+    }
+
+    function togglePostUpdateWhatsNew() {
+      const panel = document.getElementById('postUpdateWhatsNewPanel');
+      const chevron = document.getElementById('postUpdateWhatsNewChevron');
+      if (!panel) return;
+      const isHidden = panel.classList.contains('hidden');
+      if (isHidden) {
+        panel.classList.remove('hidden');
+        if (chevron) chevron.style.transform = 'rotate(180deg)';
+        if (!cachedChangelog) {
+          fetchChangelog(false);
+        }
+      } else {
+        panel.classList.add('hidden');
+        if (chevron) chevron.style.transform = '';
+      }
+    }
+
+    let cachedChangelog = null;
+    let selectedChangelogFilter = 'all';
+
+    async function fetchChangelog(force = false) {
+      const refreshBtn = document.getElementById('refreshChangelogBtn');
+      if (force && refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<span>⏳</span> Loading...';
+      }
+
+      try {
+        const res = await fetch('/api/system/changelog');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        cachedChangelog = data;
+        renderChangelogUI(data);
+      } catch (err) {
+        console.debug('Failed to fetch changelog:', err);
+        handleChangelogFallback();
+      } finally {
+        if (force && refreshBtn) {
+          refreshBtn.disabled = false;
+          refreshBtn.innerHTML = '<span>🔄</span> Refresh';
+        }
+      }
+    }
+
+    function handleChangelogFallback() {
+      const fallbackNotice = document.getElementById('changelogFallbackNotice');
+      const releaseContainer = document.getElementById('changelogReleaseContainer');
+      const whatsNewContent = document.getElementById('postUpdateWhatsNewContent');
+
+      if (fallbackNotice) fallbackNotice.classList.remove('hidden');
+      if (releaseContainer && !releaseContainer.querySelector('.changelog-release-card')) {
+        releaseContainer.innerHTML = '<div class="p-4 bg-dark-950 border border-slate-800 rounded-xl text-slate-400 text-xs text-center font-mono">Release notes currently unavailable on this host.</div>';
+      }
+      if (whatsNewContent) {
+        whatsNewContent.innerHTML = '<p class="text-slate-400 text-xs font-mono italic">Release highlights temporarily unavailable.</p>';
+      }
+    }
+
+    function createCategoryBadge(category) {
+      const badge = document.createElement('span');
+      badge.className = 'inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider font-mono mr-1.5 ';
+      const catUpper = (category || '').toUpperCase();
+      if (catUpper === 'ADDED') {
+        badge.className += 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+      } else if (catUpper === 'CHANGED') {
+        badge.className += 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
+      } else if (catUpper === 'FIXED') {
+        badge.className += 'bg-purple-500/20 text-purple-400 border border-purple-500/30';
+      } else if (catUpper === 'SECURITY') {
+        badge.className += 'bg-rose-500/20 text-rose-400 border border-rose-500/30';
+      } else if (catUpper === 'DEPRECATED') {
+        badge.className += 'bg-amber-500/20 text-amber-400 border border-amber-500/30';
+      } else if (catUpper === 'REMOVED') {
+        badge.className += 'bg-slate-700/50 text-slate-300 border border-slate-600';
+      } else {
+        badge.className += 'bg-slate-800 text-slate-300 border border-slate-700';
+      }
+      badge.textContent = category;
+      return badge;
+    }
+
+    function renderChangelogUI(data) {
+      if (!data) return;
+
+      const fallbackNotice = document.getElementById('changelogFallbackNotice');
+      if (fallbackNotice) fallbackNotice.classList.add('hidden');
+
+      // 1. Current version badge in Tab 8
+      const rawCurrent = data.current_version || '0.2.0';
+      const formattedCurrent = rawCurrent.startsWith('v') ? rawCurrent : `v${rawCurrent}`;
+      const curBadge = document.getElementById('changelogCurrentVersionBadge');
+      if (curBadge) curBadge.innerText = formattedCurrent;
+
+      // 2. Populate Post-Update "What's New" expander highlights
+      const whatsNewVer = document.getElementById('postUpdateWhatsNewVersion');
+      const whatsNewDate = document.getElementById('postUpdateWhatsNewDate');
+      const whatsNewContent = document.getElementById('postUpdateWhatsNewContent');
+
+      const releases = Array.isArray(data.releases) ? data.releases : [];
+      const deployedRelease = releases.find(r => r.version === rawCurrent || `v${r.version}` === rawCurrent) || releases[0] || null;
+
+      if (deployedRelease) {
+        if (whatsNewVer) {
+          whatsNewVer.innerText = deployedRelease.version.startsWith('v') ? deployedRelease.version : `v${deployedRelease.version}`;
+        }
+        if (whatsNewDate) {
+          whatsNewDate.innerText = deployedRelease.date ? `Released: ${deployedRelease.date}` : '';
+        }
+        if (whatsNewContent) {
+          whatsNewContent.innerHTML = '';
+          let hasCategories = false;
+          if (Array.isArray(deployedRelease.categories) && deployedRelease.categories.length > 0) {
+            deployedRelease.categories.forEach(cat => {
+              if (Array.isArray(cat.items) && cat.items.length > 0) {
+                hasCategories = true;
+                const catGroup = document.createElement('div');
+                catGroup.className = 'space-y-1';
+
+                const badge = createCategoryBadge(cat.category);
+                catGroup.appendChild(badge);
+
+                const ul = document.createElement('ul');
+                ul.className = 'list-disc list-inside text-[11px] text-slate-300 pl-2 space-y-0.5 font-mono';
+                cat.items.forEach(itemText => {
+                  const li = document.createElement('li');
+                  li.textContent = itemText;
+                  ul.appendChild(li);
+                });
+                catGroup.appendChild(ul);
+                whatsNewContent.appendChild(catGroup);
+              }
+            });
+          }
+          if (!hasCategories) {
+            const fallbackP = document.createElement('p');
+            fallbackP.className = 'text-slate-400 text-xs font-mono italic';
+            fallbackP.textContent = deployedRelease.raw_body || 'Performance optimizations and stability improvements.';
+            whatsNewContent.appendChild(fallbackP);
+          }
+        }
+      }
+
+      // 3. Populate Release Selector Tabs in Tab 8
+      const tabsContainer = document.getElementById('changelogVersionTabs');
+      if (tabsContainer) {
+        tabsContainer.innerHTML = '';
+
+        const allBtn = document.createElement('button');
+        allBtn.id = 'changelogTab_all';
+        allBtn.className = selectedChangelogFilter === 'all'
+          ? 'px-2.5 py-1 rounded-lg bg-brand-600 text-white font-bold transition text-xs font-mono shadow-sm'
+          : 'px-2.5 py-1 rounded-lg bg-dark-950 hover:bg-slate-800 text-slate-300 transition text-xs font-mono border border-slate-800';
+        allBtn.textContent = 'All Releases';
+        allBtn.onclick = () => filterChangelogRelease('all');
+        tabsContainer.appendChild(allBtn);
+
+        releases.forEach(rel => {
+          const btn = document.createElement('button');
+          const vTag = rel.version.startsWith('v') ? rel.version : `v${rel.version}`;
+          btn.id = `changelogTab_${rel.version}`;
+          btn.className = selectedChangelogFilter === rel.version
+            ? 'px-2.5 py-1 rounded-lg bg-brand-600 text-white font-bold transition text-xs font-mono shadow-sm'
+            : 'px-2.5 py-1 rounded-lg bg-dark-950 hover:bg-slate-800 text-slate-300 transition text-xs font-mono border border-slate-800';
+          btn.textContent = vTag;
+          btn.onclick = () => filterChangelogRelease(rel.version);
+          tabsContainer.appendChild(btn);
+        });
+      }
+
+      // 4. Populate Release Accordion in Tab 8
+      const releaseContainer = document.getElementById('changelogReleaseContainer');
+      if (releaseContainer) {
+        releaseContainer.innerHTML = '';
+
+        if (releases.length === 0) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.className = 'p-4 bg-dark-950 border border-slate-800 rounded-xl text-slate-400 text-xs text-center font-mono';
+          emptyDiv.textContent = 'No release records found in changelog.';
+          releaseContainer.appendChild(emptyDiv);
+          return;
+        }
+
+        releases.forEach((rel, idx) => {
+          const vTag = rel.version.startsWith('v') ? rel.version : `v${rel.version}`;
+          const isLatest = idx === 0;
+          const isCurrent = rel.version === rawCurrent || vTag === formattedCurrent;
+
+          const card = document.createElement('div');
+          card.id = `changelogReleaseCard_${rel.version}`;
+          card.className = 'changelog-release-card bg-dark-950 border border-slate-800 rounded-xl overflow-hidden transition';
+
+          // Accordion Header
+          const header = document.createElement('div');
+          header.className = 'p-3.5 flex items-center justify-between cursor-pointer hover:bg-slate-900/60 transition select-none';
+          header.onclick = () => toggleReleaseAccordion(rel.version);
+
+          const leftHeader = document.createElement('div');
+          leftHeader.className = 'flex items-center gap-2 flex-wrap';
+
+          const verSpan = document.createElement('span');
+          verSpan.className = 'font-bold text-slate-100 text-xs tracking-tight';
+          verSpan.textContent = vTag;
+          leftHeader.appendChild(verSpan);
+
+          if (isCurrent) {
+            const currentBadge = document.createElement('span');
+            currentBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+            currentBadge.textContent = 'Active';
+            leftHeader.appendChild(currentBadge);
+          }
+
+          if (rel.date) {
+            const dateSpan = document.createElement('span');
+            dateSpan.className = 'text-[11px] text-slate-400 font-mono';
+            dateSpan.textContent = rel.date;
+            leftHeader.appendChild(dateSpan);
+          }
+
+          header.appendChild(leftHeader);
+
+          const rightHeader = document.createElement('div');
+          rightHeader.className = 'flex items-center gap-2';
+
+          const chevron = document.createElement('span');
+          chevron.id = `changelogChevron_${rel.version}`;
+          chevron.className = 'text-xs text-slate-400 transition-transform duration-200';
+          chevron.textContent = isLatest ? '▲' : '▼';
+          rightHeader.appendChild(chevron);
+
+          header.appendChild(rightHeader);
+          card.appendChild(header);
+
+          // Accordion Body
+          const body = document.createElement('div');
+          body.id = `changelogBody_${rel.version}`;
+          body.className = isLatest ? 'p-4 pt-1 border-t border-slate-800/80 space-y-3' : 'hidden p-4 pt-1 border-t border-slate-800/80 space-y-3';
+
+          let hasCategories = false;
+          if (Array.isArray(rel.categories) && rel.categories.length > 0) {
+            rel.categories.forEach(cat => {
+              if (Array.isArray(cat.items) && cat.items.length > 0) {
+                hasCategories = true;
+                const catBlock = document.createElement('div');
+                catBlock.className = 'space-y-1.5 pt-2';
+
+                const badge = createCategoryBadge(cat.category);
+                catBlock.appendChild(badge);
+
+                const ul = document.createElement('ul');
+                ul.className = 'list-disc list-inside text-xs text-slate-300 pl-2 space-y-1 font-mono';
+                cat.items.forEach(itemText => {
+                  const li = document.createElement('li');
+                  li.textContent = itemText;
+                  ul.appendChild(li);
+                });
+                catBlock.appendChild(ul);
+                body.appendChild(catBlock);
+              }
+            });
+          }
+
+          if (!hasCategories) {
+            const p = document.createElement('p');
+            p.className = 'text-xs text-slate-400 font-mono italic pt-2';
+            p.textContent = rel.raw_body || 'General maintenance and performance enhancements.';
+            body.appendChild(p);
+          }
+
+          card.appendChild(body);
+          releaseContainer.appendChild(card);
+        });
+      }
+    }
+
+    function toggleReleaseAccordion(version) {
+      const body = document.getElementById(`changelogBody_${version}`);
+      const chevron = document.getElementById(`changelogChevron_${version}`);
+      if (!body) return;
+      const isHidden = body.classList.contains('hidden');
+      if (isHidden) {
+        body.classList.remove('hidden');
+        if (chevron) chevron.textContent = '▲';
+      } else {
+        body.classList.add('hidden');
+        if (chevron) chevron.textContent = '▼';
+      }
+    }
+
+    function filterChangelogRelease(version) {
+      selectedChangelogFilter = version;
+      const releases = (cachedChangelog && Array.isArray(cachedChangelog.releases)) ? cachedChangelog.releases : [];
+
+      // Update pill buttons styling
+      const allBtn = document.getElementById('changelogTab_all');
+      if (allBtn) {
+        allBtn.className = version === 'all'
+          ? 'px-2.5 py-1 rounded-lg bg-brand-600 text-white font-bold transition text-xs font-mono shadow-sm'
+          : 'px-2.5 py-1 rounded-lg bg-dark-950 hover:bg-slate-800 text-slate-300 transition text-xs font-mono border border-slate-800';
+      }
+
+      releases.forEach(rel => {
+        const btn = document.getElementById(`changelogTab_${rel.version}`);
+        if (btn) {
+          btn.className = version === rel.version
+            ? 'px-2.5 py-1 rounded-lg bg-brand-600 text-white font-bold transition text-xs font-mono shadow-sm'
+            : 'px-2.5 py-1 rounded-lg bg-dark-950 hover:bg-slate-800 text-slate-300 transition text-xs font-mono border border-slate-800';
+        }
+
+        const card = document.getElementById(`changelogReleaseCard_${rel.version}`);
+        const body = document.getElementById(`changelogBody_${rel.version}`);
+        const chevron = document.getElementById(`changelogChevron_${rel.version}`);
+
+        if (card) {
+          if (version === 'all' || version === rel.version) {
+            card.classList.remove('hidden');
+            if (version === rel.version && body) {
+              body.classList.remove('hidden');
+              if (chevron) chevron.textContent = '▲';
+            }
+          } else {
+            card.classList.add('hidden');
+          }
+        }
+      });
     }
 
     function dismissUpdateBanner() {
@@ -4593,9 +4993,11 @@
       loadMetricsSummary();
       loadMetricsHistory('24h');
       checkSystemUpdateStatus();
+      fetchChangelog();
       fetchTlsStatus();
       setInterval(() => {
         checkSystemUpdateStatus();
+        fetchChangelog();
         fetchTlsStatus();
       }, 60000);
       setInterval(() => {

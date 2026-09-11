@@ -407,9 +407,11 @@ class UpdateWatcher:
                 return None
             data = json.loads(raw_text)
             status_val: Literal["success", "failed"] = "failed" if data.get("status") == "failed" else "success"
+            deployed_ver = data.get("deployed_version")
             return PostUpdateSummary(
                 status=status_val,
                 target_branch=str(data.get("target_branch", "main")),
+                deployed_version=str(deployed_ver) if deployed_ver is not None else None,
                 deployed_commit=str(data.get("deployed_commit", "unknown")),
                 deployed_commit_short=str(data.get("deployed_commit_short", "unknown")),
                 deployed_at=str(data.get("deployed_at", "")),

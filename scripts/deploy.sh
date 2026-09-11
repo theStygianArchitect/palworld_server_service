@@ -19,11 +19,18 @@ cleanup_on_exit() {
     if [ "${exit_code}" -ne 0 ]; then
         echo "[-] Deployment aborted with error exit code: ${exit_code}"
         NOW_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u +"%Y-%m-%d %H:%M:%S")
+        DEPLOYED_VERSION="0.2.0"
+        if [ -f "${REPO_ROOT}/pyproject.toml" ]; then
+            DEPLOYED_VERSION=$(grep -m1 '^version =' "${REPO_ROOT}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.2.0")
+        elif [ -f "${APP_DIR}/pyproject.toml" ]; then
+            DEPLOYED_VERSION=$(grep -m1 '^version =' "${APP_DIR}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.2.0")
+        fi
         mkdir -p /var/lib/palmanager 2>/dev/null || true
         cat <<EOF > "${POST_UPDATE_FILE}"
 {
   "status": "failed",
   "target_branch": "${TARGET_BRANCH}",
+  "deployed_version": "v${DEPLOYED_VERSION}",
   "deployed_commit": "unknown",
   "deployed_commit_short": "unknown",
   "deployed_at": "${NOW_ISO}",
@@ -91,11 +98,20 @@ git pull origin "${TARGET_BRANCH}"
 echo "[ OK ]"
 
 echo -n "[STEP 2/5] Syncing application code & systemd units... "
+DEPLOYED_VERSION="0.2.0"
+if [ -f "${REPO_ROOT}/pyproject.toml" ]; then
+    DEPLOYED_VERSION=$(grep -m1 '^version =' "${REPO_ROOT}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.2.0")
+elif [ -f "${REPO_ROOT}/app/__init__.py" ]; then
+    DEPLOYED_VERSION=$(grep -m1 '^__version__ =' "${REPO_ROOT}/app/__init__.py" | cut -d'"' -f2 2>/dev/null || echo "0.2.0")
+fi
 cp -r "${REPO_ROOT}/app" "${APP_DIR}/"
 cp "${REPO_ROOT}/pyproject.toml" "${APP_DIR}/"
 cp "${REPO_ROOT}/uv.lock" "${APP_DIR}/" 2>/dev/null || true
 if [ -f "${REPO_ROOT}/README.md" ]; then
     cp "${REPO_ROOT}/README.md" "${APP_DIR}/"
+fi
+if [ -f "${REPO_ROOT}/CHANGELOG.md" ]; then
+    cp "${REPO_ROOT}/CHANGELOG.md" "${APP_DIR}/"
 fi
 if [ -d "${REPO_ROOT}/scripts" ]; then
     mkdir -p "${APP_DIR}/scripts"
@@ -255,6 +271,7 @@ cat <<EOF > "${POST_UPDATE_FILE}"
 {
   "status": "success",
   "target_branch": "${TARGET_BRANCH}",
+  "deployed_version": "v${DEPLOYED_VERSION}",
   "deployed_commit": "${DEPLOYED_COMMIT}",
   "deployed_commit_short": "${DEPLOYED_COMMIT_SHORT}",
   "deployed_at": "${NOW_ISO}",

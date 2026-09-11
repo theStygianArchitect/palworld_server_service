@@ -708,6 +708,7 @@ class PostUpdateSummary(BaseModel):
     Attributes:
         status (Literal["success", "failed"]): Outcome of last deployment.
         target_branch (str): Target Git branch.
+        deployed_version (str | None): Semantic version string deployed (e.g. v0.2.0).
         deployed_commit (str): Full 40-character Git commit hash.
         deployed_commit_short (str): 7-character Git commit hash.
         deployed_at (str): ISO-8601 timestamp of completion.
@@ -718,6 +719,7 @@ class PostUpdateSummary(BaseModel):
 
     status: Literal["success", "failed"] = Field(..., description="Outcome of last deployment")
     target_branch: str = Field(default="main", description="Target Git branch")
+    deployed_version: str | None = Field(default=None, description="Semantic version string deployed (e.g. v0.2.0)")
     deployed_commit: str = Field(..., description="Full 40-character Git commit hash")
     deployed_commit_short: str = Field(..., description="Short 7-character Git commit hash")
     deployed_at: str = Field(..., description="ISO-8601 timestamp of completion")
@@ -731,8 +733,10 @@ class UpdateStatusResponse(BaseModel):
 
     Attributes:
         update_available (bool): Whether newer commits exist upstream.
+        current_version (str): Current application semantic version.
         current_commit (str): Local active commit SHA or identifier.
         latest_commit (str): Remote upstream commit SHA or identifier.
+        target_branch (str): Active tracking git branch name.
         commits_behind (int): Number of commits remote is ahead of local.
         latest_commit_message (str): Summary title/message of latest remote commit.
         last_checked (str): ISO-8601 UTC timestamp of last probe.
@@ -742,6 +746,7 @@ class UpdateStatusResponse(BaseModel):
     """
 
     update_available: bool = Field(..., description="Whether upstream changes are available")
+    current_version: str = Field(default="0.2.0", description="Current application semantic version")
     current_commit: str = Field(..., description="Active deployed git commit SHA")
     latest_commit: str = Field(..., description="Latest upstream git commit SHA on branch")
     target_branch: str = Field(default="main", description="Active tracking git branch name")
@@ -1036,3 +1041,62 @@ class TLSRenewResponse(BaseModel):
     )
     message: str = Field(..., description="Informational outcome message")
     triggered_at: str = Field(..., description="ISO 8601 timestamp of execution")
+
+
+# =========================================================================
+# 10. Semantic Versioning & Changelog Engine Schemas
+# =========================================================================
+
+
+class SystemVersionResponse(BaseModel):
+    """Application semantic version response schema.
+
+    Attributes:
+        version (str): Application semantic version string.
+    """
+
+    version: str = Field(default="0.2.0", description="Application semantic version string")
+
+
+class ChangelogCategoryItem(BaseModel):
+    """Represents a category of changes and associated bullet items.
+
+    Attributes:
+        category (str): Category label (e.g., Added, Changed, Fixed, Planned).
+        items (list[str]): Bulleted descriptions under this category.
+    """
+
+    category: str = Field(..., description="Changelog section category name")
+    items: list[str] = Field(default_factory=list, description="Bulleted change items under this category")
+
+
+class ChangelogRelease(BaseModel):
+    """Represents a released version entry in the changelog.
+
+    Attributes:
+        version (str): Semantic version string (e.g. 0.2.0).
+        date (str | None): Release date in ISO-8601 format (YYYY-MM-DD), or None.
+        categories (list[ChangelogCategoryItem]): Structured change categories for this release.
+        raw_body (str): Raw unparsed markdown section body.
+    """
+
+    version: str = Field(..., description="Semantic version string")
+    date: str | None = Field(default=None, description="Release date in YYYY-MM-DD format")
+    categories: list[ChangelogCategoryItem] = Field(default_factory=list, description="Structured change categories")
+    raw_body: str = Field(default="", description="Raw markdown body of release section")
+
+
+class ChangelogResponse(BaseModel):
+    """Changelog response containing active version, historical releases, and unreleased items.
+
+    Attributes:
+        current_version (str): Currently deployed application semantic version.
+        releases (list[ChangelogRelease]): Chronologically ordered release entries.
+        unreleased (list[ChangelogCategoryItem]): Pending items under unreleased section.
+    """
+
+    current_version: str = Field(..., description="Current application semantic version")
+    releases: list[ChangelogRelease] = Field(default_factory=list, description="Historical release entries")
+    unreleased: list[ChangelogCategoryItem] = Field(
+        default_factory=list, description="Pending changes in unreleased section"
+    )
