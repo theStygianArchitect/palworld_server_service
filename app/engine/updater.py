@@ -477,8 +477,32 @@ class UpdateWatcher:
             DeploymentStepInfo(index=5, name="Restarting palworld-manager.service", status="pending"),
         ]
 
+        target_log = log_path or self.deploy_log_path or _resolve_default_deploy_log_path()
+        log_lines: list[str] = []
+        if target_log.is_file():
+            try:
+                with open(target_log, encoding="utf-8", errors="replace") as f:
+                    log_lines = [line.rstrip() for line in f.readlines()[-30:]]
+            except OSError as err:
+                log.debug("Error reading deployment log %s: %s", target_log, err)
+
         if not is_active:
             if last_update and not last_update.acknowledged:
+                if last_update.status == "failed":
+                    default_steps[0].status = "failed"
+                    return DeploymentProgressResponse(
+                        operation="portal_update",
+                        active=False,
+                        current_step=1,
+                        total_steps=5,
+                        step_name=f"Deployment failed: {last_update.summary}",
+                        percentage=0,
+                        elapsed_seconds=last_update.duration_seconds,
+                        estimated_remaining_seconds=0,
+                        steps=default_steps,
+                        log_tail=log_lines,
+                        last_update=last_update,
+                    )
                 for step in default_steps:
                     step.status = "completed"
                 return DeploymentProgressResponse(
@@ -504,7 +528,7 @@ class UpdateWatcher:
                 elapsed_seconds=0,
                 estimated_remaining_seconds=None,
                 steps=default_steps,
-                log_tail=[],
+                log_tail=log_lines,
                 last_update=last_update,
             )
 
@@ -530,15 +554,6 @@ class UpdateWatcher:
 
         effective_start = started_at if started_at is not None else (timestamp_fallback or time.time())
         elapsed_seconds = max(0, int(time.time() - effective_start))
-
-        target_log = log_path or self.deploy_log_path or _resolve_default_deploy_log_path()
-        log_lines: list[str] = []
-        if target_log.is_file():
-            try:
-                with open(target_log, encoding="utf-8", errors="replace") as f:
-                    log_lines = [line.rstrip() for line in f.readlines()[-30:]]
-            except OSError as err:
-                log.debug("Error reading deployment log %s: %s", target_log, err)
 
         completed_steps: set[int] = set()
         started_steps: set[int] = set()
@@ -589,8 +604,23 @@ class UpdateWatcher:
             percent = min(95, max(5, base_pct + partial))
 
         estimated_remaining: int | None = max(5, 45 - elapsed_seconds)
-        if percent >= 95:
-            estimated_remaining = 5
+        has_aborted = any("Deployment aborted with error" in line for line in log_lines)
+        if has_aborted:
+            if 1 <= current_step_idx <= 5:
+                default_steps[current_step_idx - 1].status = "failed"
+            return DeploymentProgressResponse(
+                operation=operation,
+                active=False,
+                current_step=current_step_idx,
+                total_steps=5,
+                step_name=f"Deployment aborted at step {current_step_idx}",
+                percentage=percent,
+                elapsed_seconds=elapsed_seconds,
+                estimated_remaining_seconds=0,
+                steps=default_steps,
+                log_tail=log_lines,
+                last_update=last_update,
+            )
 
         return DeploymentProgressResponse(
             operation=operation,
