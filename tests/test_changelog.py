@@ -6,6 +6,7 @@ import secrets
 import time
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,16 +25,18 @@ from app.main import app, db, metrics_db, settings
 @pytest.fixture
 def changelog_test_client(tmp_path: Path) -> Generator[TestClient, None, None]:
     """Isolated FastAPI test client fixture for changelog verification."""
-    swaps = [(db, tmp_path / "cl_main.sqlite"), (metrics_db, tmp_path / "cl_metrics.sqlite")]
-    prior_paths = []
+
+    def _swap_db(target: Any, target_file: Path) -> str:
+        orig_p = str(target.db_path)
+        target.close()
+        target.db_path = str(target_file)
+        target.initialize()
+        return orig_p
+
+    orig_main = _swap_db(db, tmp_path / "cl_main.sqlite")
+    orig_met = _swap_db(metrics_db, tmp_path / "cl_metrics.sqlite")
     prior_updater = settings.updater_enabled
     settings.updater_enabled = False
-
-    for target_db, tmp_file in swaps:
-        prior_paths.append((target_db, target_db.db_path))
-        target_db.close()
-        target_db.db_path = str(tmp_file)
-        target_db.initialize()
 
     bootstrap_admin_user(db=db, default_password=settings.AdminPassword)
     active_client = TestClient(app)
@@ -42,10 +45,8 @@ def changelog_test_client(tmp_path: Path) -> Generator[TestClient, None, None]:
     finally:
         active_client.close()
         settings.updater_enabled = prior_updater
-        for target_db, original_path in prior_paths:
-            target_db.close()
-            target_db.db_path = original_path
-            target_db.initialize()
+        _swap_db(db, Path(orig_main))
+        _swap_db(metrics_db, Path(orig_met))
 
 
 def _authenticate_role(client: TestClient, role_name: str) -> str:
