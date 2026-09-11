@@ -64,6 +64,7 @@ class GameplaySettingsSchema(BaseModel):
         bShowPlayerList (bool | None): Whether active player list is publicly visible.
         bIsShowJoinLeftMessage (bool | None): Whether join/leave notices display.
         SupplyDropSpan (int | None): Interval in minutes between meteorite supply drops.
+        RCONEnabled (bool | None): Whether RCON remote console is enabled (defaults to False).
     """
 
     # 🌐 Crossplay & Matchmaking
@@ -78,6 +79,9 @@ class GameplaySettingsSchema(BaseModel):
     ServerPlayerMaxNum: int | None = Field(default=32, ge=1, le=32)
     CoopPlayerMaxNum: int | None = Field(default=4, ge=1, le=4)
     bUseBackupSaveData: bool | None = True
+
+    # 🔒 Remote Administration & Security Defaults (Issue #13)
+    RCONEnabled: bool | None = False
 
     # ⚡ Progression & Leveling
     Difficulty: str | None = Field(default="None")

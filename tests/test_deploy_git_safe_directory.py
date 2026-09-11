@@ -1,11 +1,18 @@
-"""Tests for deploy.sh Git safe.directory ownership handling, exit trap reporting, and UI step harmonization."""
-# pylint: disable=missing-function-docstring,redefined-outer-name
+"""Regression test for Issue #32: Git safe.directory ownership handling, exit trap reporting,
+and UI step harmonization.
+"""
+# pylint: disable=redefined-outer-name
 # Rationale: Standard pytest idioms with fixtures and self-describing test functions.
 
 from pathlib import Path
 
 
 def test_deploy_script_git_safe_directory():
+    """Verify git safe.directory commands are present before git fetch.
+
+    Regression test for Issue #32: Git safe.directory ownership handling, exit trap reporting,
+    and UI step harmonization.
+    """
     deploy_sh = Path(__file__).resolve().parent.parent / "scripts" / "deploy.sh"
     assert deploy_sh.is_file(), "deploy.sh must exist"
     content = deploy_sh.read_text(encoding="utf-8")
@@ -17,6 +24,11 @@ def test_deploy_script_git_safe_directory():
 
 
 def test_deploy_script_writes_failure_record_on_exit_trap():
+    """Verify cleanup_on_exit handles non-zero exit code and writes failure JSON.
+
+    Regression test for Issue #32: Git safe.directory ownership handling, exit trap reporting,
+    and UI step harmonization.
+    """
     deploy_sh = Path(__file__).resolve().parent.parent / "scripts" / "deploy.sh"
     content = deploy_sh.read_text(encoding="utf-8")
 
@@ -28,6 +40,11 @@ def test_deploy_script_writes_failure_record_on_exit_trap():
 
 
 def test_deploy_script_decoupled_from_game_server_update_flags():
+    """Ensure deploy.sh does not touch game server update request flags.
+
+    Regression test for Issue #32: Git safe.directory ownership handling, exit trap reporting,
+    and UI step harmonization.
+    """
     deploy_sh = Path(__file__).resolve().parent.parent / "scripts" / "deploy.sh"
     content = deploy_sh.read_text(encoding="utf-8")
 
@@ -37,6 +54,11 @@ def test_deploy_script_decoupled_from_game_server_update_flags():
 
 
 def test_index_html_harmonized_steppers_and_no_database_migrations():
+    """Verify index.html has harmonized update steppers and no obsolete database migrations.
+
+    Regression test for Issue #32: Git safe.directory ownership handling, exit trap reporting,
+    and UI step harmonization.
+    """
     index_html = Path(__file__).resolve().parent.parent / "app" / "templates" / "index.html"
     assert index_html.is_file(), "index.html must exist"
     content = index_html.read_text(encoding="utf-8")
@@ -57,6 +79,11 @@ def test_index_html_harmonized_steppers_and_no_database_migrations():
 
 
 def test_index_html_poll_deploy_progress_guards_failure_overlay():
+    """Verify pollDeployProgress guards showUpdateOverlay with step 5 or pct check on failure.
+
+    Regression test for Issue #32: Git safe.directory ownership handling, exit trap reporting,
+    and UI step harmonization.
+    """
     index_html = Path(__file__).resolve().parent.parent / "app" / "templates" / "index.html"
     content = index_html.read_text(encoding="utf-8")
 

@@ -97,7 +97,10 @@ def test_post_tls_renew_success(client: TestClient) -> None:
 
 
 def test_tls_endpoints_forbidden_for_viewer(client: TestClient) -> None:
-    """Tests GET /api/system/tls/status and POST /api/system/tls/renew return 403 for viewer."""
+    """Test GET /api/system/tls/status and POST /api/system/tls/renew return 403 for viewer.
+
+    Regression test for Issue #28: Sudo password prompt remediation on cert renewal and admin-only certificate RBAC.
+    """
     dummy_digest = str(id(client))
     viewer_user = UserRecord(
         id=99,
@@ -123,7 +126,10 @@ def test_tls_endpoints_forbidden_for_viewer(client: TestClient) -> None:
 
 
 def test_tls_endpoints_forbidden_for_operator(client: TestClient) -> None:
-    """Tests GET /api/system/tls/status and POST /api/system/tls/renew return 403 for operator."""
+    """Test GET /api/system/tls/status and POST /api/system/tls/renew return 403 for operator.
+
+    Regression test for Issue #28: Sudo password prompt remediation on cert renewal and admin-only certificate RBAC.
+    """
     dummy_digest = str(id(client))
     operator_user = UserRecord(
         id=98,
@@ -149,7 +155,10 @@ def test_tls_endpoints_forbidden_for_operator(client: TestClient) -> None:
 
 
 def test_post_tls_renew_sudo_password_remediation_error(client: TestClient) -> None:
-    """Tests POST /api/system/tls/renew surfaces actionable remediation when sudo requires password."""
+    """Test POST /api/system/tls/renew surfaces actionable remediation when sudo requires password.
+
+    Regression test for Issue #28: Sudo password prompt remediation on cert renewal and admin-only certificate RBAC.
+    """
     mock_proc = MagicMock()
     mock_proc.returncode = 1
     mock_proc.stdout = ""
