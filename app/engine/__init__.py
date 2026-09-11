@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from .deployer import (
+    DeploymentPlan,
+    DeploymentResult,
+    DeployStage,
+)
 from .notifications import DiscordNotifier
 from .service import (
     DEFAULT_INI_PATH,
@@ -20,6 +25,9 @@ __all__ = [
     "DEFAULT_SERVICE_NAME",
     "DEFAULT_UPDATE_FLAG",
     "LOCK_FILE",
+    "DeployStage",
+    "DeploymentPlan",
+    "DeploymentResult",
     "DiscordNotifier",
     "EngineConfig",
     "EnginePaths",

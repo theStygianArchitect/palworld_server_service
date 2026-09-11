@@ -163,3 +163,28 @@ def test_issue_38_deploy_script_atomic_staging_contract() -> None:
     assert 'mv -f "${APP_DIR}/scripts/deploy.sh.tmp" "${APP_DIR}/scripts/deploy.sh"' in content, (
         "deploy.sh must atomically mv deploy.sh.tmp into deploy.sh"
     )
+
+
+def test_issue_20_atomic_config_persistence_contract() -> None:
+    """Validates Issue #20: atomic I/O engine exists and public API contracts are callable."""
+    repo_root = Path(__file__).resolve().parent.parent
+    atomic_io_path = repo_root / "app" / "core" / "atomic_io.py"
+    assert atomic_io_path.exists(), f"Atomic I/O module not found at {atomic_io_path}"
+
+    # Import contract verification from app.core.atomic_io
+    from app.core.atomic_io import (  # pylint: disable=import-outside-toplevel
+        AtomicStagingContext,
+        atomic_write_file,
+        atomic_write_ini,
+    )
+
+    assert callable(atomic_write_file), "atomic_write_file must be callable"
+    assert callable(atomic_write_ini), "atomic_write_ini must be callable"
+    assert callable(AtomicStagingContext), "AtomicStagingContext must be callable"
+
+    # Import contract verification from app.config_manager.pipeline
+    from app.config_manager.pipeline import (  # pylint: disable=import-outside-toplevel
+        atomic_write_ini as pipeline_atomic_write_ini,
+    )
+
+    assert callable(pipeline_atomic_write_ini), "pipeline.atomic_write_ini must be callable"
