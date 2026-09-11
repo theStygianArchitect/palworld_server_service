@@ -226,6 +226,29 @@ class ChangelogParser:
         ]
         return releases, unreleased_items
 
+    def _read_and_parse(self, target_path: Path) -> tuple[list[ChangelogRelease], list[ChangelogCategoryItem]] | None:
+        """Reads and parses raw changelog content from disk with error logging.
+
+        Args:
+            target_path: Path to CHANGELOG.md file.
+
+        Returns:
+            tuple[list[ChangelogRelease], list[ChangelogCategoryItem]] | None: Parsed collections or None.
+        """
+        try:
+            raw_text = target_path.read_text(encoding="utf-8")
+            releases, unreleased = self._parse_lines(raw_text.splitlines())
+            if releases:
+                return releases, unreleased
+            log.warning("No release entries discovered in changelog at '%s'. Returning fallback.", target_path)
+        except OSError as err:
+            log.warning("Filesystem error reading changelog from '%s': %s", target_path, err)
+        except UnicodeDecodeError as err:
+            log.warning("Encoding error reading changelog from '%s': %s", target_path, err)
+        except ValueError as err:
+            log.warning("Value error parsing changelog from '%s': %s", target_path, err)
+        return None
+
     def parse(self, repo_root: Path | None = None) -> ChangelogResponse:
         """Parses CHANGELOG.md, returning cached response if modification timestamp is unchanged.
 
@@ -253,23 +276,11 @@ class ChangelogParser:
         ):
             return self._cached_response
 
-        try:
-            raw_text = target_path.read_text(encoding="utf-8")
-            releases, unreleased = self._parse_lines(raw_text.splitlines())
-        except OSError as err:
-            log.warning("Filesystem error reading changelog from '%s': %s", target_path, err)
-            return _build_fallback_response(APP_VERSION)
-        except UnicodeDecodeError as err:
-            log.warning("Encoding error reading changelog from '%s': %s", target_path, err)
-            return _build_fallback_response(APP_VERSION)
-        except ValueError as err:
-            log.warning("Value error parsing changelog from '%s': %s", target_path, err)
+        parsed = self._read_and_parse(target_path)
+        if parsed is None:
             return _build_fallback_response(APP_VERSION)
 
-        if not releases:
-            log.warning("No release entries discovered in changelog at '%s'. Returning fallback.", target_path)
-            return _build_fallback_response(APP_VERSION)
-
+        releases, unreleased = parsed
         response = ChangelogResponse(
             current_version=APP_VERSION,
             releases=releases,
