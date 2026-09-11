@@ -82,6 +82,7 @@ from app.api.schemas import (
 )
 from app.config_manager.parser import SETTING_METADATA
 from app.config_manager.pipeline import ConfigPipeline
+from app.core.atomic_io import atomic_write_ini
 from app.core.config import get_settings, inspect_certificate, reload_settings, resolve_ssl_paths
 from app.core.logger import log
 from app.database import (
@@ -1033,17 +1034,17 @@ def _write_ini_file_with_fallback(target_path_str: str, serialized_content: str)
     ini_file = Path(target_path_str)
     try:
         ini_file.parent.mkdir(parents=True, exist_ok=True)
-        ini_file.write_text(serialized_content, encoding="utf-8")
+        atomic_write_ini(ini_file, serialized_content)
     except PermissionError as err:
         log.warning("Permission denied writing INI at %s: %s. Using home directory fallback.", ini_file, err)
         fallback_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
         fallback_file.parent.mkdir(parents=True, exist_ok=True)
-        fallback_file.write_text(serialized_content, encoding="utf-8")
+        atomic_write_ini(fallback_file, serialized_content)
     except OSError as err:
         log.warning("OS error writing INI at %s: %s. Using home directory fallback.", ini_file, err)
         fallback_file = Path.home() / ".palmanager" / "PalWorldSettings.ini"
         fallback_file.parent.mkdir(parents=True, exist_ok=True)
-        fallback_file.write_text(serialized_content, encoding="utf-8")
+        atomic_write_ini(fallback_file, serialized_content)
 
 
 def stage_settings_for_reboot(serialized_content: str) -> None:
@@ -1056,7 +1057,7 @@ def stage_settings_for_reboot(serialized_content: str) -> None:
     for cand in candidates:
         try:
             cand.parent.mkdir(parents=True, exist_ok=True)
-            cand.write_text(serialized_content, encoding="utf-8")
+            atomic_write_ini(cand, serialized_content, make_backup=False)
         except OSError as err:
             log.debug("Unable to stage settings to candidate %s: %s", cand, err)
 

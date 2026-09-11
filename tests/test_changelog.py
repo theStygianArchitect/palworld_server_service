@@ -81,14 +81,16 @@ def test_parse_changelog_valid():
     assert isinstance(response, ChangelogResponse)
     assert response.current_version == "0.2.0"
 
-    # Verify unreleased roadmap items
+    # Verify unreleased roadmap and added items
     assert response.unreleased, "Unreleased categories should not be empty"
+    added_items = [item for cat in response.unreleased if cat.category.lower() == "added" for item in cat.items]
+    assert any("Atomic Config Persistence Engine" in it for it in added_items)
+
     planned_items = [
         item for cat in response.unreleased if cat.category.lower() in {"planned", "unreleased"} for item in cat.items
     ]
     assert any("Modular APIRouters (#21)" in it for it in planned_items)
     assert any("React 19 + Vite SPA" in it for it in planned_items)
-    assert any("Atomic INI Persistence (#20)" in it for it in planned_items)
 
     # Verify historical releases presence
     versions = [r.version for r in response.releases]

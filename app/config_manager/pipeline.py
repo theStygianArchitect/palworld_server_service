@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.core.atomic_io import atomic_write_ini
+
 from .parser import parse_ini_file, serialize_ini_settings
 
 PROTECTED_ADMIN_KEYS: set[str] = {
@@ -94,3 +96,63 @@ class ConfigPipeline:
             live_full[key] = val
 
         return serialize_ini_settings(live_full)
+
+    def save_and_serialize(
+        self,
+        incoming_sanitized_json: dict[str, Any],
+        max_backups: int = 5,
+        make_backup: bool = True,
+        sync_directory: bool = True,
+    ) -> Path:
+        """Merges public gameplay changes with protected keys and atomically persists to disk.
+
+        Args:
+            incoming_sanitized_json (dict[str, Any]): Validated public gameplay settings.
+            max_backups (int): Maximum number of rotating backup files to retain. Defaults to 5.
+            make_backup (bool): Whether to snapshot existing file before replacing. Defaults to True.
+            sync_directory (bool): Whether to fsync directory on POSIX systems. Defaults to True.
+
+        Returns:
+            Path: Destination path of the atomically saved configuration file.
+        """
+        serialized = self.merge_and_serialize(incoming_sanitized_json)
+        return atomic_write_ini(
+            target_path=self.ini_path,
+            serialized_content=serialized,
+            max_backups=max_backups,
+            make_backup=make_backup,
+            sync_directory=sync_directory,
+        )
+
+    def atomic_save(
+        self,
+        serialized_content: str,
+        max_backups: int = 5,
+        make_backup: bool = True,
+        sync_directory: bool = True,
+    ) -> Path:
+        """Atomically persists arbitrary serialized INI content directly to this pipeline's ini_path.
+
+        Args:
+            serialized_content (str): Serialized INI content to write.
+            max_backups (int): Maximum number of rotating backup files to retain. Defaults to 5.
+            make_backup (bool): Whether to snapshot existing file before replacing. Defaults to True.
+            sync_directory (bool): Whether to fsync directory on POSIX systems. Defaults to True.
+
+        Returns:
+            Path: Destination path of the atomically saved configuration file.
+        """
+        return atomic_write_ini(
+            target_path=self.ini_path,
+            serialized_content=serialized_content,
+            max_backups=max_backups,
+            make_backup=make_backup,
+            sync_directory=sync_directory,
+        )
+
+
+__all__ = [
+    "PROTECTED_ADMIN_KEYS",
+    "ConfigPipeline",
+    "atomic_write_ini",
+]

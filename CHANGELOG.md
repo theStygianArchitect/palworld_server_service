@@ -8,7 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Atomic Config Persistence Engine with crash-resilient INI writes, multi-threaded locking, and rotating backups (#20)
+- Release deployment primitives and safe archive staging engine (`app/engine/deployer.py`) with path traversal guards and atomic directory swapping (#20)
+- Comparative defect reproducer test suite contrasting naive `write_text()` mid-write truncation vs atomic persistence (`#20`)
 - Package Build & Distribution (uv build) CI Gate (#38)
+
+### Changed
+- Converted settings persistence in `app/main.py` and reboot sync in `app/engine/service.py` to use `atomic_write_ini` (#20)
 
 ### Fixed
 - Deployer Self-Overwrite & Atomic Script Staging (#38)
@@ -16,7 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - Modular APIRouters (#21)
 - React 19 + Vite SPA (#22, #23)
-- Atomic INI Persistence (#20)
 
 ## [0.2.0] - 2026-09-11
 

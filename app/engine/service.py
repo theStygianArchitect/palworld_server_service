@@ -22,6 +22,7 @@ import httpx
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
+from app.core.atomic_io import atomic_write_ini
 from app.core.config import resolve_palworld_ini_path
 from app.core.logger import log
 from app.core.types import EngineMetrics, LifecycleState, ReadinessInfo
@@ -628,7 +629,7 @@ class PalEngine:  # pylint: disable=too-many-instance-attributes
         try:
             target_ini = Path(self.config.paths.ini_path)
             target_ini.parent.mkdir(parents=True, exist_ok=True)
-            target_ini.write_text(self._staged_ini, encoding="utf-8")
+            atomic_write_ini(target_ini, self._staged_ini)
             log.info("Persisted staged configuration to primary path: %s", target_ini)
         except OSError as err:
             log.warning("Could not write staged configuration to primary path %s: %s", self.config.paths.ini_path, err)
@@ -636,7 +637,7 @@ class PalEngine:  # pylint: disable=too-many-instance-attributes
         for p in candidate_paths:
             try:
                 p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(self._staged_ini, encoding="utf-8")
+                atomic_write_ini(p, self._staged_ini, make_backup=False)
                 log.info("Wrote staged configuration drop-in: %s", p)
             except OSError as err:
                 log.debug("Could not write staged configuration drop-in %s: %s", p, err)
