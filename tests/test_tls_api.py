@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,14 +12,31 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.schemas import TLSCertificateInfo
+from app.database.auth import bootstrap_admin_user
 from app.database.models import UserRecord
-from app.main import app, get_current_user
+from app.main import app, db, get_current_user, settings
 
 
 @pytest.fixture
-def client() -> TestClient:
-    """Provides a TestClient for app testing."""
-    return TestClient(app)
+def client(tmp_path: Path) -> Generator[TestClient, None, None]:
+    """Provides an isolated FastAPI TestClient fixture with initialized database and admin session."""
+    test_db_path = str(tmp_path / "test_tls_palmanager.db")
+    orig_db_path = db.db_path
+    db.close()
+    db.db_path = test_db_path
+    db.initialize()
+    bootstrap_admin_user(db, default_password=settings.AdminPassword)
+    admin_user = db.get_user_by_username("admin")
+    if admin_user:
+        app.dependency_overrides[get_current_user] = lambda: admin_user
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
+        db.close()
+        db.db_path = orig_db_path
+        db.initialize()
 
 
 def test_get_tls_status_http_fallback(client: TestClient) -> None:
