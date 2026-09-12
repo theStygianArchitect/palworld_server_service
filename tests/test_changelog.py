@@ -292,7 +292,11 @@ def test_api_system_version_endpoint(changelog_test_client: TestClient):
         headers={"Authorization": f"Bearer {viewer_token}", **non_local},
     )
     assert viewer_resp.status_code == 200
-    assert viewer_resp.json() == {"version": "0.2.0"}
+    version_data = viewer_resp.json()
+    assert version_data["version"] == "0.2.0"
+    assert "canonical_url" in version_data
+    assert version_data["canonical_url"].startswith("https://")
+    assert "thestygianarchitect.duckdns.org:8080" in version_data["canonical_url"]
 
 
 def test_deploy_script_semver_contract():
