@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Converted settings persistence in `app/main.py` and reboot sync in `app/engine/service.py` to use `atomic_write_ini` (#20)
 
 ### Fixed
+- Deployer In-Place Self-Overwrite Elimination via Out-of-Tree Runner Staging (#43, closes #43)
 - Deployer Self-Overwrite & Atomic Script Staging (#38)
 
 ### Planned

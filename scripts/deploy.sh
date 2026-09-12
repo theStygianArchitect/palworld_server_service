@@ -11,6 +11,7 @@ APP_USER="palmanager"
 LOCK_FILE="/tmp/palmanager_update.lock"
 POST_UPDATE_FILE="/var/lib/palmanager/last_update.json"
 REPO_ROOT=""
+TMP_RUNNER=""
 
 cleanup_on_exit() {
     local exit_code=$?
@@ -41,6 +42,8 @@ EOF
         chown "${APP_USER}:${APP_USER}" "${POST_UPDATE_FILE}" 2>/dev/null || true
         rm -f "${LOCK_FILE}" 2>/dev/null || true
     fi
+    [ -n "${TMP_RUNNER:-}" ] && rm -f "${TMP_RUNNER}" 2>/dev/null || true
+    rm -f /tmp/palmanager_deploy_runner_$$.sh 2>/dev/null || true
 }
 trap cleanup_on_exit EXIT
 
@@ -53,6 +56,14 @@ main() {
     DEPLOY_START_TIME=$(date +%s 2>/dev/null || echo 0)
     LOCK_FILE="/tmp/palmanager_update.lock"
     POST_UPDATE_FILE="/var/lib/palmanager/last_update.json"
+
+    if [ "${BASH_SOURCE[0]}" = "${APP_DIR}/scripts/deploy.sh" ] && [ -z "${DEPLOY_REEXEC:-}" ]; then
+        TMP_RUNNER="/tmp/palmanager_deploy_runner_$$.sh"
+        cp "${BASH_SOURCE[0]}" "${TMP_RUNNER}"
+        chmod 0755 "${TMP_RUNNER}"
+        export DEPLOY_REEXEC=1
+        exec "${TMP_RUNNER}" "$@"
+    fi
 
 echo "========================================================================="
 echo " Deploying Palworld Operations Suite"
