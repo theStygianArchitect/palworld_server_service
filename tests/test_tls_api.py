@@ -12,31 +12,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.schemas import TLSCertificateInfo
-from app.database.auth import bootstrap_admin_user
 from app.database.models import UserRecord
-from app.main import app, db, get_current_user, settings
+from app.main import app, db, get_current_user
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> Generator[TestClient, None, None]:
-    """Provides an isolated FastAPI TestClient fixture with initialized database and admin session."""
-    test_db_path = str(tmp_path / "test_tls_palmanager.db")
-    orig_db_path = db.db_path
-    db.close()
-    db.db_path = test_db_path
+def client() -> Generator[TestClient, None, None]:
+    """Provides a FastAPI TestClient fixture with initialized database and admin session."""
     db.initialize()
-    bootstrap_admin_user(db, default_password=settings.AdminPassword)
-    admin_user = db.get_user_by_username("admin")
-    if admin_user:
-        app.dependency_overrides[get_current_user] = lambda: admin_user
+    dummy_digest = "mock_admin_digest"
+    admin_user = UserRecord(
+        id=1,
+        username="admin",
+        password_hash=dummy_digest,
+        salt=dummy_digest,
+        email="admin@test.local",
+        role="admin",
+        is_active=True,
+        created_at="2026-09-09T00:00:00Z",
+    )
+    app.dependency_overrides[get_current_user] = lambda: admin_user
     try:
-        with TestClient(app) as test_client:
-            yield test_client
+        yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
-        db.close()
-        db.db_path = orig_db_path
-        db.initialize()
 
 
 def test_get_tls_status_http_fallback(client: TestClient) -> None:
