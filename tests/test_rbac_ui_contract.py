@@ -413,3 +413,29 @@ def test_dashboard_ui_updater_dto_contracts(rbac_client: TestClient) -> None:
     assert "Array.isArray(data.detail)" in html
     assert "Array.isArray(msg)" in html
     assert "whitespace-pre-line" in html
+
+
+def test_dashboard_header_canonical_link_contract() -> None:
+    """Regression test for Issue #40: Header branding title navigation anchor and canonical HTTPS contract."""
+    html_path = Path(__file__).resolve().parent.parent / "app" / "templates" / "index.html"
+    assert html_path.exists(), f"Expected template file at {html_path}"
+    html = html_path.read_text(encoding="utf-8")
+
+    assert 'id="headerSuiteLogoLink"' in html
+    assert 'href="https://thestygianarchitect.duckdns.org:8080"' in html
+    assert 'title="Navigate to Canonical Secure Portal (HTTPS)"' in html
+
+    anchor_match = re.search(r'<a[^>]*id="headerSuiteLogoLink"[^>]*>(.*?)</a>', html, re.DOTALL)
+    assert anchor_match is not None, "Anchor element with id='headerSuiteLogoLink' not found in index.html"
+    assert "Palworld Server Operations Suite" in anchor_match.group(1)
+
+    scripts = re.findall(r"<script(?:\s+[^>]*)?>(.*?)</script>", html, re.DOTALL)
+    script_section = "\n".join(scripts)
+
+    assert "headerSuiteLogoLink" in script_section
+    assert "data.canonical_url" in script_section
+    assert (
+        "logoLink.href = data.canonical_url" in script_section
+        or "headerSuiteLogoLink.href = data.canonical_url" in script_section
+    )
+    assert "window.location.protocol === 'http:'" in script_section

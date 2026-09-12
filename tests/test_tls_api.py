@@ -31,6 +31,8 @@ def test_get_tls_status_http_fallback(client: TestClient) -> None:
         assert data["scheme"] == "http"
         assert data["certificate"] is None
         assert "warning" in data
+        assert "canonical_url" in data
+        assert data["canonical_url"] == "https://thestygianarchitect.duckdns.org:8080"
 
 
 def test_get_tls_status_https_active(client: TestClient, tmp_path: Path) -> None:
@@ -62,6 +64,8 @@ def test_get_tls_status_https_active(client: TestClient, tmp_path: Path) -> None
         assert data["certificate"]["subject"] == "api-gateway.duckdns.org"
         assert data["certificate"]["days_remaining"] == 67
         assert data["cert_path"] == str(cert_path)
+        assert "canonical_url" in data
+        assert data["canonical_url"] == "https://thestygianarchitect.duckdns.org:8080"
 
 
 def test_post_tls_renew_skipped_when_script_absent(client: TestClient) -> None:
@@ -176,3 +180,67 @@ def test_post_tls_renew_sudo_password_remediation_error(client: TestClient) -> N
         detail = resp.json()["detail"]
         assert "passwordless sudo is not configured" in detail
         assert "palmanager-certs" in detail
+
+
+def test_canonical_redirect_endpoint_redirects_http_to_https(client: TestClient) -> None:
+    """Regression test for Issue #40: GET /canonical issues HTTP 307 redirect to canonical HTTPS portal."""
+    resp = client.get("/canonical", follow_redirects=False)
+    assert resp.status_code == 307
+    assert resp.headers["location"] == "https://thestygianarchitect.duckdns.org:8080/"
+
+
+def test_canonical_redirect_honors_configured_domain(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression test for Issue #40: GET /canonical honors custom duckdns_domain configuration."""
+    monkeypatch.setattr("app.main.settings.duckdns_domain", "custom-server.duckdns.org")
+    resp = client.get("/canonical", follow_redirects=False)
+    assert resp.status_code == 307
+    assert resp.headers["location"] == "https://custom-server.duckdns.org:8080/"
+
+
+def test_canonical_url_exposed_in_system_version(client: TestClient) -> None:
+    """Regression test for Issue #40: GET /api/system/version returns canonical_url."""
+    dummy_digest = str(id(client))
+    viewer_user = UserRecord(
+        id=99,
+        username="test_viewer",
+        password_hash=dummy_digest,
+        salt=dummy_digest,
+        email="viewer@test.local",
+        role="viewer",
+        is_active=True,
+        created_at="2026-09-09T00:00:00Z",
+    )
+    app.dependency_overrides[get_current_user] = lambda: viewer_user
+    try:
+        resp = client.get("/api/system/version")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "canonical_url" in data
+        assert data["canonical_url"].startswith("https://")
+        assert "thestygianarchitect.duckdns.org:8080" in data["canonical_url"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_canonical_url_exposed_in_tls_status(client: TestClient) -> None:
+    """Regression test for Issue #40: GET /api/system/tls/status includes canonical_url in both HTTP and HTTPS modes."""
+    # HTTP fallback mode
+    with patch("app.main.resolve_ssl_paths", return_value=None):
+        resp_http = client.get("/api/system/tls/status")
+        assert resp_http.status_code == 200
+        data_http = resp_http.json()
+        assert "canonical_url" in data_http
+        assert data_http["canonical_url"] == "https://thestygianarchitect.duckdns.org:8080"
+
+    # HTTPS active mode
+    mock_cert = Path("/mock/cert.pem")
+    mock_key = Path("/mock/key.pem")
+    with (
+        patch("app.main.resolve_ssl_paths", return_value=(mock_cert, mock_key)),
+        patch("app.main.inspect_certificate", return_value=None),
+    ):
+        resp_https = client.get("/api/system/tls/status")
+        assert resp_https.status_code == 200
+        data_https = resp_https.json()
+        assert "canonical_url" in data_https
+        assert data_https["canonical_url"] == "https://thestygianarchitect.duckdns.org:8080"

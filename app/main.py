@@ -2100,6 +2100,34 @@ async def get_system_changelog() -> ChangelogResponse:
     return get_changelog()
 
 
+def _resolve_canonical_url() -> str:
+    """Resolves the canonical public HTTPS URL based on configuration.
+
+    Returns:
+        str: Absolute canonical HTTPS URL with port.
+    """
+    raw_domain = str(settings.duckdns_domain or "")
+    domain = raw_domain.strip().lower()
+    if not domain or domain in ("localhost", "yourdomain.duckdns.org"):
+        domain = "thestygianarchitect.duckdns.org"
+    return f"https://{domain}:{settings.web_port}"
+
+
+@app.get(
+    "/canonical",
+    response_class=RedirectResponse,
+    response_model=None,
+    tags=["System"],
+)
+async def redirect_canonical() -> RedirectResponse:
+    """Redirects client to the canonical HTTPS portal origin.
+
+    Returns:
+        RedirectResponse: HTTP 307 redirect targeting canonical HTTPS portal.
+    """
+    return RedirectResponse(url=f"{_resolve_canonical_url()}/", status_code=307)
+
+
 @app.get(
     "/api/system/version",
     response_model=SystemVersionResponse,
@@ -2107,8 +2135,14 @@ async def get_system_changelog() -> ChangelogResponse:
     dependencies=[Depends(perm_view)],
 )
 async def get_system_version() -> SystemVersionResponse:
-    """Returns current application semantic version string."""
-    return SystemVersionResponse(version=__version__)
+    """Returns current application semantic version string and canonical URL.
+
+    Protected by standard authentication (perm_view). Accessible to all authenticated roles.
+
+    Returns:
+        SystemVersionResponse: Semantic version and canonical URL payload.
+    """
+    return SystemVersionResponse(version=__version__, canonical_url=_resolve_canonical_url())
 
 
 @app.post("/api/server/shutdown", response_model=ShutdownResponse, tags=["Server"])
@@ -2245,6 +2279,7 @@ async def get_tls_status(
             cert_path=None,
             auto_renew_active=auto_renew_active,
             warning="Running unencrypted plaintext HTTP. No valid certificate pair detected.",
+            canonical_url=_resolve_canonical_url(),
         )
 
     cert_path, _key_path = resolved_paths
@@ -2262,6 +2297,7 @@ async def get_tls_status(
         cert_path=str(cert_path),
         auto_renew_active=auto_renew_active,
         warning=warning,
+        canonical_url=_resolve_canonical_url(),
     )
 
 
