@@ -40,9 +40,12 @@
   <header class="bg-dark-900 border-b border-slate-800 sticky top-0 z-40 px-4 sm:px-6 py-3.5 shadow-xl backdrop-blur-md bg-opacity-90">
     <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
       <div>
-        <h1 class="text-base sm:text-lg lg:text-xl font-bold tracking-tight text-white flex items-center gap-2">
-          <span>🎮</span> Palworld Server Operations Suite
-        </h1>
+        <a id="headerSuiteLogoLink" href="https://thestygianarchitect.duckdns.org:8080" class="group flex items-center gap-2 text-white hover:text-indigo-400 transition" title="Navigate to Canonical Secure Portal (HTTPS)">
+          <h1 class="text-base sm:text-lg lg:text-xl font-bold tracking-tight flex items-center gap-2">
+            <span>🎮</span> Palworld Server Operations Suite
+          </h1>
+          <span class="text-xs text-slate-500 group-hover:text-indigo-400 transition opacity-0 sm:opacity-100" title="Canonical HTTPS Portal">↗</span>
+        </a>
         <p class="text-[11px] sm:text-xs text-slate-400 font-mono">Dedicated SRE, Telemetry & Multi-Platform Control Plane</p>
       </div>
 
@@ -4755,6 +4758,11 @@
         const data = await res.json();
         window.lastTlsStatus = data;
 
+        const logoLink = document.getElementById('headerSuiteLogoLink');
+        if (logoLink && data.canonical_url) {
+          logoLink.href = data.canonical_url;
+        }
+
         // Header badge
         const badge = document.getElementById('httpsHeaderBadge');
         const dot = document.getElementById('httpsDot');
@@ -4986,6 +4994,10 @@
     }
 
     window.onload = () => {
+      if (window.location.protocol === 'http:') {
+        const logoLink = document.getElementById('headerSuiteLogoLink');
+        console.info('[Portal Security] Insecure plaintext HTTP session detected. Use header link to transition to canonical HTTPS:', logoLink ? logoLink.href : 'https://thestygianarchitect.duckdns.org:8080');
+      }
       loadSettings();
       connectWebSocket();
       pollTelemetryFallback();

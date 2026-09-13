@@ -1002,6 +1002,7 @@ class TLSStatusResponse(BaseModel):
         cert_path (str | None): Filesystem path to certificate chain if loaded.
         auto_renew_active (bool): Whether background systemd renewal timer is registered.
         warning (str | None): Optional warning message if certificate is nearing expiration or invalid.
+        canonical_url (str): Canonical public HTTPS access URL.
     """
 
     enabled: bool = Field(..., description="Whether HTTPS encryption is actively running")
@@ -1012,6 +1013,10 @@ class TLSStatusResponse(BaseModel):
     cert_path: str | None = Field(default=None, description="Filesystem path to certificate file")
     auto_renew_active: bool = Field(default=False, description="Whether automated renewal is active")
     warning: str | None = Field(default=None, description="Operational warning or configuration issue")
+    canonical_url: str = Field(
+        default="https://thestygianarchitect.duckdns.org:8080",
+        description="Canonical public HTTPS access URL",
+    )
 
 
 class TLSRenewRequest(BaseModel):
@@ -1053,9 +1058,14 @@ class SystemVersionResponse(BaseModel):
 
     Attributes:
         version (str): Application semantic version string.
+        canonical_url (str): Canonical public HTTPS portal access URL.
     """
 
     version: str = Field(default="0.2.0", description="Application semantic version string")
+    canonical_url: str = Field(
+        default="https://thestygianarchitect.duckdns.org:8080",
+        description="Canonical public HTTPS portal access URL",
+    )
 
 
 class ChangelogCategoryItem(BaseModel):

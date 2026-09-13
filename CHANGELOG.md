@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Canonical Header Navigation Link & HTTP-to-HTTPS Redirection Validation (#40, closes #40)
 - Atomic Config Persistence Engine with crash-resilient INI writes, multi-threaded locking, and rotating backups (#20)
 - Release deployment primitives and safe archive staging engine (`app/engine/deployer.py`) with path traversal guards and atomic directory swapping (#20)
 - Comparative defect reproducer test suite contrasting naive `write_text()` mid-write truncation vs atomic persistence (`#20`)

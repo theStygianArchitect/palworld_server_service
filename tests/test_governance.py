@@ -210,3 +210,28 @@ def test_issue_43_deploy_runner_isolation_contract() -> None:
     assert "palmanager_deploy_runner" in deploy_content, (
         "scripts/deploy.sh must reference out-of-tree runner pattern 'palmanager_deploy_runner'"
     )
+
+
+def test_issue_40_canonical_navigation_contract() -> None:
+    """Validates Issue #40: Header branding navigation anchor and canonical URL schemas."""
+    repo_root = Path(__file__).resolve().parent.parent
+
+    # 1. Assert template contains canonical anchor
+    template_path = repo_root / "app" / "templates" / "index.html"
+    assert template_path.exists(), f"index.html not found at {template_path}"
+    template_content = template_path.read_text(encoding="utf-8")
+    assert 'id="headerSuiteLogoLink"' in template_content, (
+        "index.html must contain header navigation anchor 'headerSuiteLogoLink'"
+    )
+    assert "https://thestygianarchitect.duckdns.org:8080" in template_content, (
+        "index.html must default to canonical URL 'https://thestygianarchitect.duckdns.org:8080'"
+    )
+
+    # 2. Assert schemas expose canonical_url
+    from app.api.schemas import (  # pylint: disable=import-outside-toplevel
+        SystemVersionResponse,
+        TLSStatusResponse,
+    )
+
+    assert "canonical_url" in dict(SystemVersionResponse.model_fields)
+    assert "canonical_url" in dict(TLSStatusResponse.model_fields)
