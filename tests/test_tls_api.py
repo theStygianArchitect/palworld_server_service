@@ -6,14 +6,14 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.schemas import TLSCertificateInfo
 from app.database.models import UserRecord
-from app.main import app, db, get_current_user
+from app.main import app, db, get_current_user, trigger_tls_provisioning_check
 
 
 @pytest.fixture
@@ -261,3 +261,49 @@ def test_canonical_url_exposed_in_tls_status(client: TestClient) -> None:
         data_https = resp_https.json()
         assert "canonical_url" in data_https
         assert data_https["canonical_url"] == "https://thestygianarchitect.duckdns.org:8080"
+
+
+def test_canonical_redirect_location_contract() -> None:
+    """Regression test for Issue #40: GET /canonical contract asserts HTTP 307 and canonical HTTPS target."""
+    non_auth_client = TestClient(app, base_url="https://thestygianarchitect.duckdns.org:8080")
+    resp = non_auth_client.get("/canonical", follow_redirects=False)
+    assert resp.status_code == 307
+    assert resp.headers["location"] == "https://thestygianarchitect.duckdns.org:8080/"
+
+
+def test_canonical_navigation_end_to_end_unauthenticated_flow() -> None:
+    """Regression test for Issue #40: Unauthenticated client navigating to canonical URL lands on /login?next=/."""
+    non_auth_client = TestClient(app, base_url="https://thestygianarchitect.duckdns.org:8080")
+    remote_headers = {"X-Forwarded-For": "198.51.100.1"}
+    resp = non_auth_client.get("/canonical", headers=remote_headers, follow_redirects=True)
+    assert resp.status_code == 200
+    assert str(resp.url).endswith("/login?next=/")
+    assert "Sign In" in resp.text
+
+
+def test_canonical_navigation_end_to_end_authenticated_flow(client: TestClient) -> None:
+    """Regression test for Issue #40: Authenticated client navigating to canonical URL lands on dashboard."""
+    resp = client.get("https://thestygianarchitect.duckdns.org:8080/canonical", follow_redirects=True)
+    assert resp.status_code == 200
+    assert str(resp.url) == "https://thestygianarchitect.duckdns.org:8080/"
+    assert "Palworld Server Operations Suite" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_tls_auto_provision_startup_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression test for Issue #40: Startup hook dispatches cert manager renew when certs absent."""
+    monkeypatch.setattr("app.main.settings.duckdns_domain", "thestygianarchitect.duckdns.org")
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+
+    with (
+        patch("app.main.resolve_ssl_paths", return_value=None),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec,
+    ):
+        await trigger_tls_provisioning_check()
+        assert mock_exec.called
+        call_args = mock_exec.call_args[0]
+        assert "renew" in call_args
+        assert any("palworld-cert-manager.sh" in str(arg) for arg in call_args)

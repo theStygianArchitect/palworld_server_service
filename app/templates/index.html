@@ -4759,8 +4759,20 @@
         window.lastTlsStatus = data;
 
         const logoLink = document.getElementById('headerSuiteLogoLink');
-        if (logoLink && data.canonical_url) {
-          logoLink.href = data.canonical_url;
+        if (logoLink) {
+          if (data.enabled) {
+            logoLink.href = data.canonical_url || 'https://thestygianarchitect.duckdns.org:8080';
+            logoLink.title = 'Navigate to Canonical Secure Portal (HTTPS)';
+            logoLink.onclick = null;
+          } else {
+            logoLink.title = 'TLS Inactive on Server (Port 8080 is Plaintext HTTP)';
+            logoLink.onclick = (e) => {
+              if (window.currentUserRole === 'admin' && typeof openTlsModal === 'function') {
+                e.preventDefault();
+                openTlsModal();
+              }
+            };
+          }
         }
 
         // Header badge
