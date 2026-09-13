@@ -164,8 +164,8 @@ def test_rbac_permission_matrix_contract(rbac_client: TestClient):
 
     # Operator: Can modify settings
     with (
-        patch("app.main._write_ini_file_with_fallback", return_value=None),
-        patch("app.main.reload_settings", return_value=None),
+        patch("app.routers.settings._write_ini_file_with_fallback", return_value=None),
+        patch("app.routers.settings.reload_settings", return_value=None),
     ):
         op_settings = rbac_client.post("/api/settings", json={"ExpRate": 1.5}, headers=op_headers)
         assert op_settings.status_code == 200

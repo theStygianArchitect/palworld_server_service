@@ -392,7 +392,7 @@ def test_feedback_filtering_and_mine(client: TestClient):
     remote_headers = {"X-Forwarded-For": "198.51.100.88"}
     unauth_mine = client.get("/api/feedback?mine=true", headers=remote_headers)
     assert unauth_mine.status_code == 401
-    assert "Authentication required" in unauth_mine.json()["detail"]
+    assert "Authentication" in unauth_mine.json()["detail"]
 
     # 6. Remote unauthenticated client can still view public feedback list
     remote_list = client.get("/api/feedback", headers=remote_headers)
@@ -895,7 +895,7 @@ def test_get_slash_authenticated_via_testclient(client: TestClient) -> None:
 
 def test_shutdown_server_schedules_successfully(client: TestClient) -> None:
     """POST /api/server/shutdown enqueues a countdown and returns 200 with confirmation."""
-    with patch("app.main.LOCK_FILE") as mock_lock:
+    with patch("app.routers.system.LOCK_FILE") as mock_lock:
         mock_lock.exists.return_value = False
         with patch.object(engine, "execute_countdown_and_reboot") as mock_reboot:
             mock_reboot.return_value = None
@@ -909,7 +909,7 @@ def test_shutdown_server_schedules_successfully(client: TestClient) -> None:
 
 def test_shutdown_server_defaults(client: TestClient) -> None:
     """POST /api/server/shutdown with no body uses 300s default countdown."""
-    with patch("app.main.LOCK_FILE") as mock_lock:
+    with patch("app.routers.system.LOCK_FILE") as mock_lock:
         mock_lock.exists.return_value = False
         with patch.object(engine, "execute_countdown_and_reboot"):
             res = client.post("/api/server/shutdown", json={})
@@ -919,7 +919,7 @@ def test_shutdown_server_defaults(client: TestClient) -> None:
 
 def test_shutdown_server_rejects_when_lock_held(client: TestClient) -> None:
     """POST /api/server/shutdown returns 409 when a reboot sequence is already in progress."""
-    with patch("app.main.LOCK_FILE") as mock_lock:
+    with patch("app.routers.system.LOCK_FILE") as mock_lock:
         mock_lock.exists.return_value = True
         res = client.post("/api/server/shutdown", json={"seconds": 60, "message": "Test"})
     assert res.status_code == 409

@@ -255,3 +255,60 @@ def test_issue_40_automated_tls_provisioning_contract() -> None:
     install_content = install_script.read_text(encoding="utf-8")
     assert "palworld-cert-manager.sh" in install_content
     assert "fullchain.pem" in install_content
+
+
+def test_issue_21_modular_api_routers_contract() -> None:
+    # pylint: disable=too-many-locals
+    """Validates Issue #21: Modular API routers contract, main.py < 500 lines, and Anti-Junk-Drawer policy."""
+    repo_root = Path(__file__).resolve().parent.parent
+    routers_dir = repo_root / "app" / "routers"
+
+    assert routers_dir.exists() and routers_dir.is_dir(), f"app/routers/ must exist at {routers_dir}"
+
+    expected_files = [
+        "auth.py",
+        "settings.py",
+        "players.py",
+        "telemetry.py",
+        "system.py",
+        "feedback.py",
+        "ui.py",
+        "deps.py",
+    ]
+    for fname in expected_files:
+        fpath = routers_dir / fname
+        assert fpath.exists(), f"Modular router file missing: {fpath}"
+
+    deps_content = (routers_dir / "deps.py").read_text(encoding="utf-8")
+    assert "Anti-Junk-Drawer Policy" in deps_content, "app/routers/deps.py must declare the Anti-Junk-Drawer Policy"
+
+    main_py_path = repo_root / "app" / "main.py"
+    assert main_py_path.exists(), "app/main.py must exist"
+
+    main_py_lines = main_py_path.read_text(encoding="utf-8").splitlines()
+    assert len(main_py_lines) < 500, f"app/main.py must be strictly < 500 lines, currently {len(main_py_lines)}"
+
+    import fastapi  # pylint: disable=import-outside-toplevel
+
+    from app.routers import (  # pylint: disable=import-outside-toplevel
+        auth_router,
+        feedback_router,
+        players_router,
+        settings_router,
+        system_router,
+        telemetry_router,
+        ui_router,
+    )
+
+    routers = [
+        ("auth_router", auth_router),
+        ("feedback_router", feedback_router),
+        ("players_router", players_router),
+        ("settings_router", settings_router),
+        ("system_router", system_router),
+        ("telemetry_router", telemetry_router),
+        ("ui_router", ui_router),
+    ]
+
+    for r_name, r_obj in routers:
+        assert isinstance(r_obj, fastapi.APIRouter), f"{r_name} must be an instance of fastapi.APIRouter"

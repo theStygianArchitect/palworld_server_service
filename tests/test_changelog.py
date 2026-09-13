@@ -86,13 +86,19 @@ def test_parse_changelog_valid():
     planned_items = [
         item for cat in response.unreleased if cat.category.lower() in {"planned", "unreleased"} for item in cat.items
     ]
-    assert any("Modular APIRouters (#21)" in it for it in planned_items)
     assert any("React 19 + Vite SPA" in it for it in planned_items)
 
     # Verify historical releases presence
     versions = [r.version for r in response.releases]
-    for expected_ver in ["0.4.1", "0.4.0", "0.3.1", "0.3.0", "0.2.1", "0.2.0", "0.1.2", "0.1.1", "0.1.0"]:
+    for expected_ver in ["0.4.2", "0.4.1", "0.4.0", "0.3.1", "0.3.0", "0.2.1", "0.2.0", "0.1.2", "0.1.1", "0.1.0"]:
         assert expected_ver in versions, f"Version {expected_ver} not in parsed releases: {versions}"
+
+    # Verify release 0.4.2
+    rel_042 = next(r for r in response.releases if r.version == "0.4.2")
+    assert rel_042.date == "2026-09-13"
+    categories_042 = {c.category: c.items for c in rel_042.categories}
+    assert "Changed" in categories_042
+    assert any("Decomposed monolithic" in it for it in categories_042["Changed"])
 
     # Verify release 0.4.1
     rel_041 = next(r for r in response.releases if r.version == "0.4.1")
