@@ -122,16 +122,15 @@ def test_issue_13_negative_rcon_disabled_by_default():
 
 
 def test_issue_36_version_and_changelog_contract():
-    """Validates Issue #36: root CHANGELOG.md exists, unreleased/0.2.0 sections, and pyproject matches __version__."""
+    """Validates dynamic SemVer contract across pyproject.toml, app.__version__, and CHANGELOG.md."""
     repo_root = Path(__file__).resolve().parent.parent
     changelog_path = repo_root / "CHANGELOG.md"
     assert changelog_path.exists(), f"CHANGELOG.md not found at {changelog_path}"
 
     content = changelog_path.read_text(encoding="utf-8")
     assert "## [Unreleased]" in content, "CHANGELOG.md must contain '## [Unreleased]'"
-    assert "## [0.2.0]" in content, "CHANGELOG.md must contain '## [0.2.0]'"
 
-    # pyproject.toml version matches app.__version__ and is 0.2.0
+    # pyproject.toml version matches app.__version__ dynamically
     pyproject_path = repo_root / "pyproject.toml"
     assert pyproject_path.exists(), f"pyproject.toml not found at {pyproject_path}"
 
@@ -140,10 +139,14 @@ def test_issue_36_version_and_changelog_contract():
     assert match is not None, "version string not found in pyproject.toml"
     pyproject_version = match.group(1)
 
-    assert app.__version__ == "0.2.0", f"app.__version__ must be '0.2.0', got '{app.__version__}'"
-    assert pyproject_version == "0.2.0", f"pyproject.toml version must be '0.2.0', got '{pyproject_version}'"
+    assert re.match(r"^\d+\.\d+\.\d+$", app.__version__) is not None, (
+        f"app.__version__ must satisfy SemVer regex, got '{app.__version__}'"
+    )
     assert pyproject_version == app.__version__, (
         f"pyproject.toml version ({pyproject_version}) does not match app.__version__ ({app.__version__})"
+    )
+    assert f"## [{app.__version__}]" in content, (
+        f"CHANGELOG.md must contain an entry for active version '## [{app.__version__}]'"
     )
 
 
@@ -235,3 +238,20 @@ def test_issue_40_canonical_navigation_contract() -> None:
 
     assert "canonical_url" in dict(SystemVersionResponse.model_fields)
     assert "canonical_url" in dict(TLSStatusResponse.model_fields)
+
+
+def test_issue_40_automated_tls_provisioning_contract() -> None:
+    """Validates Issue #40: deploy.sh and install.sh contain automated TLS certificate provisioning hooks."""
+    repo_root = Path(__file__).resolve().parent.parent
+    deploy_script = repo_root / "scripts" / "deploy.sh"
+    install_script = repo_root / "scripts" / "install.sh"
+    assert deploy_script.exists(), f"deploy.sh not found at {deploy_script}"
+    assert install_script.exists(), f"install.sh not found at {install_script}"
+
+    deploy_content = deploy_script.read_text(encoding="utf-8")
+    assert "palworld-cert-manager.sh" in deploy_content
+    assert "fullchain.pem" in deploy_content
+
+    install_content = install_script.read_text(encoding="utf-8")
+    assert "palworld-cert-manager.sh" in install_content
+    assert "fullchain.pem" in install_content

@@ -76,16 +76,13 @@ def _authenticate_role(client: TestClient, role_name: str) -> str:
 
 
 def test_parse_changelog_valid():
-    """Asserts that CHANGELOG.md parses correctly, verifying versions 0.2.0-0.1.0, categories, and items."""
+    """Asserts that CHANGELOG.md parses correctly, verifying versions 0.4.1-0.1.0, categories, and items."""
     response = get_changelog()
     assert isinstance(response, ChangelogResponse)
-    assert response.current_version == "0.2.0"
+    assert response.current_version == __version__
 
-    # Verify unreleased roadmap and added items
+    # Verify unreleased roadmap
     assert response.unreleased, "Unreleased categories should not be empty"
-    added_items = [item for cat in response.unreleased if cat.category.lower() == "added" for item in cat.items]
-    assert any("Atomic Config Persistence Engine" in it for it in added_items)
-
     planned_items = [
         item for cat in response.unreleased if cat.category.lower() in {"planned", "unreleased"} for item in cat.items
     ]
@@ -94,10 +91,27 @@ def test_parse_changelog_valid():
 
     # Verify historical releases presence
     versions = [r.version for r in response.releases]
-    assert "0.2.0" in versions, f"Version 0.2.0 not in parsed releases: {versions}"
-    assert "0.1.2" in versions, f"Version 0.1.2 not in parsed releases: {versions}"
-    assert "0.1.1" in versions, f"Version 0.1.1 not in parsed releases: {versions}"
-    assert "0.1.0" in versions, f"Version 0.1.0 not in parsed releases: {versions}"
+    for expected_ver in ["0.4.1", "0.4.0", "0.3.1", "0.3.0", "0.2.1", "0.2.0", "0.1.2", "0.1.1", "0.1.0"]:
+        assert expected_ver in versions, f"Version {expected_ver} not in parsed releases: {versions}"
+
+    # Verify release 0.4.1
+    rel_041 = next(r for r in response.releases if r.version == "0.4.1")
+    assert rel_041.date == "2026-09-13"
+    categories_041 = {c.category: c.items for c in rel_041.categories}
+    assert "Added" in categories_041
+    assert any("Automated Let's Encrypt TLS provisioning" in it for it in categories_041["Added"])
+
+    # Verify release 0.3.0
+    rel_030 = next(r for r in response.releases if r.version == "0.3.0")
+    assert rel_030.date == "2026-09-11"
+    categories_030 = {c.category: c.items for c in rel_030.categories}
+    assert "Added" in categories_030
+    assert any("Atomic Config Persistence Engine" in it for it in categories_030["Added"])
+
+
+def test_parse_changelog_historical_baseline():
+    """Asserts that historical baseline releases 0.2.0-0.1.0 parse correctly with categories and items."""
+    response = get_changelog()
 
     # Verify release 0.2.0
     rel_020 = next(r for r in response.releases if r.version == "0.2.0")
@@ -147,7 +161,7 @@ def test_parse_changelog_missing_file(tmp_path: Path):
     response = parser.parse()
 
     assert isinstance(response, ChangelogResponse)
-    assert response.current_version == "0.2.0"
+    assert response.current_version == __version__
     assert isinstance(response.releases, list)
     # When file is missing, fallback response provides informational release entry
     assert len(response.releases) >= 1
@@ -204,7 +218,7 @@ def test_api_get_changelog(changelog_test_client: TestClient):
     viewer_res = changelog_test_client.get("/api/system/changelog", headers=viewer_headers)
     assert viewer_res.status_code == 200, f"Expected 200 for viewer, got {viewer_res.status_code}"
     viewer_data = viewer_res.json()
-    assert viewer_data["current_version"] == "0.2.0"
+    assert viewer_data["current_version"] == __version__
     assert "releases" in viewer_data
     assert len(viewer_data["releases"]) >= 4
 
@@ -213,7 +227,7 @@ def test_api_get_changelog(changelog_test_client: TestClient):
     operator_res = changelog_test_client.get("/api/system/changelog", headers=operator_headers)
     assert operator_res.status_code == 200, f"Expected 200 for operator, got {operator_res.status_code}"
     operator_data = operator_res.json()
-    assert operator_data["current_version"] == "0.2.0"
+    assert operator_data["current_version"] == __version__
     assert "releases" in operator_data
 
 
@@ -266,13 +280,12 @@ def test_post_update_summary_deployed_version():
 
 
 def test_version_synchronization():
-    """Validates that pyproject.toml, app.__version__, and FastAPI version are 0.2.0."""
+    """Validates that pyproject.toml, app.__version__, and FastAPI version are synchronized."""
     pyproject_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
     assert pyproject_path.is_file()
     content = pyproject_path.read_text(encoding="utf-8")
-    assert 'version = "0.2.0"' in content
-    assert __version__ == "0.2.0"
-    assert app.version == "0.2.0"
+    assert f'version = "{__version__}"' in content
+    assert app.version == __version__
 
 
 def test_api_system_version_endpoint(changelog_test_client: TestClient):
@@ -293,10 +306,11 @@ def test_api_system_version_endpoint(changelog_test_client: TestClient):
     )
     assert viewer_resp.status_code == 200
     version_data = viewer_resp.json()
-    assert version_data["version"] == "0.2.0"
+    assert version_data["version"] == __version__
     assert "canonical_url" in version_data
     assert version_data["canonical_url"].startswith("https://")
     assert "thestygianarchitect.duckdns.org:8080" in version_data["canonical_url"]
+    assert "tls_active" in version_data
 
 
 def test_deploy_script_semver_contract():
@@ -304,6 +318,6 @@ def test_deploy_script_semver_contract():
     deploy_sh = Path(__file__).resolve().parent.parent / "scripts" / "deploy.sh"
     assert deploy_sh.is_file()
     content = deploy_sh.read_text(encoding="utf-8")
-    assert 'DEPLOYED_VERSION="0.2.0"' in content
+    assert "DEPLOYED_VERSION=" in content
     assert '"deployed_version": "v${DEPLOYED_VERSION}"' in content
     assert "CHANGELOG.md" in content

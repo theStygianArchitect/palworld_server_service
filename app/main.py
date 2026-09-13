@@ -104,6 +104,8 @@ from app.engine.notifications import DiscordNotifier
 from app.engine.service import LOCK_FILE, PalEngine
 from app.engine.updater import UpdateWatcher
 
+_DEFAULT_CERT_MANAGER_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "palworld-cert-manager.sh"
+
 settings = get_settings()
 db = DatabaseManager(settings.database_path)
 metrics_db = MetricsDatabaseManager(settings.metrics_db_path)
@@ -268,6 +270,45 @@ async def trigger_duckdns_sync() -> None:
                 log.debug("DuckDNS sync script OS error: %s", err)
 
 
+async def trigger_tls_provisioning_check() -> None:
+    """Checks TLS certificate availability on startup and initiates provisioning if absent."""
+    if resolve_ssl_paths(settings) is not None:
+        return
+
+    raw_domain = str(settings.duckdns_domain or "").strip().lower()
+    if not raw_domain or raw_domain in ("localhost", "yourdomain.duckdns.org"):
+        return
+
+    candidate_scripts = [
+        Path("/opt/palworld-web-manager/scripts/palworld-cert-manager.sh"),
+        _DEFAULT_CERT_MANAGER_SCRIPT,
+    ]
+    for script in candidate_scripts:
+        if script.exists():
+            try:
+                log.info("TLS certificate missing on startup. Dispatching cert provisioning via %s", script)
+                cmd = (
+                    ["sudo", "-n", str(script), "renew"] if os.name == "posix" else ["/bin/bash", str(script), "renew"]
+                )
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=45.0)
+                log.info(
+                    "TLS certificate provisioning dispatch completed (exit code: %s)",
+                    proc.returncode,
+                )
+                if proc.returncode != 0:
+                    log.warning("TLS cert manager output: %s", stderr.decode(errors="replace").strip())
+                return
+            except asyncio.TimeoutError as err:
+                log.warning("TLS certificate provisioning dispatch timed out: %s", err)
+            except OSError as err:
+                log.debug("TLS certificate provisioning dispatch OS error: %s", err)
+
+
 async def metrics_collector_loop() -> None:
     """Periodically samples server and hardware telemetry into memory and batch flushes to disk.
 
@@ -392,6 +433,7 @@ async def lifespan(_: FastAPI):
         log.error("Runtime error initializing database: %s", err)
 
     duckdns_task = asyncio.create_task(trigger_duckdns_sync())
+    tls_provision_task = asyncio.create_task(trigger_tls_provisioning_check())
     stream_task = asyncio.create_task(telemetry_streamer())
     metrics_task = asyncio.create_task(metrics_collector_loop())
     updater_task: asyncio.Task[None] | None = None
@@ -414,6 +456,7 @@ async def lifespan(_: FastAPI):
 
     # Shutdown sequence
     duckdns_task.cancel()
+    tls_provision_task.cancel()
     startup_task.cancel()
     stream_task.cancel()
     metrics_task.cancel()
@@ -472,7 +515,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title="Palworld Operations Suite",
     description="Web Management Plane & Community Discovery Hub",
-    version="0.2.0",
+    version=__version__,
     lifespan=lifespan,
 )
 
@@ -2142,7 +2185,11 @@ async def get_system_version() -> SystemVersionResponse:
     Returns:
         SystemVersionResponse: Semantic version and canonical URL payload.
     """
-    return SystemVersionResponse(version=__version__, canonical_url=_resolve_canonical_url())
+    return SystemVersionResponse(
+        version=__version__,
+        canonical_url=_resolve_canonical_url(),
+        tls_active=resolve_ssl_paths(settings) is not None,
+    )
 
 
 @app.post("/api/server/shutdown", response_model=ShutdownResponse, tags=["Server"])

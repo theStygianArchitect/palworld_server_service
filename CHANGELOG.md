@@ -7,23 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Canonical Header Navigation Link & HTTP-to-HTTPS Redirection Validation (#40, closes #40)
-- Atomic Config Persistence Engine with crash-resilient INI writes, multi-threaded locking, and rotating backups (#20)
-- Release deployment primitives and safe archive staging engine (`app/engine/deployer.py`) with path traversal guards and atomic directory swapping (#20)
-- Comparative defect reproducer test suite contrasting naive `write_text()` mid-write truncation vs atomic persistence (`#20`)
-- Package Build & Distribution (uv build) CI Gate (#38)
-
-### Changed
-- Converted settings persistence in `app/main.py` and reboot sync in `app/engine/service.py` to use `atomic_write_ini` (#20)
-
-### Fixed
-- Deployer In-Place Self-Overwrite Elimination via Out-of-Tree Runner Staging (#43, closes #43)
-- Deployer Self-Overwrite & Atomic Script Staging (#38)
-
 ### Planned
 - Modular APIRouters (#21)
 - React 19 + Vite SPA (#22, #23)
+
+## [0.4.1] - 2026-09-13
+
+### Added
+- Automated Let's Encrypt TLS provisioning during deployment, installation, and application startup lifecycle (#40)
+- End-to-end atomic HTTPS redirection and login navigation contract tests (#40)
+- Logged backlog Issue #46 for test architecture formalization, "One Concept Per Test" guidelines, and Hypothesis property-based testing
+
+### Changed
+- Adaptive header branding navigation reflecting live TLS state to prevent client-side handshake rejections (#40)
+- Symmetrical header branding anchor and TLS status indicator on login view (#40)
+- Dynamic SemVer synchronization and cross-file equality contracts in governance test suite
+
+## [0.4.0] - 2026-09-12
+
+### Added
+- Canonical Header Navigation Link & HTTP-to-HTTPS Redirection Validation (#45, closes #40)
+
+## [0.3.1] - 2026-09-11
+
+### Fixed
+- Deployer In-Place Self-Overwrite Elimination via Out-of-Tree Runner Staging (#44, closes #43)
+
+## [0.3.0] - 2026-09-11
+
+### Added
+- Atomic Config Persistence Engine with crash-resilient INI writes, multi-threaded locking, and rotating backups (#42, closes #20)
+- Release deployment primitives and safe archive staging engine (`app/engine/deployer.py`) with path traversal guards and atomic directory swapping (#42, closes #20)
+- Comparative defect reproducer test suite contrasting naive `write_text()` mid-write truncation vs atomic persistence (#42, closes #20)
+
+### Changed
+- Converted settings persistence in `app/main.py` and reboot sync in `app/engine/service.py` to use `atomic_write_ini` (#42, closes #20)
+
+## [0.2.1] - 2026-09-11
+
+### Added
+- Package Build & Distribution (uv build) CI Gate (#39, closes #38)
+
+### Fixed
+- Deployer Self-Overwrite & Atomic Script Staging (#39, closes #38)
 
 ## [0.2.0] - 2026-09-11
 

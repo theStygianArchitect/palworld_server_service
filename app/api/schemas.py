@@ -746,7 +746,7 @@ class UpdateStatusResponse(BaseModel):
     """
 
     update_available: bool = Field(..., description="Whether upstream changes are available")
-    current_version: str = Field(default="0.2.0", description="Current application semantic version")
+    current_version: str = Field(default="0.4.1", description="Current application semantic version")
     current_commit: str = Field(..., description="Active deployed git commit SHA")
     latest_commit: str = Field(..., description="Latest upstream git commit SHA on branch")
     target_branch: str = Field(default="main", description="Active tracking git branch name")
@@ -1059,12 +1059,17 @@ class SystemVersionResponse(BaseModel):
     Attributes:
         version (str): Application semantic version string.
         canonical_url (str): Canonical public HTTPS portal access URL.
+        tls_active (bool): Whether SSL/TLS encryption is active on the portal.
     """
 
-    version: str = Field(default="0.2.0", description="Application semantic version string")
+    version: str = Field(default="0.4.1", description="Application semantic version string")
     canonical_url: str = Field(
         default="https://thestygianarchitect.duckdns.org:8080",
         description="Canonical public HTTPS portal access URL",
+    )
+    tls_active: bool = Field(
+        default=False,
+        description="Whether SSL/TLS encryption is active on the portal",
     )
 
 

@@ -18,11 +18,11 @@ cleanup_on_exit() {
     if [ "${exit_code}" -ne 0 ]; then
         echo "[-] Deployment aborted with error exit code: ${exit_code}"
         NOW_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u +"%Y-%m-%d %H:%M:%S")
-        DEPLOYED_VERSION="0.2.0"
+        DEPLOYED_VERSION="0.4.1"
         if [ -n "${REPO_ROOT}" ] && [ -f "${REPO_ROOT}/pyproject.toml" ]; then
-            DEPLOYED_VERSION=$(grep -m1 '^version =' "${REPO_ROOT}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.2.0")
+            DEPLOYED_VERSION=$(grep -m1 '^version =' "${REPO_ROOT}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.4.1")
         elif [ -f "${APP_DIR}/pyproject.toml" ]; then
-            DEPLOYED_VERSION=$(grep -m1 '^version =' "${APP_DIR}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.2.0")
+            DEPLOYED_VERSION=$(grep -m1 '^version =' "${APP_DIR}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.4.1")
         fi
         mkdir -p /var/lib/palmanager 2>/dev/null || true
         cat <<EOF > "${POST_UPDATE_FILE}"
@@ -117,11 +117,11 @@ git pull origin "${TARGET_BRANCH}"
 echo "[ OK ]"
 
 echo -n "[STEP 2/5] Syncing application code & systemd units... "
-DEPLOYED_VERSION="0.2.0"
+DEPLOYED_VERSION="0.4.1"
 if [ -f "${REPO_ROOT}/pyproject.toml" ]; then
-    DEPLOYED_VERSION=$(grep -m1 '^version =' "${REPO_ROOT}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.2.0")
+    DEPLOYED_VERSION=$(grep -m1 '^version =' "${REPO_ROOT}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.4.1")
 elif [ -f "${REPO_ROOT}/app/__init__.py" ]; then
-    DEPLOYED_VERSION=$(grep -m1 '^__version__ =' "${REPO_ROOT}/app/__init__.py" | cut -d'"' -f2 2>/dev/null || echo "0.2.0")
+    DEPLOYED_VERSION=$(grep -m1 '^__version__ =' "${REPO_ROOT}/app/__init__.py" | cut -d'"' -f2 2>/dev/null || echo "0.4.1")
 fi
 cp -r "${REPO_ROOT}/app" "${APP_DIR}/"
 cp "${REPO_ROOT}/pyproject.toml" "${APP_DIR}/"
@@ -265,6 +265,13 @@ echo -n "[STEP 4/5] Updating Python dependencies via uv... "
 cd "${APP_DIR}"
 su -s /bin/bash "${APP_USER}" -c "uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil > /dev/null"
 echo "[ OK ]"
+
+# Ensure TLS certificates are provisioned before service starts
+if [ ! -f "/var/lib/palmanager/certs/fullchain.pem" ] && [ -x "${APP_DIR}/scripts/palworld-cert-manager.sh" ]; then
+    echo -n "[*] Certificates missing. Triggering Let's Encrypt TLS issuance... "
+    "${APP_DIR}/scripts/palworld-cert-manager.sh" renew >/dev/null 2>&1 || true
+    echo "[ OK ]"
+fi
 
 echo -n "[STEP 5/5] Restarting palworld-manager.service... "
 systemctl restart palworld-manager.service

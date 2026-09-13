@@ -233,6 +233,13 @@ if [ -f "/home/steam/duckdns/duck.sh" ]; then
 fi
 echo "[ OK ]"
 
+# Provision initial TLS certificate if missing
+if [ ! -f "/var/lib/palmanager/certs/fullchain.pem" ] && [ -x "/opt/palworld-web-manager/scripts/palworld-cert-manager.sh" ]; then
+    echo -n "[*] Certificates missing. Triggering Let's Encrypt TLS issuance... "
+    /opt/palworld-web-manager/scripts/palworld-cert-manager.sh renew >/dev/null 2>&1 || true
+    echo "[ OK ]"
+fi
+
 # 8. Reload and Start Daemons
 echo -n "[8/8] Reloading systemd and starting Palworld Manager... "
 if command -v systemctl >/dev/null 2>&1; then
