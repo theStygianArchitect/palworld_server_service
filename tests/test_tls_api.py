@@ -40,7 +40,7 @@ def client() -> Generator[TestClient, None, None]:
 
 def test_get_tls_status_http_fallback(client: TestClient) -> None:
     """Tests GET /api/system/tls/status returns HTTP fallback when no certs exist."""
-    with patch("app.main.resolve_ssl_paths", return_value=None):
+    with patch("app.routers.system.resolve_ssl_paths", return_value=None):
         resp = client.get("/api/system/tls/status")
         assert resp.status_code == 200
         data = resp.json()
@@ -70,8 +70,8 @@ def test_get_tls_status_https_active(client: TestClient, tmp_path: Path) -> None
     )
 
     with (
-        patch("app.main.resolve_ssl_paths", return_value=(cert_path, key_path)),
-        patch("app.main.inspect_certificate", return_value=mock_cert_info),
+        patch("app.routers.system.resolve_ssl_paths", return_value=(cert_path, key_path)),
+        patch("app.routers.system.inspect_certificate", return_value=mock_cert_info),
     ):
         resp = client.get("/api/system/tls/status")
         assert resp.status_code == 200
@@ -242,7 +242,7 @@ def test_canonical_url_exposed_in_system_version(client: TestClient) -> None:
 def test_canonical_url_exposed_in_tls_status(client: TestClient) -> None:
     """Regression test for Issue #40: GET /api/system/tls/status includes canonical_url in both HTTP and HTTPS modes."""
     # HTTP fallback mode
-    with patch("app.main.resolve_ssl_paths", return_value=None):
+    with patch("app.routers.system.resolve_ssl_paths", return_value=None):
         resp_http = client.get("/api/system/tls/status")
         assert resp_http.status_code == 200
         data_http = resp_http.json()
@@ -253,8 +253,8 @@ def test_canonical_url_exposed_in_tls_status(client: TestClient) -> None:
     mock_cert = Path("/mock/cert.pem")
     mock_key = Path("/mock/key.pem")
     with (
-        patch("app.main.resolve_ssl_paths", return_value=(mock_cert, mock_key)),
-        patch("app.main.inspect_certificate", return_value=None),
+        patch("app.routers.system.resolve_ssl_paths", return_value=(mock_cert, mock_key)),
+        patch("app.routers.system.inspect_certificate", return_value=None),
     ):
         resp_https = client.get("/api/system/tls/status")
         assert resp_https.status_code == 200
@@ -298,7 +298,7 @@ async def test_tls_auto_provision_startup_dispatch(monkeypatch: pytest.MonkeyPat
     mock_proc.communicate = AsyncMock(return_value=(b"", b""))
 
     with (
-        patch("app.main.resolve_ssl_paths", return_value=None),
+        patch("app.routers.system.resolve_ssl_paths", return_value=None),
         patch("pathlib.Path.exists", return_value=True),
         patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec,
     ):

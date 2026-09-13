@@ -8,8 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Modular APIRouters (#21)
 - React 19 + Vite SPA (#22, #23)
+
+## [0.4.2] - 2026-09-13
+
+### Changed
+- Decomposed monolithic `app/main.py` into 7 modular domain APIRouters under `app/routers/` (`auth`, `settings`, `players`, `telemetry`, `system`, `feedback`, `ui`) with a centralized dependency injection hub (`app/routers/deps.py`) and reduced `app/main.py` from 2,496 lines to 442 lines (#21).
 
 ## [0.4.1] - 2026-09-13
 

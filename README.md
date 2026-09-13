@@ -52,6 +52,26 @@ An enterprise-grade, non-disruptive operations plane, real-time dashboard, and P
 
 ---
 
+## 📂 Architecture & Directory Layout
+
+The application is decomposed into modular domain-specific APIRouters under `app/routers/` for maintainability and physical type isolation:
+
+```text
+app/
+├── main.py              # Application entrypoint & FastAPI initialization (442 lines)
+└── routers/             # Modular Domain APIRouters
+    ├── auth.py          # Session token authentication & RBAC
+    ├── settings.py      # World settings INI management
+    ├── players.py       # Real-time player roster & administration
+    ├── telemetry.py     # Bare-metal & engine observability metrics
+    ├── system.py        # Lifecycle, DuckDNS, updates, and reboots
+    ├── feedback.py      # Issue tracking & GitHub portal
+    ├── ui.py            # Static file serving & HTML view rendering
+    └── deps.py          # Centralized Dependency Injection Hub
+```
+
+---
+
 ## 🌳 Git Branching & Promotion Pipeline (Modern GitHub Flow)
 
 The repository follows **Modern GitHub Flow** with single-branch protection on `main` and high-speed parallel Pull Request status gates:
@@ -220,7 +240,7 @@ The operations suite supports multi-distribution deployment across Debian/Ubuntu
 To eliminate Python runtime dependencies, package managers, and virtualenvs on production hosts, compile the operations suite into a standalone single ELF executable using PyInstaller:
 
 ```bash
-# Compiles app/main.py and all ASGI/FastAPI assets into dist/palworld-manager
+# Compiles app/main.py (including app/routers/ and all ASGI/FastAPI assets) into dist/palworld-manager
 ./scripts/build_binary.sh
 ```
 
