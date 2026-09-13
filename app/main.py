@@ -12,7 +12,7 @@ import logging
 import os
 import shutil
 import sqlite3
-import subprocess
+import subprocess  # nosec B404 - required for systemctl liveness probe and cert-manager execution
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path

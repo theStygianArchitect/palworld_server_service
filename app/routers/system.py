@@ -10,7 +10,7 @@ import asyncio
 import datetime
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 - required for non-interactive sudo execution of palworld-cert-manager.sh
 from pathlib import Path
 from typing import Any
 
