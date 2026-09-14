@@ -1,5 +1,5 @@
-"""
-Core TLS Engine Specialist: Manages TLS certificates, ACME provision, and self-signed fallbacks.
+"""Core TLS Engine Specialist: Manages TLS certificates, ACME provision, and self-signed fallbacks.
+
 Provides tools for generating, checking, and updating X.509 certificates and DuckDNS integration.
 """
 
@@ -72,8 +72,7 @@ class TLSProvisionResult:
 
 
 def generate_private_key(key_size: int = 2048) -> rsa.RSAPrivateKey:
-    """
-    Generates a new RSA private key.
+    """Generate a new RSA private key.
 
     Args:
         key_size: The size of the RSA key in bits.
@@ -88,8 +87,7 @@ def generate_private_key(key_size: int = 2048) -> rsa.RSAPrivateKey:
 
 
 def private_key_to_pem(private_key: rsa.RSAPrivateKey) -> bytes:
-    """
-    Serializes an RSA private key to PEM format.
+    """Serialize an RSA private key to PEM format.
 
     Args:
         private_key: The RSAPrivateKey to serialize.
@@ -105,8 +103,7 @@ def private_key_to_pem(private_key: rsa.RSAPrivateKey) -> bytes:
 
 
 def certificate_to_pem(cert: x509.Certificate) -> bytes:
-    """
-    Serializes an X.509 certificate to PEM format.
+    """Serialize an X.509 certificate to PEM format.
 
     Args:
         cert: The X.509 certificate to serialize.
@@ -118,8 +115,7 @@ def certificate_to_pem(cert: x509.Certificate) -> bytes:
 
 
 def csr_to_pem(csr: x509.CertificateSigningRequest) -> bytes:
-    """
-    Serializes a Certificate Signing Request to PEM format.
+    """Serialize a Certificate Signing Request to PEM format.
 
     Args:
         csr: The Certificate Signing Request to serialize.
@@ -131,8 +127,7 @@ def csr_to_pem(csr: x509.CertificateSigningRequest) -> bytes:
 
 
 def clean_domain_name(domain: str) -> str:
-    """
-    Normalizes a domain by stripping protocol, trailing slashes, and ports.
+    """Normalize a domain by stripping protocol, trailing slashes, and ports.
 
     Args:
         domain: The raw domain string.
@@ -142,8 +137,7 @@ def clean_domain_name(domain: str) -> str:
     """
     cleaned = domain.strip().lower()
     for prefix in ("https://", "http://"):
-        if cleaned.startswith(prefix):
-            cleaned = cleaned[len(prefix) :]
+        cleaned = cleaned.removeprefix(prefix)
 
     if "/" in cleaned:
         cleaned = cleaned.split("/", 1)[0]
@@ -154,8 +148,7 @@ def clean_domain_name(domain: str) -> str:
 
 
 def extract_subdomain(domain: str) -> str:
-    """
-    Extracts the DuckDNS subdomain if applicable.
+    """Extract the DuckDNS subdomain if applicable.
 
     Args:
         domain: The full domain name.
@@ -163,16 +156,11 @@ def extract_subdomain(domain: str) -> str:
     Returns:
         The base subdomain if duckdns.org, otherwise the clean domain.
     """
-    cleaned = clean_domain_name(domain)
-    suffix = ".duckdns.org"
-    if cleaned.endswith(suffix):
-        return cleaned[: -len(suffix)]
-    return cleaned
+    return clean_domain_name(domain).removesuffix(".duckdns.org")
 
 
 def generate_csr(domain: str, private_key: rsa.RSAPrivateKey) -> x509.CertificateSigningRequest:
-    """
-    Generates a Certificate Signing Request (CSR) for a domain.
+    """Generate a Certificate Signing Request (CSR) for a domain.
 
     Args:
         domain: The domain name to secure.
@@ -195,8 +183,7 @@ def generate_csr(domain: str, private_key: rsa.RSAPrivateKey) -> x509.Certificat
 def generate_self_signed_certificate(
     private_key: rsa.RSAPrivateKey, domain: str, days_valid: int = 365
 ) -> x509.Certificate:
-    """
-    Generates a self-signed X.509 certificate.
+    """Generate a self-signed X.509 certificate.
 
     Args:
         private_key: The RSA private key to sign the certificate.
@@ -250,8 +237,7 @@ def generate_self_signed_certificate(
 async def set_duckdns_txt_record(
     domain: str, token: str, txt_record: str, timeout: float = DEFAULT_HTTP_TIMEOUT
 ) -> bool:
-    """
-    Sets a TXT record for a DuckDNS domain.
+    """Set a TXT record for a DuckDNS domain.
 
     Args:
         domain: The full domain name.
@@ -278,8 +264,7 @@ async def set_duckdns_txt_record(
 
 
 async def clear_duckdns_txt_record(domain: str, token: str, timeout: float = DEFAULT_HTTP_TIMEOUT) -> bool:
-    """
-    Clears the TXT record for a DuckDNS domain.
+    """Clear the TXT record for a DuckDNS domain.
 
     Args:
         domain: The full domain name.
@@ -305,8 +290,7 @@ async def clear_duckdns_txt_record(domain: str, token: str, timeout: float = DEF
 
 
 async def sync_duckdns_ip(domain: str, token: str, ip: str = "", timeout: float = DEFAULT_HTTP_TIMEOUT) -> bool:
-    """
-    Syncs the IP address for a DuckDNS domain.
+    """Sync the IP address for a DuckDNS domain.
 
     Args:
         domain: The full domain name.
@@ -333,8 +317,7 @@ async def sync_duckdns_ip(domain: str, token: str, ip: str = "", timeout: float 
 
 
 def stage_tls_bundle(cert_pem: bytes, key_pem: bytes, stage_dir: Path | None = None) -> tuple[Path, Path]:
-    """
-    Atomically writes the TLS fullchain and private key to disk.
+    """Atomically write the TLS fullchain and private key to disk.
 
     Args:
         cert_pem: The PEM encoded certificate bundle.
@@ -372,8 +355,7 @@ def stage_tls_bundle(cert_pem: bytes, key_pem: bytes, stage_dir: Path | None = N
 
 # pylint: disable=too-many-locals
 def get_tls_certificate_status(stage_dir: Path | None = None, domain: str | None = None) -> TLSCertificateStatus:
-    """
-    Reads the staged TLS certificate and returns its status.
+    """Read the staged TLS certificate and return its status.
 
     Args:
         stage_dir: Directory containing the certificates.
@@ -491,8 +473,7 @@ def get_tls_certificate_status(stage_dir: Path | None = None, domain: str | None
 async def provision_tls_certificates(
     domain: str, token: str, force: bool = False, stage_dir: Path | None = None
 ) -> TLSProvisionResult:
-    """
-    Provisions TLS certificates, falling back to self-signed if ACME fails.
+    """Provision TLS certificates, falling back to self-signed if ACME fails.
 
     Args:
         domain: The domain to secure.
@@ -534,9 +515,44 @@ async def provision_tls_certificates(
     )
 
 
+def _handle_renew(args: argparse.Namespace) -> int:
+    """Handle CLI renewal command."""
+    if not args.domain or not args.token:
+        print("Error: Domain and token must be configured or provided via CLI.")
+        return 1
+    result = asyncio.run(provision_tls_certificates(domain=args.domain, token=args.token, force=args.force))
+    print(f"Provision result: {result.success} ({result.mode.value}) - {result.message}")
+    if result.error:
+        print(f"Error: {result.error}")
+        return 1
+    return 0
+
+
+def _handle_sync_dns(args: argparse.Namespace) -> int:
+    """Handle CLI sync-dns command."""
+    success = asyncio.run(sync_duckdns_ip(domain=args.domain, token=args.token, ip=args.ip))
+    if success:
+        print(f"Successfully synced DNS for {args.domain}")
+        return 0
+    print(f"Failed to sync DNS for {args.domain}")
+    return 1
+
+
+def _handle_status(args: argparse.Namespace) -> int:
+    """Handle CLI status command."""
+    status = get_tls_certificate_status(domain=args.domain)
+    print(f"Status for {status.domain}:")
+    print(f"  Valid: {status.is_valid}")
+    print(f"  Days remaining: {status.days_remaining}")
+    print(f"  Issuer: {status.issuer}")
+    print(f"  Self-signed: {status.is_self_signed}")
+    if status.error_message:
+        print(f"  Error: {status.error_message}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    """
-    CLI entrypoint for TLS management.
+    """CLI entrypoint for TLS management.
 
     Args:
         argv: Command-line arguments.
@@ -579,30 +595,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "renew":
-        if not args.domain or not args.token:
-            print("Error: Domain and token must be configured or provided via CLI.")
-            return 1
-        result = asyncio.run(provision_tls_certificates(domain=args.domain, token=args.token, force=args.force))
-        print(f"Provision result: {result.success} ({result.mode.value}) - {result.message}")
-        if result.error:
-            print(f"Error: {result.error}")
-            return 1
-    elif args.command == "sync-dns":
-        success = asyncio.run(sync_duckdns_ip(domain=args.domain, token=args.token, ip=args.ip))
-        if success:
-            print(f"Successfully synced DNS for {args.domain}")
-        else:
-            print(f"Failed to sync DNS for {args.domain}")
-            return 1
-    elif args.command == "status":
-        status = get_tls_certificate_status(domain=args.domain)
-        print(f"Status for {status.domain}:")
-        print(f"  Valid: {status.is_valid}")
-        print(f"  Days remaining: {status.days_remaining}")
-        print(f"  Issuer: {status.issuer}")
-        print(f"  Self-signed: {status.is_self_signed}")
-        if status.error_message:
-            print(f"  Error: {status.error_message}")
+        return _handle_renew(args)
+    if args.command == "sync-dns":
+        return _handle_sync_dns(args)
+    if args.command == "status":
+        return _handle_status(args)
 
     return 0
 

@@ -1,5 +1,6 @@
 """Comprehensive unit and resilience tests for the Native Python TLS Certificate Engine."""
-# pylint: disable=missing-function-docstring,redefined-outer-name,unused-argument,missing-class-docstring,too-few-public-methods,duplicate-code
+# pylint: disable=missing-function-docstring,redefined-outer-name,unused-argument
+# pylint: disable=missing-class-docstring,too-few-public-methods,duplicate-code
 
 from __future__ import annotations
 
