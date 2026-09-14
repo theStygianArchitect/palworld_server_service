@@ -27,20 +27,6 @@ from app.core.config import inspect_certificate, reload_settings, resolve_ssl_pa
 from app.core.logger import log
 from app.database import MetricSnapshotRecord, bootstrap_admin_user
 from app.engine.service import LOCK_FILE
-
-# Resilient import: prevents unbootable service if cryptography is temporarily missing during upgrade
-_tls_import_err: BaseException | None = None
-try:
-    from app.engine.tls_manager import provision_tls_certificates, sync_duckdns_ip
-    _TLS_ENGINE_AVAILABLE = True
-except (ImportError, ModuleNotFoundError) as _exc:
-    _TLS_ENGINE_AVAILABLE = False
-    _tls_import_err = _exc
-    provision_tls_certificates = None  # type: ignore[assignment]
-    sync_duckdns_ip = None  # type: ignore[assignment]
-    logging.getLogger(__name__).warning(
-        "TLS Engine dependencies unavailable (%s). Running in degraded mode.", _exc
-    )
 from app.routers import (
     auth_router,
     feedback_router,
@@ -65,6 +51,19 @@ from app.routers.deps import (
     updater,
 )
 from app.routers.settings import stage_settings_for_reboot
+
+# Resilient import: prevents unbootable service if cryptography is temporarily missing during upgrade
+_tls_import_err: BaseException | None = None
+try:
+    from app.engine.duckdns import sync_duckdns_ip
+    from app.engine.tls_manager import provision_tls_certificates
+    _TLS_ENGINE_AVAILABLE = True
+except ImportError as _exc:  # ImportError catches ModuleNotFoundError (subclass)
+    _TLS_ENGINE_AVAILABLE = False
+    _tls_import_err = _exc
+    provision_tls_certificates = None  # type: ignore[assignment]  # pylint: disable=invalid-name
+    sync_duckdns_ip = None  # type: ignore[assignment]  # pylint: disable=invalid-name
+    log.warning("TLS Engine dependencies unavailable (%s). Running in degraded mode.", _exc)
 
 
 async def telemetry_streamer() -> None:

@@ -17,7 +17,7 @@ import httpx
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from app.engine.tls_manager import clear_duckdns_txt_record, set_duckdns_txt_record
+from app.engine.duckdns import clear_duckdns_txt_record, set_duckdns_txt_record
 
 logger = logging.getLogger(__name__)
 

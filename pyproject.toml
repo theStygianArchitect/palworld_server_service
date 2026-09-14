@@ -79,9 +79,6 @@ select = [
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.Query", "fastapi.params.Query"]
 
-[tool.ruff.lint.per-file-ignores]
-# E402: resilient try/except import guard for tls_manager deliberately pushes subsequent imports below top-of-file
-"app/main.py" = ["E402"]
 
 [tool.mypy]
 ignore_missing_imports = true
@@ -95,7 +92,7 @@ convention = "google"
 max-line-length = 120
 
 [tool.pylint."messages control"]
-disable = ["R0401"]  # cyclic-import: deliberate lazy import pattern between acme_client ↔ tls_manager
+disable = []
 
 [tool.pycodestyle]
 max-line-length = 120

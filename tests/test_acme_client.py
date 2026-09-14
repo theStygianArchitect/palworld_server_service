@@ -1,5 +1,9 @@
 """Tests for ACME DNS-01 client."""
 
+# pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+# pylint: disable=redefined-outer-name,unused-argument
+
+import base64
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,13 +21,19 @@ from app.engine.acme_client import (
     perform_dns01_flow,
 )
 
+MOCK_TOKEN = "duckdns-token"  # nosec B105 - test-only dummy credential
+MOCK_TOKEN_SHORT = "tok"  # nosec B105 - test-only dummy credential
+MOCK_TOKEN_PARAM = "test-token-123"  # nosec B105 - test-only dummy credential
+
 
 @pytest.fixture
 def rsa_key():
+    """Generate a fresh RSA key for test isolation."""
     return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
 def test_jwk_thumbprint_computation(rsa_key):
+    """Verify JWK thumbprint is valid base64url without padding."""
     thumb = _jwk_thumbprint(rsa_key.public_key())
     assert isinstance(thumb, str)
     assert len(thumb) > 0
@@ -34,6 +44,7 @@ def test_jwk_thumbprint_computation(rsa_key):
 
 
 def test_jws_signing(rsa_key):
+    """Verify JWS signing produces valid structure with both JWK and KID modes."""
     url = "https://example.com/acme/new-order"
     nonce = "test-nonce-123"
     payload = {"identifiers": [{"type": "dns", "value": "example.com"}]}
@@ -50,8 +61,6 @@ def test_jws_signing(rsa_key):
     assert "protected" in jws_kid
 
     # Decode protected header
-    import base64
-
     protected_json = base64.urlsafe_b64decode(jws_kid["protected"] + "===").decode("utf-8")
     header = json.loads(protected_json)
     assert header["kid"] == kid
@@ -61,6 +70,7 @@ def test_jws_signing(rsa_key):
 
 @pytest.mark.asyncio
 async def test_get_acme_directory():
+    """Verify ACME directory fetch returns parsed JSON response."""
     directory_url = "https://example.com/dir"
     directory_data = {"newNonce": "https://example.com/nonce"}
 
@@ -78,6 +88,7 @@ async def test_get_acme_directory():
 
 
 def test_create_or_load_account_key_new(tmp_path):
+    """Verify new account key generation and file persistence."""
     key_path = tmp_path / "account.key"
     key = create_or_load_account_key(key_path)
     assert isinstance(key, rsa.RSAPrivateKey)
@@ -88,6 +99,7 @@ def test_create_or_load_account_key_new(tmp_path):
 
 
 def test_create_or_load_account_key_existing(tmp_path, rsa_key):
+    """Verify existing account key is loaded with matching public numbers."""
     key_path = tmp_path / "account.key"
     key_pem = rsa_key.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -113,51 +125,44 @@ def test_create_or_load_account_key_existing(tmp_path, rsa_key):
 @patch("app.engine.acme_client.register_account", new_callable=AsyncMock)
 @patch("app.engine.acme_client.get_acme_directory", new_callable=AsyncMock)
 async def test_perform_dns01_flow_success(
-    mock_dir,
-    mock_reg,
-    mock_order,
-    mock_chal,
-    mock_set_txt,
-    mock_resp,
-    mock_poll,
-    mock_fin,
-    mock_dl,
-    mock_sleep,
-    mock_clear_txt,
-    tmp_path,
-    rsa_key,
+    mock_dir, mock_reg, mock_order, mock_chal, mock_set_txt,
+    mock_resp, mock_poll, mock_fin, mock_dl, mock_sleep,
+    mock_clear_txt, tmp_path, rsa_key,
 ):
+    """Verify full DNS-01 happy path: order, challenge, finalize, download."""
     key_path = tmp_path / "account.key"
     domain = "example.com"
-    token = "duckdns-token"
 
     mock_dir.return_value = {"newNonce": "url-nonce", "newAccount": "url-acct", "newOrder": "url-order"}
     mock_reg.return_value = ACMEAccount(account_url="url-acct-1", key_pem=b"")
     mock_order.return_value = MagicMock(
         authorization_urls=["url-authz"], order_url="url-order", finalize_url="url-fin"
     )
-    mock_chal.return_value = MagicMock(challenge_url="url-chal", token="tok", key_authorization_digest="dig")
+    mock_chal.return_value = MagicMock(
+        challenge_url="url-chal", token=MOCK_TOKEN_SHORT,
+        key_authorization_digest="dig",
+    )
     mock_poll.return_value = {"status": "ready"}
     mock_fin.return_value = "url-cert"
     mock_dl.return_value = b"cert-pem"
 
-    res = await perform_dns01_flow(domain, token, rsa_key, account_key_path=key_path)
+    res = await perform_dns01_flow(domain, MOCK_TOKEN, rsa_key, account_key_path=key_path)
 
     assert res.success is True
     assert res.fullchain_pem == b"cert-pem"
     assert res.error is None
-    mock_set_txt.assert_called_once_with(domain, token, "dig")
-    mock_clear_txt.assert_called_once_with(domain, token)
+    mock_set_txt.assert_called_once_with(domain, MOCK_TOKEN, "dig")
+    mock_clear_txt.assert_called_once_with(domain, MOCK_TOKEN)
 
 
 @pytest.mark.asyncio
 @patch("app.engine.acme_client.get_acme_directory", side_effect=Exception("API down"))
 async def test_perform_dns01_flow_acme_failure(mock_dir, tmp_path, rsa_key):
+    """Verify graceful failure reporting when ACME directory is unreachable."""
     key_path = tmp_path / "account.key"
     domain = "example.com"
-    token = "duckdns-token"
 
-    res = await perform_dns01_flow(domain, token, rsa_key, account_key_path=key_path)
+    res = await perform_dns01_flow(domain, MOCK_TOKEN, rsa_key, account_key_path=key_path)
     assert res.success is False
     assert "API down" in res.error
     assert res.fullchain_pem is None
@@ -173,27 +178,20 @@ async def test_perform_dns01_flow_acme_failure(mock_dir, tmp_path, rsa_key):
 @patch("app.engine.acme_client.register_account", new_callable=AsyncMock)
 @patch("app.engine.acme_client.get_acme_directory", new_callable=AsyncMock)
 async def test_perform_dns01_flow_cleans_txt_on_failure(
-    mock_dir,
-    mock_reg,
-    mock_order,
-    mock_chal,
-    mock_set_txt,
-    mock_sleep,
-    mock_resp,
-    mock_clear_txt,
-    tmp_path,
-    rsa_key,
+    mock_dir, mock_reg, mock_order, mock_chal,
+    mock_set_txt, mock_sleep, mock_resp, mock_clear_txt,
+    tmp_path, rsa_key,
 ):
+    """Verify TXT record cleanup runs even when challenge validation fails."""
     key_path = tmp_path / "account.key"
     domain = "example.com"
-    token = "duckdns-token"
 
     mock_dir.return_value = {"newNonce": "url-nonce", "newAccount": "url-acct", "newOrder": "url-order"}
     mock_reg.return_value = ACMEAccount(account_url="url-acct-1", key_pem=b"")
     mock_order.return_value = MagicMock(authorization_urls=["url-authz"])
     mock_chal.return_value = MagicMock(key_authorization_digest="dig")
 
-    res = await perform_dns01_flow(domain, token, rsa_key, account_key_path=key_path)
+    res = await perform_dns01_flow(domain, MOCK_TOKEN, rsa_key, account_key_path=key_path)
 
     assert res.success is False
     mock_set_txt.assert_called_once()
