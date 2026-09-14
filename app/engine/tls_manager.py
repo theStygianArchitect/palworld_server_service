@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, ExtensionOID, NameOID
 
 from app.core.atomic_io import atomic_write_file
+from app.core.config import get_settings
 from app.engine.acme_client import perform_dns01_flow
 from app.engine.duckdns import sync_duckdns_ip
 
@@ -214,9 +215,6 @@ def stage_tls_bundle(cert_pem: bytes, key_pem: bytes, stage_dir: Path | None = N
     """
     if stage_dir is None:
         try:
-            # pylint: disable=import-outside-toplevel
-            from app.core.config import get_settings
-
             stage_dir = Path(get_settings().cert_dir)
         except ImportError as err:
             logger.debug("ImportError loading settings in stage_tls_bundle: %s", err)
@@ -251,9 +249,6 @@ def get_tls_certificate_status(stage_dir: Path | None = None, domain: str | None
     """
     if stage_dir is None:
         try:
-            # pylint: disable=import-outside-toplevel
-            from app.core.config import get_settings
-
             stage_dir = Path(get_settings().cert_dir)
         except ImportError as err:
             logger.debug("ImportError loading settings in get_tls_certificate_status: %s", err)
@@ -485,9 +480,6 @@ def main(argv: list[str] | None = None) -> int:
     default_domain = ""
     default_token: str = ""  # nosec B105 - empty string fallback for CLI token
     try:
-        # pylint: disable=import-outside-toplevel
-        from app.core.config import get_settings
-
         cfg = get_settings()
         default_domain = cfg.duckdns_domain or ""
         default_token = cfg.duckdns_token or ""

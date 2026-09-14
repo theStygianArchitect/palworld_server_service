@@ -1,6 +1,5 @@
 """ACME client for DNS-01 challenge."""
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals,broad-exception-caught
-# pylint: disable=import-outside-toplevel
 
 from __future__ import annotations
 
@@ -14,8 +13,10 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.x509.oid import NameOID
 
 from app.engine.duckdns import clear_duckdns_txt_record, set_duckdns_txt_record
 
@@ -584,9 +585,6 @@ async def perform_dns01_flow(
                 raise ValueError("Order became invalid during validation")
 
             # 10. Finalize order with CSR
-            from cryptography import x509
-            from cryptography.x509.oid import NameOID
-
             csr = (
                 x509.CertificateSigningRequestBuilder()
                 .subject_name(

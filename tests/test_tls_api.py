@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from app.database.models import UserRecord
 from app.engine.tls_manager import TLSCertificateStatus, TLSProvisionMode, TLSProvisionResult
 from app.main import app, db, get_current_user, trigger_tls_provisioning_check
+from app.routers.system import dispatch_manager_service_restart
 
 
 @pytest.fixture
@@ -121,7 +122,7 @@ def test_post_tls_renew_failure_handling(client: TestClient) -> None:
 
 
 def test_post_tls_renew_success(client: TestClient, tmp_path: Path) -> None:
-    """Tests POST /api/system/tls/renew executes renewal script successfully."""
+    """Tests POST /api/system/tls/renew executes renewal script successfully and schedules service restart."""
     mock_result = TLSProvisionResult(
         success=True,
         mode=TLSProvisionMode.ACME_LETSENCRYPT,
@@ -132,15 +133,49 @@ def test_post_tls_renew_success(client: TestClient, tmp_path: Path) -> None:
         message="Certificate renewed successfully",
         error=None,
     )
-    with patch("app.routers.system.provision_tls_certificates", return_value=mock_result) as mock_prov:
+    with patch("app.routers.system.provision_tls_certificates", return_value=mock_result) as mock_prov, \
+         patch("app.routers.system._delayed_manager_restart", new_callable=AsyncMock) as mock_restart:
         resp = client.post("/api/system/tls/renew", json={"force": True})
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "success"
         assert "Certificate renewed successfully" in data["message"]
+        assert "Web management service is restarting" in data["message"]
 
         mock_prov.assert_called_once()
         assert mock_prov.call_args[1].get("force") is True
+        mock_restart.assert_called_once()
+
+
+def test_dispatch_manager_service_restart_posix() -> None:
+    """Tests dispatch_manager_service_restart executes sudo systemctl restart on POSIX."""
+    with patch("app.routers.system.os.name", "posix"), \
+         patch("app.routers.system.shutil.which", side_effect=lambda bin_name: f"/usr/bin/{bin_name}"), \
+         patch("app.routers.system.subprocess.Popen") as mock_popen:
+        dispatch_manager_service_restart()
+        mock_popen.assert_called_once_with(
+            ["/usr/bin/sudo", "-n", "/usr/bin/systemctl", "restart", "palworld-manager.service"],
+            start_new_session=True,
+        )
+
+
+def test_dispatch_manager_service_restart_non_posix() -> None:
+    """Tests dispatch_manager_service_restart is a no-op on non-POSIX systems."""
+    with patch("app.routers.system.os.name", "nt"), \
+         patch("app.routers.system.subprocess.Popen") as mock_popen:
+        dispatch_manager_service_restart()
+        mock_popen.assert_not_called()
+
+
+def test_dispatch_manager_service_restart_handles_oserror() -> None:
+    """Tests dispatch_manager_service_restart catches and logs OSError gracefully."""
+    with patch("app.routers.system.os.name", "posix"), \
+         patch("app.routers.system.shutil.which", return_value="/bin/systemctl"), \
+         patch("app.routers.system.subprocess.Popen", side_effect=OSError("Process failed")), \
+         patch("app.routers.system.log.error") as mock_log:
+        dispatch_manager_service_restart()
+        mock_log.assert_called_once()
+        assert "Failed to execute manager service restart" in mock_log.call_args[0][0]
 
 
 def test_tls_endpoints_forbidden_for_viewer(client: TestClient) -> None:

@@ -161,7 +161,7 @@ class DiscordLogHandler(logging.Handler):
                 content = ""
             else:
                 color = self.COLOR_INFO
-                title = f"ℹ️ [{level_name}] {record.name}"  # noqa: RUF001
+                title = f"[{level_name}] {record.name}"
                 content = ""
 
             fields = [

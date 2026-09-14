@@ -36,6 +36,25 @@
 </head>
 <body class="bg-dark-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-brand-500 selection:text-white">
 
+  <!-- Insecure Plaintext HTTP Session Warning Banner -->
+  <div id="insecureHttpBanner" class="hidden bg-amber-950/70 border-b border-amber-500/40 px-4 py-2 text-xs font-sans text-amber-200">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="text-base">⚠️</span>
+        <span>
+          <strong class="font-semibold text-amber-300">Insecure Connection:</strong>
+          You are viewing this portal over unencrypted HTTP.
+        </span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="btnUpgradeToHttps" onclick="triggerUpgradeToHttps()" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs shadow transition">
+          <span>🔒</span> Switch to Secure HTTPS
+        </button>
+        <button onclick="dismissInsecureBanner()" class="p-1 text-amber-400/70 hover:text-amber-200 text-sm transition" title="Dismiss banner">✕</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Header -->
   <header class="bg-dark-900 border-b border-slate-800 sticky top-0 z-40 px-4 sm:px-6 py-3.5 shadow-xl backdrop-blur-md bg-opacity-90">
     <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
@@ -1869,12 +1888,12 @@
         <div class="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
       </div>
       <div>
-        <h2 class="text-xl font-bold text-white tracking-tight">Updating Operations Suite</h2>
+        <h2 id="updateOverlayTitle" class="text-xl font-bold text-white tracking-tight">Updating Operations Suite</h2>
         <p id="updateOverlayStatus" class="text-xs text-slate-400 font-mono mt-2">
           Executing deploy.sh in detached session...
         </p>
       </div>
-      <div class="p-3 bg-dark-950 border border-slate-800 rounded-xl text-left text-[11px] font-mono text-slate-400 space-y-1.5">
+      <div id="updateOverlaySteps" class="p-3 bg-dark-950 border border-slate-800 rounded-xl text-left text-[11px] font-mono text-slate-400 space-y-1.5">
         <div class="flex items-center gap-2">
           <span class="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
           <span>1. Pull latest commits from upstream git origin</span>
@@ -1896,7 +1915,8 @@
           <span>5. Cleanly restart daemon &amp; recover portal connection</span>
         </div>
       </div>
-      <p class="text-[11px] text-slate-500 font-mono">
+      <div id="updateOverlayAction" class="hidden text-center pt-1"></div>
+      <p id="updateOverlayFooter" class="text-[11px] text-slate-500 font-mono">
         Please do not close this window. The portal will automatically reload once healthy.
       </p>
     </div>
@@ -4712,6 +4732,14 @@
     }
 
     function pollReconnection() {
+      showUpdateOverlay();
+      const titleEl = document.getElementById('updateOverlayTitle');
+      const actionEl = document.getElementById('updateOverlayAction');
+      const footerEl = document.getElementById('updateOverlayFooter');
+      if (titleEl) titleEl.innerText = 'Updating Operations Suite';
+      if (actionEl) actionEl.classList.add('hidden');
+      if (footerEl) footerEl.innerText = 'Please do not close this window. The portal will automatically reload once healthy.';
+
       const statusText = document.getElementById('updateOverlayStatus');
       let attempts = 0;
       const maxAttempts = 90;
@@ -4746,6 +4774,80 @@
           }
         }, 2000);
       }, 3000);
+    }
+
+    function pollTlsReconnection(targetUrl) {
+      showUpdateOverlay();
+      const titleEl = document.getElementById('updateOverlayTitle');
+      const statusText = document.getElementById('updateOverlayStatus');
+      const stepsEl = document.getElementById('updateOverlaySteps');
+      const actionEl = document.getElementById('updateOverlayAction');
+      const footerEl = document.getElementById('updateOverlayFooter');
+
+      if (titleEl) titleEl.innerText = 'Activating HTTPS Security';
+      if (statusText) statusText.innerText = 'Certificates installed. Web service is restarting with SSL...';
+      if (footerEl) footerEl.innerText = 'Please do not close this window. The portal will automatically transition to HTTPS.';
+      if (stepsEl) {
+        stepsEl.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>1. Automated ACME DNS-01 certificate issuance</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-block w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>2. Staged certificate pair in credential storage</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-block w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+            <span>3. Re-executing palworld-manager.service with TLS listener</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="inline-block w-2 h-2 rounded-full bg-slate-600"></span>
+            <span>4. Establishing secured HTTPS browser handshake</span>
+          </div>
+        `;
+      }
+      if (actionEl) {
+        actionEl.classList.remove('hidden');
+        actionEl.innerHTML = `<a href="${targetUrl}" class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-950/80 border border-indigo-500/50 text-indigo-300 hover:text-white hover:bg-indigo-900 transition-all text-xs font-semibold shadow-lg">Click here if not redirected automatically &rarr;</a>`;
+      }
+
+      let attempts = 0;
+      const maxAttempts = 30;
+
+      setTimeout(() => {
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          if (statusText) {
+            statusText.innerText = `Waiting for portal restart and HTTPS socket activation (attempt ${attempts}/${maxAttempts})...`;
+          }
+
+          try {
+            await fetch(`${targetUrl}/api/system/version`, { mode: 'no-cors', cache: 'no-store' });
+            if (attempts >= 2) {
+              if (statusText) {
+                statusText.innerText = 'HTTPS service is online! Transitioning to secure portal...';
+              }
+              clearInterval(pollInterval);
+              setTimeout(() => {
+                window.location.href = targetUrl;
+              }, 800);
+              return;
+            }
+          } catch (e) {
+            // Service still rebooting or SSL handshake initializing
+          }
+
+          if (attempts >= 6) {
+            // Fallback after 6 attempts (~10 seconds): navigate directly so browser completes native HTTPS handshake
+            clearInterval(pollInterval);
+            if (statusText) {
+              statusText.innerText = 'Redirecting to secure HTTPS portal...';
+            }
+            window.location.href = targetUrl;
+          }
+        }, 1500);
+      }, 1500);
     }
 
     async function fetchTlsStatus() {
@@ -4978,7 +5080,11 @@
             out.className = "text-[11px] font-mono p-2 rounded-lg bg-emerald-950/40 border border-emerald-800 text-emerald-300 max-h-24 overflow-y-auto";
           }
           fetchTlsStatus();
-          showAlert('Certificate successfully renewed!');
+          const targetUrl = data.canonical_url || (window.location.hostname ? `https://${window.location.hostname}:8080` : 'https://thestygianarchitect.duckdns.org:8080');
+          setTimeout(() => {
+            closeTlsModal();
+            pollTlsReconnection(targetUrl);
+          }, 1200);
         } else {
           if (s4) s4.className = 'p-1.5 rounded-lg bg-rose-950/60 border border-rose-600 text-rose-300 font-bold';
           if (out) {
@@ -5006,10 +5112,27 @@
       }
     }
 
+    function triggerUpgradeToHttps() {
+      const canonical = (window.lastTlsStatus && window.lastTlsStatus.canonical_url) ||
+                        document.getElementById('headerSuiteLogoLink')?.href ||
+                        'https://thestygianarchitect.duckdns.org:8080';
+      pollTlsReconnection(canonical);
+    }
+
+    function dismissInsecureBanner() {
+      const banner = document.getElementById('insecureHttpBanner');
+      if (banner) banner.classList.add('hidden');
+      sessionStorage.setItem('dismissInsecureBanner', 'true');
+    }
+
     window.onload = () => {
       if (window.location.protocol === 'http:') {
         const logoLink = document.getElementById('headerSuiteLogoLink');
         console.info('[Portal Security] Insecure plaintext HTTP session detected. Use header link to transition to canonical HTTPS:', logoLink ? logoLink.href : 'https://thestygianarchitect.duckdns.org:8080');
+        if (!sessionStorage.getItem('dismissInsecureBanner')) {
+          const banner = document.getElementById('insecureHttpBanner');
+          if (banner) banner.classList.remove('hidden');
+        }
       }
       loadSettings();
       connectWebSocket();

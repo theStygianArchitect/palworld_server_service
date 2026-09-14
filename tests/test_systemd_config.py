@@ -44,6 +44,7 @@ def test_deploy_script_sudoers_configuration() -> None:
     assert "/etc/sudoers.d/palmanager" in content
     assert "deploy.sh *" in content
     assert "palworld-cert-manager.sh" not in content
+    assert "systemctl restart palworld-manager.service" in content
 
 
 def test_install_script_sudoers_configuration() -> None:
@@ -58,6 +59,7 @@ def test_install_script_sudoers_configuration() -> None:
     assert "/etc/sudoers.d/palmanager" in content
     assert "deploy.sh *" in content
     assert "palworld-cert-manager.sh" not in content
+    assert "systemctl restart palworld-manager.service" in content
 
 
 def test_palworld_cert_renew_service_definition() -> None:

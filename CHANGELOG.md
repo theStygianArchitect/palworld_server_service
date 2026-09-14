@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tiered TLS provisioning strategy: Tier 1 ACME/Let's Encrypt → Tier 2 self-signed fallback with loud warning logs on ACME failure.
 - Resilient `ImportError` guard in `app/main.py` — service boots in degraded mode if `cryptography` is temporarily unavailable during upgrade window.
 - Regression tests for ACME provisioning flow, self-signed fallback, and token-absent skip behavior.
+- Closed-loop TLS reactivation overlay (`pollTlsReconnection`) with cross-origin socket liveness probing, visual stage indicators, and attempt telemetry in `app/templates/index.html`.
+- 1-click "Switch to Secure HTTPS" upgrade banners across insecure plaintext HTTP sessions in `app/templates/index.html` (dismissible with session storage persistence) and `app/templates/login.html` (instant pre-auth `/canonical` redirect).
+- Created `ui-ux-architect` skill and updated `implementation-architect` v1.7.0 to mandate 6-state UX lifecycle parity and eliminate blind timers.
 
 ### Fixed
 - `provision_tls_certificates()` now executes ACME DNS-01 flow before falling through to self-signed (previously always generated self-signed, ignoring the `token` parameter). Closes #54.
@@ -24,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /api/system/tls/renew` respects `payload.force` instead of hardcoding `force=True`.
 - `GET /api/system/tls/status` reports `auto_renew_active=True` reflecting the active `palworld-cert-renew.timer`.
 - `palworld-cert-renew.service` now runs as `User=palmanager` / `Group=palmanager` instead of root.
+- Sudoers expanded for `palworld-manager.service` restart; TLS renewal handler dispatches delayed restart and auto-redirects web client to canonical HTTPS URL. Closes #58.
 - `scripts/install.sh` includes `cryptography` in venv pip install (previously omitted).
 
 ### Removed

@@ -20,18 +20,12 @@ from app.api.schemas import (
 )
 from app.core.logger import log
 from app.database import UserRecord
-
-# pylint: disable=unused-import
-from app.routers.deps import (  # noqa: F401
+from app.routers.deps import (
     db,
     get_current_user_optional,
-    perm_admin,
     perm_feedback_submit,
-    perm_view,
     settings,
 )
-
-# pylint: enable=unused-import
 
 router = APIRouter(tags=["Feedback & Issues"])
 

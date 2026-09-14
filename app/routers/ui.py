@@ -5,20 +5,35 @@ Provides endpoints for serving HTML views and UI templates.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.logger import log
-
-# pylint: disable=unused-import
-from app.routers.deps import get_current_user_optional, settings  # noqa: F401
-
-# pylint: enable=unused-import
-
+from app.routers.deps import get_current_user_optional
 
 router = APIRouter(tags=["User Interface"])
+TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+
+
+def _read_template_file(filename: str) -> str | None:
+    """Synchronously reads a template file from the templates directory.
+
+    Args:
+        filename: File basename within app/templates/.
+
+    Returns:
+        str | None: Decoded HTML template content, or None on failure or missing file.
+    """
+    path = TEMPLATES_DIR / filename
+    if path.is_file():
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError as err:
+            log.warning("Error reading template file at %s: %s", path, err)
+    return None
 
 
 @router.get("/", response_class=HTMLResponse, response_model=None)
@@ -40,12 +55,9 @@ async def serve_dashboard(request: Request) -> HTMLResponse | RedirectResponse:
     if user is None:
         # Preserve deep-link so the login page can redirect back after successful sign-in.
         return RedirectResponse(url="/login?next=/", status_code=302)
-    template_path = Path(__file__).resolve().parent.parent / "templates" / "index.html"  # noqa: ASYNC240
-    if template_path.exists():
-        try:
-            return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
-        except OSError as err:
-            log.warning("Error reading template file at %s: %s", template_path, err)
+    content = await asyncio.to_thread(_read_template_file, "index.html")
+    if content:
+        return HTMLResponse(content=content)
     return HTMLResponse("<h2>Palworld Operations Suite Dashboard</h2><p>Template loading...</p>")
 
 
@@ -66,13 +78,10 @@ async def serve_login_page(request: Request) -> HTMLResponse | RedirectResponse:
     if user is not None:
         next_url = request.query_params.get("next", "/")
         return RedirectResponse(url=next_url, status_code=302)
-    template_path = Path(__file__).resolve().parent.parent / "templates" / "login.html"  # noqa: ASYNC240
-    if template_path.exists():
-        try:
-            return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
-        except OSError as err:
-            log.warning("Error reading login template at %s: %s", template_path, err)
-    # Fallback minimal page — template creation is covered in Task 3.5
+    content = await asyncio.to_thread(_read_template_file, "login.html")
+    if content:
+        return HTMLResponse(content=content)
+    # Fallback minimal page
     return HTMLResponse(
         "<h2>Palworld Manager — Login</h2><p>Login template not found. Please redeploy.</p>",
         status_code=200,
@@ -100,12 +109,9 @@ async def serve_observability_dashboard() -> HTMLResponse:
     Returns:
         HTMLResponse: Rendered observability dashboard HTML content.
     """
-    template_path = Path(__file__).resolve().parent.parent / "templates" / "metrics.html"  # noqa: ASYNC240
-    if template_path.exists():
-        try:
-            return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
-        except OSError as err:
-            log.warning("Error reading template file at %s: %s", template_path, err)
+    content = await asyncio.to_thread(_read_template_file, "metrics.html")
+    if content:
+        return HTMLResponse(content=content)
     return HTMLResponse("<h2>Palworld Observability Dashboard</h2><p>Template loading...</p>")
 
 
@@ -116,10 +122,7 @@ async def serve_feedback_page() -> HTMLResponse:
     Returns:
         HTMLResponse: Rendered feedback page HTML content.
     """
-    template_path = Path(__file__).resolve().parent.parent / "templates" / "feedback.html"  # noqa: ASYNC240
-    if template_path.exists():
-        try:
-            return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
-        except OSError as err:
-            log.warning("Error reading template file at %s: %s", template_path, err)
+    content = await asyncio.to_thread(_read_template_file, "feedback.html")
+    if content:
+        return HTMLResponse(content=content)
     return HTMLResponse("<h2>Feedback & Issue Tracker</h2><p>Template loading...</p>")
