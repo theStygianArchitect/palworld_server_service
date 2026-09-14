@@ -27,7 +27,6 @@ from app.core.config import inspect_certificate, reload_settings, resolve_ssl_pa
 from app.core.logger import log
 from app.database import MetricSnapshotRecord, bootstrap_admin_user
 from app.engine.service import LOCK_FILE
-from app.engine.tls_manager import provision_tls_certificates, sync_duckdns_ip
 from app.routers import (
     auth_router,
     feedback_router,
@@ -52,6 +51,19 @@ from app.routers.deps import (
     updater,
 )
 from app.routers.settings import stage_settings_for_reboot
+
+# Resilient import: prevents unbootable service if cryptography is temporarily missing during upgrade
+_tls_import_err: BaseException | None = None
+try:
+    from app.engine.duckdns import sync_duckdns_ip
+    from app.engine.tls_manager import provision_tls_certificates
+    _TLS_ENGINE_AVAILABLE = True
+except ImportError as _exc:  # ImportError catches ModuleNotFoundError (subclass)
+    _TLS_ENGINE_AVAILABLE = False
+    _tls_import_err = _exc
+    provision_tls_certificates = None  # type: ignore[assignment]  # pylint: disable=invalid-name
+    sync_duckdns_ip = None  # type: ignore[assignment]  # pylint: disable=invalid-name
+    log.warning("TLS Engine dependencies unavailable (%s). Running in degraded mode.", _exc)
 
 
 async def telemetry_streamer() -> None:
@@ -134,6 +146,9 @@ async def telemetry_streamer() -> None:
 
 async def trigger_duckdns_sync() -> None:
     """Invokes DuckDNS dynamic DNS updater on startup if available on the host."""
+    if not _TLS_ENGINE_AVAILABLE:
+        log.warning("DuckDNS sync skipped: TLS engine dependencies unavailable")
+        return
     if not settings.duckdns_domain or not settings.duckdns_token:
         return
     log.info("Triggering DuckDNS dynamic DNS synchronization directly via Python httpx")
@@ -150,6 +165,9 @@ async def trigger_duckdns_sync() -> None:
 async def trigger_tls_provisioning_check() -> None:
     """Checks TLS certificate availability on startup and initiates provisioning if absent."""
     if resolve_ssl_paths(settings) is not None:
+        return
+    if not _TLS_ENGINE_AVAILABLE:
+        log.warning("TLS provisioning check skipped: TLS engine dependencies unavailable")
         return
 
     raw_domain = str(settings.duckdns_domain or "").strip().lower()
@@ -392,6 +410,7 @@ app.include_router(feedback_router)
 
 __all__ = [
     "LOCK_FILE",
+    "_TLS_ENGINE_AVAILABLE",
     "app",
     "db",
     "engine",

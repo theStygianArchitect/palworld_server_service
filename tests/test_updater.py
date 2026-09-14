@@ -258,8 +258,8 @@ def test_get_deployment_progress_active_and_parsing(temp_watcher: UpdateWatcher,
     log_file = tmp_path / "deploy.log"
     log_file.write_text(
         "[STEP 1/5] Pulling latest updates from origin/main... [ OK ]\n"
-        "[STEP 2/5] Syncing application code & systemd units... [ OK ]\n"
-        "[STEP 3/5] Enforcing cross-user POSIX ACLs and storage permissions...\n",
+        "[STEP 2/5] Updating Python dependencies via uv... [ OK ]\n"
+        "[STEP 3/5] Syncing application code & systemd units...\n",
         encoding="utf-8",
     )
 

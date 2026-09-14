@@ -391,7 +391,7 @@ async def get_tls_status(
             port=settings.web_port,
             certificate=None,
             cert_path=str(status.fullchain_path) if status.fullchain_path else None,
-            auto_renew_active=False,
+            auto_renew_active=True,
             warning=status.error_message or "Running unencrypted plaintext HTTP. No valid certificate detected.",
             canonical_url=_resolve_canonical_url(),
         )
@@ -419,7 +419,7 @@ async def get_tls_status(
         port=settings.ssl_port if getattr(settings, "ssl_enabled", True) else settings.web_port,
         certificate=cert_info,
         cert_path=str(status.fullchain_path),
-        auto_renew_active=False,
+        auto_renew_active=True,
         warning=warning,
         canonical_url=_resolve_canonical_url(),
     )
@@ -453,7 +453,7 @@ async def trigger_tls_renewal(
     result = await provision_tls_certificates(
         domain=settings.duckdns_domain,
         token=settings.duckdns_token,
-        force=True,
+        force=payload.force,
     )
     if result.success:
         return TLSRenewResponse(

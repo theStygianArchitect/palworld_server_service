@@ -280,13 +280,13 @@ def test_native_python_tls_engine_contract() -> None:
     assert tls_manager_path.exists(), f"TLS engine not found at {tls_manager_path}"
 
     # Verify functions can be imported
+    from app.engine.duckdns import sync_duckdns_ip  # pylint: disable=import-outside-toplevel
     from app.engine.tls_manager import (  # pylint: disable=import-outside-toplevel
         generate_csr,
         generate_private_key,
         generate_self_signed_certificate,
         get_tls_certificate_status,
         provision_tls_certificates,
-        sync_duckdns_ip,
     )
 
     assert callable(provision_tls_certificates)

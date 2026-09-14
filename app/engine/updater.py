@@ -483,9 +483,9 @@ class UpdateWatcher:
 
         default_steps = [
             DeploymentStepInfo(index=1, name="Pulling latest updates from origin", status="pending"),
-            DeploymentStepInfo(index=2, name="Syncing application code & systemd units", status="pending"),
-            DeploymentStepInfo(index=3, name="Enforcing POSIX ACLs & storage permissions", status="pending"),
-            DeploymentStepInfo(index=4, name="Updating Python dependencies via uv", status="pending"),
+            DeploymentStepInfo(index=2, name="Updating Python dependencies via uv", status="pending"),
+            DeploymentStepInfo(index=3, name="Syncing application code & systemd units", status="pending"),
+            DeploymentStepInfo(index=4, name="Enforcing POSIX ACLs & storage permissions", status="pending"),
             DeploymentStepInfo(index=5, name="Restarting palworld-manager.service", status="pending"),
         ]
 

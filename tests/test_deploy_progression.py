@@ -104,9 +104,9 @@ def test_get_deploy_progress_active_streaming(client_fixture: tuple[TestClient, 
     )
     simulated_log_lines = (
         "Execution initiated at 2026-09-09 14:00:00 UTC\n"
-        "[STEP 1/5] Synchronizing git tree against origin/main... [ OK ]\n"
-        "[STEP 2/5] Updating python dependencies via uv sync... [ OK ]\n"
-        "[STEP 3/5] Running database migrations on sqlite storage...\n"
+        "[STEP 1/5] Pulling latest updates from origin/main... [ OK ]\n"
+        "[STEP 2/5] Updating Python dependencies via uv... [ OK ]\n"
+        "[STEP 3/5] Syncing application code & systemd units...\n"
     )
     log_file.write_text(simulated_log_lines, encoding="utf-8")
 

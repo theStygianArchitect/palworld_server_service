@@ -1,6 +1,6 @@
 [project]
 name = "palworld-web-manager"
-version = "0.4.3"
+version = "0.4.4"
 description = "Palworld Dedicated Server Operations Suite & Web Management Plane"
 readme = "README.md"
 authors = [
@@ -78,6 +78,7 @@ select = [
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.Query", "fastapi.params.Query"]
+
 
 [tool.mypy]
 ignore_missing_imports = true

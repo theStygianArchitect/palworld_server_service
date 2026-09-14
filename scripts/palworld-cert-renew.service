@@ -6,6 +6,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+User=palmanager
+Group=palmanager
+WorkingDirectory=/opt/palworld-web-manager
 ExecStart=/opt/palworld-web-manager/.venv/bin/python -m app.engine.tls_manager renew
 StandardOutput=journal
 StandardError=journal

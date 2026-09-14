@@ -25,8 +25,6 @@ def test_palworld_manager_service_sandbox_configuration() -> None:
     required_paths = [
         "/var/lib/palmanager",
         "/opt/palworld-web-manager",
-        "/etc/letsencrypt",
-        "/var/log/letsencrypt",
         "/etc/sudoers.d",
         "/etc/systemd/system",
     ]
@@ -68,3 +66,5 @@ def test_palworld_cert_renew_service_definition() -> None:
     assert service_file.is_file(), f"Service unit file not found: {service_file}"
     content = service_file.read_text(encoding="utf-8")
     assert "ExecStart=/opt/palworld-web-manager/.venv/bin/python -m app.engine.tls_manager renew" in content
+    assert "User=palmanager" in content, "palworld-cert-renew.service must run as palmanager user"
+    assert "Group=palmanager" in content, "palworld-cert-renew.service must run as palmanager group"

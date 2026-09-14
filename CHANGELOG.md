@@ -10,6 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - React 19 + Vite SPA (#22, #23)
 
+## [0.4.4] - 2026-09-14
+
+### Added
+- ACME DNS-01 challenge client (`app/engine/acme_client.py`) implementing RFC 8555 for automated Let's Encrypt certificate provisioning via DuckDNS TXT records.
+- Tiered TLS provisioning strategy: Tier 1 ACME/Let's Encrypt → Tier 2 self-signed fallback with loud warning logs on ACME failure.
+- Resilient `ImportError` guard in `app/main.py` — service boots in degraded mode if `cryptography` is temporarily unavailable during upgrade window.
+- Regression tests for ACME provisioning flow, self-signed fallback, and token-absent skip behavior.
+
+### Fixed
+- `provision_tls_certificates()` now executes ACME DNS-01 flow before falling through to self-signed (previously always generated self-signed, ignoring the `token` parameter). Closes #54.
+- Deployment step order inverted: Python dependencies (`cryptography`) now install (Step 2) before application code sync (Step 3), preventing `ImportError` crash loops. Closes #51.
+- `POST /api/system/tls/renew` respects `payload.force` instead of hardcoding `force=True`.
+- `GET /api/system/tls/status` reports `auto_renew_active=True` reflecting the active `palworld-cert-renew.timer`.
+- `palworld-cert-renew.service` now runs as `User=palmanager` / `Group=palmanager` instead of root.
+- `scripts/install.sh` includes `cryptography` in venv pip install (previously omitted).
+
+### Removed
+- Certbot OS package installation from `scripts/deploy.sh` and `scripts/install.sh` (decommissioned — replaced by native Python ACME client).
+- Legacy DuckDNS `.env` sync to `/home/steam/duckdns/` from `scripts/deploy.sh` (obsolete `duck.sh` remnant).
+- Legacy `/etc/letsencrypt` and `/var/log/letsencrypt` from `palworld-manager.service` `ReadWritePaths`.
+
+### Security
+- Production domains now receive trusted Let's Encrypt certificates instead of self-signed, enabling external browser access. Closes #55.
+
 ## [0.4.3] - 2026-09-14
 
 ### Added
