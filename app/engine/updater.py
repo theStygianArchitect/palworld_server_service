@@ -82,39 +82,43 @@ def _spawn_detached_deployer(deploy_script: Path, target_branch: str) -> None:
     """
     deploy_log_path = _resolve_default_deploy_log_path()
     now_dt = datetime.datetime.now(datetime.timezone.utc)
-    # Open log file handle for non-blocking detached process redirect
-    # pylint: disable=consider-using-with
-    log_fd = open(deploy_log_path, "a", encoding="utf-8")  # noqa: SIM115
-    log_fd.write(f"\n--- Update Deployment Triggered at {now_dt} ---\n")
-    log_fd.flush()
+    with deploy_log_path.open("a", encoding="utf-8") as log_fd:
+        log_fd.write(f"\n--- Update Deployment Triggered at {now_dt} ---\n")
+        log_fd.flush()
 
-    if os.name == "posix":
-        # sudo(8) must run as root to restart systemd service after deployment.
-        # The deploy.sh script path is validated as an existing file before reaching this call.
-        runner_path = DEFAULT_DEPLOY_RUNNER
-        script_to_exec = deploy_script
-        try:
-            shutil.copy2(deploy_script, runner_path)
-            os.chmod(runner_path, 0o755)  # nosec B103 - runner requires execution permissions for sudo
-            script_to_exec = runner_path
-        except OSError as err:
-            log.warning("Could not stage deploy script to %s: %s. Falling back to %s", runner_path, err, deploy_script)
+        # Detached deployment runner must outlive parent web service process lifecycle
+        if os.name == "posix":
+            runner_path = DEFAULT_DEPLOY_RUNNER
+            script_to_exec = deploy_script
+            try:
+                shutil.copy2(deploy_script, runner_path)
+                os.chmod(runner_path, 0o755)  # nosec B103 - runner requires execution permissions for sudo
+                script_to_exec = runner_path
+            except OSError as err:
+                log.warning(
+                    "Could not stage deploy script to %s: %s. Falling back to %s",
+                    runner_path,
+                    err,
+                    deploy_script,
+                )
 
-        # start_new_session=True ensures the child process outlives the parent web process restart.
-        sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"  # nosec B607 - absolute path resolved
-        subprocess.Popen(  # nosec B603 - argument list is validated; no shell=True; setuid binary required
-            [sudo_bin, "-n", str(script_to_exec), target_branch],
-            stdout=log_fd,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-    else:
-        bash_bin = shutil.which("bash") or "bash"  # nosec B607 - absolute path resolved via shutil.which
-        subprocess.Popen(  # nosec B603 - argument list is validated; no shell=True; Windows dev-only path
-            [bash_bin, str(deploy_script), target_branch],
-            stdout=log_fd,
-            stderr=subprocess.STDOUT,
-        )
+            # start_new_session=True ensures the child process outlives the parent web process restart.
+            sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"  # nosec B607 - absolute path resolved
+            # pylint: disable-next=consider-using-with
+            subprocess.Popen(  # nosec B603 - argument list is validated; no shell=True; setuid binary required
+                [sudo_bin, "-n", str(script_to_exec), target_branch],
+                stdout=log_fd,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        else:
+            bash_bin = shutil.which("bash") or "bash"  # nosec B607 - absolute path resolved via shutil.which
+            # pylint: disable-next=consider-using-with
+            subprocess.Popen(  # nosec B603 - argument list is validated; no shell=True; Windows dev-only path
+                [bash_bin, str(deploy_script), target_branch],
+                stdout=log_fd,
+                stderr=subprocess.STDOUT,
+            )
 
 
 class UpdateWatcher:
