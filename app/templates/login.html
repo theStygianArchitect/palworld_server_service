@@ -55,6 +55,22 @@
   <main class="flex-1 flex items-center justify-center px-4 py-12">
     <div class="w-full max-w-md space-y-4">
 
+      <!-- Insecure Plaintext HTTP Session Warning Banner -->
+      <div id="insecureLoginBanner" class="hidden bg-amber-950/60 border border-amber-500/50 rounded-xl p-4 text-xs text-amber-200 shadow-lg">
+        <div class="flex items-start gap-3">
+          <span class="text-lg flex-shrink-0">⚠️</span>
+          <div class="flex-1 min-w-0">
+            <h4 class="font-semibold text-amber-300 text-xs mb-1">Insecure Connection Detected</h4>
+            <p class="text-amber-200/80 leading-relaxed mb-2.5">
+              You are accessing this login portal over plaintext HTTP. Any credentials entered will not be encrypted in transit.
+            </p>
+            <a id="btnUpgradeLoginHttps" href="/canonical" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs shadow transition">
+              <span>🔒</span> Switch to Secure HTTPS
+            </a>
+          </div>
+        </div>
+      </div>
+
       <!-- First-Spin Setup Credential Card -->
       <div id="setupCard" class="hidden fade-in bg-amber-950/50 border border-amber-600/60 rounded-xl p-5 shadow-lg shadow-amber-900/20">
         <div class="flex items-start gap-3">
@@ -187,6 +203,11 @@
     let _ephemeralPassword = null;
     let _passwordVisible = false;
     const _nextUrl = new URLSearchParams(window.location.search).get('next') || '/';
+
+    if (window.location.protocol === 'http:') {
+      const banner = document.getElementById('insecureLoginBanner');
+      if (banner) banner.classList.remove('hidden');
+    }
 
     (async function checkBootstrapState() {
       try {

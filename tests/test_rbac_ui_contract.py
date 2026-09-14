@@ -439,3 +439,29 @@ def test_dashboard_header_canonical_link_contract() -> None:
         or "headerSuiteLogoLink.href = data.canonical_url" in script_section
     )
     assert "window.location.protocol === 'http:'" in script_section
+
+
+def test_insecure_http_upgrade_banner_contracts() -> None:
+    """Verifies that insecure HTTP warning banner and 1-click HTTPS upgrade button exist in index.html."""
+    html_path = Path(__file__).resolve().parent.parent / "app" / "templates" / "index.html"
+    assert html_path.exists()
+    html = html_path.read_text(encoding="utf-8")
+
+    assert 'id="insecureHttpBanner"' in html
+    assert 'id="btnUpgradeToHttps"' in html
+    assert "triggerUpgradeToHttps()" in html
+    assert "dismissInsecureBanner()" in html
+    assert "Switch to Secure HTTPS" in html
+
+
+def test_insecure_login_upgrade_banner_contract() -> None:
+    """Verifies that insecure HTTP warning banner and canonical link exist in login.html."""
+    login_path = Path(__file__).resolve().parent.parent / "app" / "templates" / "login.html"
+    assert login_path.exists()
+    html = login_path.read_text(encoding="utf-8")
+
+    assert 'id="insecureLoginBanner"' in html
+    assert 'id="btnUpgradeLoginHttps"' in html
+    assert 'href="/canonical"' in html
+    assert "Switch to Secure HTTPS" in html
+    assert "window.location.protocol === 'http:'" in html
