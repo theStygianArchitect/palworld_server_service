@@ -116,7 +116,12 @@ git checkout "${TARGET_BRANCH}"
 git pull origin "${TARGET_BRANCH}"
 echo "[ OK ]"
 
-echo -n "[STEP 2/5] Syncing application code & systemd units... "
+echo -n "[STEP 2/5] Updating Python dependencies via uv... "
+cd "${APP_DIR}"
+su -s /bin/bash "${APP_USER}" -c "uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil cryptography > /dev/null"
+echo "[ OK ]"
+
+echo -n "[STEP 3/5] Syncing application code & systemd units... "
 DEPLOYED_VERSION="0.4.1"
 if [ -f "${REPO_ROOT}/pyproject.toml" ]; then
     DEPLOYED_VERSION=$(grep -m1 '^version =' "${REPO_ROOT}/pyproject.toml" | cut -d'"' -f2 2>/dev/null || echo "0.4.1")
@@ -174,27 +179,10 @@ fi
 systemctl daemon-reload
 systemctl enable --now palworld-cert-renew.timer 2>/dev/null || true
 
-# Provision certbot if not already present
-if ! command -v certbot >/dev/null 2>&1; then
-    if command -v apt-get >/dev/null 2>&1; then
-        export DEBIAN_FRONTEND=noninteractive
-        apt-get update -qq && apt-get install -y -qq certbot >/dev/null 2>&1 || true
-    elif command -v dnf >/dev/null 2>&1; then
-        dnf install -y -q certbot >/dev/null 2>&1 || true
-    elif command -v pacman >/dev/null 2>&1; then
-        pacman -Sy --noconfirm --needed certbot >/dev/null 2>&1 || true
-    fi
-fi
-
-if [ -f "${APP_DIR}/.env" ] && [ -d "/home/steam/duckdns" ]; then
-    cp "${APP_DIR}/.env" /home/steam/duckdns/.env
-    chmod 0600 /home/steam/duckdns/.env
-    chown steam:steam /home/steam/duckdns/.env 2>/dev/null || true
-fi
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
 echo "[ OK ]"
 
-echo -n "[STEP 3/5] Enforcing cross-user POSIX ACLs and storage permissions... "
+echo -n "[STEP 4/5] Enforcing cross-user POSIX ACLs and storage permissions... "
 id -u steam >/dev/null 2>&1 && usermod -aG steam "${APP_USER}" 2>/dev/null || true
 id -u steam >/dev/null 2>&1 && chmod 0755 /home/steam 2>/dev/null || true
 
@@ -254,14 +242,9 @@ fi
 
 echo "[ OK ]"
 
-echo -n "[STEP 4/5] Updating Python dependencies via uv... "
-cd "${APP_DIR}"
-su -s /bin/bash "${APP_USER}" -c "uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil cryptography > /dev/null"
-echo "[ OK ]"
-
 # Ensure TLS certificates are provisioned before service starts
 if [ ! -f "/var/lib/palmanager/certs/fullchain.pem" ]; then
-    echo -n "[*] Certificates missing. Triggering Let's Encrypt TLS issuance... "
+    echo -n "[*] Certificates missing. Triggering TLS certificate provisioning... "
     su -s /bin/bash "${APP_USER}" -c ".venv/bin/python -m app.engine.tls_manager renew" || true
     echo "[ OK ]"
 fi

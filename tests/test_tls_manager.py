@@ -239,3 +239,69 @@ def test_cli_main_entrypoint(tmp_path: Path, monkeypatch, capsys):
         assert main(["sync-dns", "--domain", domain, "--token", "abc", "--ip", "1.1.1.1"]) == 0
         captured = capsys.readouterr()
         assert "Successfully synced DNS" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_provision_attempts_acme_before_self_signed(tmp_path):
+    """Verify ACME is attempted when a DuckDNS token is provided."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.engine.acme_client import ACMECertificateResult
+
+    mock_acme_result = ACMECertificateResult(
+        success=True,
+        fullchain_pem=b"-----BEGIN CERTIFICATE-----\nMOCK\n-----END CERTIFICATE-----\n",
+        error=None,
+    )
+    with patch("app.engine.acme_client.perform_dns01_flow", new_callable=AsyncMock, return_value=mock_acme_result):
+        result = await provision_tls_certificates(
+            domain="test.duckdns.org",
+            token="test-token-123",
+            force=True,
+            stage_dir=tmp_path,
+        )
+    assert result.success is True
+    assert result.mode == TLSProvisionMode.ACME_LETSENCRYPT
+    assert "Let's Encrypt" in result.message
+    assert result.days_remaining == 90
+
+
+@pytest.mark.asyncio
+async def test_provision_falls_back_to_self_signed_on_acme_failure(tmp_path):
+    """Verify self-signed fallback when ACME fails."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.engine.acme_client import ACMECertificateResult
+
+    mock_acme_result = ACMECertificateResult(
+        success=False,
+        fullchain_pem=None,
+        error="Challenge validation failed",
+    )
+    with patch("app.engine.acme_client.perform_dns01_flow", new_callable=AsyncMock, return_value=mock_acme_result):
+        result = await provision_tls_certificates(
+            domain="test.duckdns.org",
+            token="test-token-123",
+            force=True,
+            stage_dir=tmp_path,
+        )
+    assert result.success is True
+    assert result.mode == TLSProvisionMode.SELF_SIGNED_FALLBACK
+    assert result.days_remaining == 365
+
+
+@pytest.mark.asyncio
+async def test_provision_skips_acme_without_token(tmp_path):
+    """Verify ACME is skipped when no token is provided."""
+    from unittest.mock import AsyncMock, patch
+
+    with patch("app.engine.acme_client.perform_dns01_flow", new_callable=AsyncMock) as mock_acme:
+        result = await provision_tls_certificates(
+            domain="test.duckdns.org",
+            token="",
+            force=True,
+            stage_dir=tmp_path,
+        )
+    mock_acme.assert_not_called()
+    assert result.success is True
+    assert result.mode == TLSProvisionMode.SELF_SIGNED_FALLBACK

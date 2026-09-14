@@ -1,6 +1,6 @@
 [project]
 name = "palworld-web-manager"
-version = "0.4.3"
+version = "0.4.4"
 description = "Palworld Dedicated Server Operations Suite & Web Management Plane"
 readme = "README.md"
 authors = [
@@ -79,6 +79,10 @@ select = [
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends", "fastapi.params.Depends", "fastapi.Query", "fastapi.params.Query"]
 
+[tool.ruff.lint.per-file-ignores]
+# E402: resilient try/except import guard for tls_manager deliberately pushes subsequent imports below top-of-file
+"app/main.py" = ["E402"]
+
 [tool.mypy]
 ignore_missing_imports = true
 follow_imports = "skip"
@@ -91,7 +95,7 @@ convention = "google"
 max-line-length = 120
 
 [tool.pylint."messages control"]
-disable = []
+disable = ["R0401"]  # cyclic-import: deliberate lazy import pattern between acme_client ↔ tls_manager
 
 [tool.pycodestyle]
 max-line-length = 120

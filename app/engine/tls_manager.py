@@ -469,15 +469,17 @@ def get_tls_certificate_status(stage_dir: Path | None = None, domain: str | None
     )
 
 
-# pylint: disable=unused-argument
 async def provision_tls_certificates(
     domain: str, token: str, force: bool = False, stage_dir: Path | None = None
 ) -> TLSProvisionResult:
-    """Provision TLS certificates, falling back to self-signed if ACME fails.
+    """Provision TLS certificates with tiered strategy.
+
+    Tier 1: ACME DNS-01 via Let's Encrypt (requires valid DuckDNS token).
+    Tier 2: Self-signed fallback (if ACME fails or token unavailable).
 
     Args:
         domain: The domain to secure.
-        token: DuckDNS API token (or ACME API token if applicable).
+        token: DuckDNS API token for DNS-01 challenge and IP sync.
         force: Force renewal even if current certificate is valid.
         stage_dir: Directory to save certificates.
 
@@ -498,6 +500,43 @@ async def provision_tls_certificates(
 
     private_key = generate_private_key()
 
+    # Tier 1: Attempt ACME DNS-01 via Let's Encrypt
+    if token and token.strip():
+        # Local import to avoid circular dependency
+        from app.engine.acme_client import perform_dns01_flow  # pylint: disable=import-outside-toplevel
+        logger.info("Attempting ACME DNS-01 certificate provisioning for %s", domain)
+        try:
+            acme_result = await perform_dns01_flow(
+                domain=domain,
+                duckdns_token=token,
+                private_key=private_key,
+            )
+            if acme_result.success and acme_result.fullchain_pem:
+                key_pem = private_key_to_pem(private_key)
+                fullchain, privkey = stage_tls_bundle(
+                    acme_result.fullchain_pem, key_pem, stage_dir=stage_dir,
+                )
+                logger.info("ACME DNS-01 certificate provisioned successfully for %s", domain)
+                return TLSProvisionResult(
+                    success=True,
+                    mode=TLSProvisionMode.ACME_LETSENCRYPT,
+                    domain=domain,
+                    fullchain_path=fullchain,
+                    privkey_path=privkey,
+                    days_remaining=90,
+                    message="Provisioned Let's Encrypt certificate via ACME DNS-01.",
+                )
+            logger.warning(
+                "ACME DNS-01 failed for %s: %s. Falling back to self-signed.",
+                domain,
+                acme_result.error,
+            )
+        except Exception:  # pylint: disable=broad-except
+            logger.exception("ACME DNS-01 unexpected error for %s. Falling back to self-signed.", domain)
+    else:
+        logger.info("No DuckDNS token provided. Skipping ACME, using self-signed certificate.")
+
+    # Tier 2: Self-signed fallback
     cert = generate_self_signed_certificate(private_key, domain)
     cert_pem = certificate_to_pem(cert)
     key_pem = private_key_to_pem(private_key)

@@ -35,23 +35,23 @@ if [ "${EUID}" -ne 0 ]; then
 fi
 
 # 1. System Dependencies & Build Toolchain
-echo -n "[1/8] Installing system dependencies, build toolchain, and certbot... "
+echo -n "[1/8] Installing system dependencies and build toolchain... "
 if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get install -y -qq curl git tar acl build-essential python3 python3-venv python3-pip iproute2 dnsutils ufw certbot >/dev/null 2>&1 || true
+    apt-get install -y -qq curl git tar acl build-essential python3 python3-venv python3-pip iproute2 dnsutils ufw >/dev/null 2>&1 || true
 elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y -q curl git tar acl gcc make python3 python3-pip python3-devel iproute bind-utils certbot >/dev/null 2>&1 || true
+    dnf install -y -q curl git tar acl gcc make python3 python3-pip python3-devel iproute bind-utils >/dev/null 2>&1 || true
 elif command -v yum >/dev/null 2>&1; then
-    yum install -y -q curl git tar acl gcc make python3 python3-pip python3-devel iproute bind-utils certbot >/dev/null 2>&1 || true
+    yum install -y -q curl git tar acl gcc make python3 python3-pip python3-devel iproute bind-utils >/dev/null 2>&1 || true
 elif command -v pacman >/dev/null 2>&1; then
-    pacman -Sy --noconfirm --needed curl git tar acl base-devel python python-pip iproute2 bind certbot >/dev/null 2>&1 || true
+    pacman -Sy --noconfirm --needed curl git tar acl base-devel python python-pip iproute2 bind >/dev/null 2>&1 || true
 elif command -v zypper >/dev/null 2>&1; then
-    zypper --non-interactive install -y curl git tar acl gcc make python3 python3-pip python3-devel iproute2 bind-utils certbot >/dev/null 2>&1 || true
+    zypper --non-interactive install -y curl git tar acl gcc make python3 python3-pip python3-devel iproute2 bind-utils >/dev/null 2>&1 || true
 elif command -v apk >/dev/null 2>&1; then
-    apk add --no-cache curl git tar acl build-base python3 py3-pip python3-dev iproute2 bind-tools certbot >/dev/null 2>&1 || true
+    apk add --no-cache curl git tar acl build-base python3 py3-pip python3-dev iproute2 bind-tools >/dev/null 2>&1 || true
 else
-    echo "[-] Warning: Unrecognized package manager. Ensure Python 3.10+, gcc, make, and certbot are available." >&2
+    echo "[-] Warning: Unrecognized package manager. Ensure Python 3.10+, gcc, and make are available." >&2
 fi
 echo "[ OK ]"
 
@@ -197,10 +197,10 @@ else
             cp "${host_uv}" /usr/local/bin/uv 2>/dev/null || true
             chmod 0755 /usr/local/bin/uv 2>/dev/null || true
         fi
-        su -s /bin/bash "${APP_USER}" -c "export PATH='/usr/local/bin:/usr/bin:/bin'; uv venv --clear .venv --python python3 >/dev/null 2>&1 && uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil >/dev/null 2>&1"
+        su -s /bin/bash "${APP_USER}" -c "export PATH='/usr/local/bin:/usr/bin:/bin'; uv venv --clear .venv --python python3 >/dev/null 2>&1 && uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil cryptography >/dev/null 2>&1"
     else
         # Pure standard library and native compiler fallback (zero external binary downloads)
-        su -s /bin/bash "${APP_USER}" -c "python3 -m venv --clear .venv >/dev/null 2>&1 && .venv/bin/python -m pip install --quiet --upgrade pip >/dev/null 2>&1 && .venv/bin/python -m pip install --quiet fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil >/dev/null 2>&1"
+        su -s /bin/bash "${APP_USER}" -c "python3 -m venv --clear .venv >/dev/null 2>&1 && .venv/bin/python -m pip install --quiet --upgrade pip >/dev/null 2>&1 && .venv/bin/python -m pip install --quiet fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil cryptography >/dev/null 2>&1"
     fi
     echo "[ OK (Virtualenv Built) ]"
 fi
@@ -218,7 +218,7 @@ echo "[ OK ]"
 
 # Provision initial TLS certificate if missing
 if [ ! -f "/var/lib/palmanager/certs/fullchain.pem" ]; then
-    echo -n "[*] Certificates missing. Triggering Let's Encrypt TLS issuance... "
+    echo -n "[*] Certificates missing. Triggering TLS certificate provisioning... "
     su -s /bin/bash "${APP_USER}" -c "cd /opt/palworld-web-manager && .venv/bin/python -m app.engine.tls_manager renew" || true
     echo "[ OK ]"
 fi
