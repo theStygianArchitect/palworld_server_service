@@ -45,7 +45,7 @@ def test_deploy_script_sudoers_configuration() -> None:
     content = deploy_script.read_text(encoding="utf-8")
     assert "/etc/sudoers.d/palmanager" in content
     assert "deploy.sh *" in content
-    assert "palworld-cert-manager.sh *" in content
+    assert "palworld-cert-manager.sh" not in content
 
 
 def test_install_script_sudoers_configuration() -> None:
@@ -59,4 +59,12 @@ def test_install_script_sudoers_configuration() -> None:
     content = install_script.read_text(encoding="utf-8")
     assert "/etc/sudoers.d/palmanager" in content
     assert "deploy.sh *" in content
-    assert "palworld-cert-manager.sh *" in content
+    assert "palworld-cert-manager.sh" not in content
+
+
+def test_palworld_cert_renew_service_definition() -> None:
+    """Verify that palworld-cert-renew.service invokes the native TLS engine."""
+    service_file = REPO_ROOT / "scripts" / "palworld-cert-renew.service"
+    assert service_file.is_file(), f"Service unit file not found: {service_file}"
+    content = service_file.read_text(encoding="utf-8")
+    assert "ExecStart=/opt/palworld-web-manager/.venv/bin/python -m app.engine.tls_manager renew" in content

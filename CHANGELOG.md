@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - React 19 + Vite SPA (#22, #23)
 
+## [0.4.3] - 2026-09-14
+
+### Added
+- Pure Python TLS Certificate Engine (`app/engine/tls_manager.py`) built with `cryptography` and `httpx`.
+- Automatic dual-tier resilience with self-signed certificate fallback ensuring port 8080 is guaranteed to bind with HTTPS.
+- Native in-process DuckDNS dynamic DNS updater (`sync_duckdns_ip`).
+- CLI entrypoints for TLS management: `python -m app.engine.tls_manager renew`, `sync-dns`, `status`.
+
+### Changed
+- Portal "Renew Certificate Now" button directly invokes Python in-process renewal without `sudo` or shell scripts (#21).
+- System startup lifespan provisions TLS certificates and syncs DuckDNS dynamic IP directly via Python `httpx`.
+- Systemd timer `palworld-cert-renew.service` executes `.venv/bin/python -m app.engine.tls_manager renew`.
+
+### Removed
+- Decommissioned 5 legacy shell scripts: `scripts/palworld-cert-manager.sh`, `scripts/certbot-duckdns-auth.sh`, `scripts/certbot-duckdns-cleanup.sh`, `scripts/palworld-cert-deploy-hook.sh`, and `scripts/duck.sh`.
+- Removed `palworld-cert-manager.sh` from `/etc/sudoers.d/palmanager` configuration.
+
 ## [0.4.2] - 2026-09-13
 
 ### Changed

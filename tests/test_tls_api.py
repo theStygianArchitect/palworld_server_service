@@ -5,14 +5,15 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.schemas import TLSCertificateInfo
 from app.database.models import UserRecord
+from app.engine.tls_manager import TLSCertificateStatus, TLSProvisionMode, TLSProvisionResult
 from app.main import app, db, get_current_user, trigger_tls_provisioning_check
 
 
@@ -40,7 +41,20 @@ def client() -> Generator[TestClient, None, None]:
 
 def test_get_tls_status_http_fallback(client: TestClient) -> None:
     """Tests GET /api/system/tls/status returns HTTP fallback when no certs exist."""
-    with patch("app.routers.system.resolve_ssl_paths", return_value=None):
+    mock_status = TLSCertificateStatus(
+        is_valid=False,
+        domain="localhost",
+        issuer="",
+        subject_alt_names=[],
+        not_before=None,
+        not_after=None,
+        days_remaining=0,
+        fullchain_path=None,
+        privkey_path=None,
+        is_self_signed=False,
+        error_message="Mock error",
+    )
+    with patch("app.routers.system.get_tls_certificate_status", return_value=mock_status):
         resp = client.get("/api/system/tls/status")
         assert resp.status_code == 200
         data = resp.json()
@@ -59,20 +73,20 @@ def test_get_tls_status_https_active(client: TestClient, tmp_path: Path) -> None
     cert_path.touch()
     key_path.touch()
 
-    mock_cert_info = TLSCertificateInfo(
-        subject="api-gateway.duckdns.org",
+    mock_status = TLSCertificateStatus(
+        is_valid=True,
+        domain="api-gateway.duckdns.org",
         issuer="Let's Encrypt Authority R3",
-        valid_from="2026-08-15T12:00:00Z",
-        expires_at="2026-11-15T12:00:00Z",
+        subject_alt_names=["api-gateway.duckdns.org", "palworld.duckdns.org"],
+        not_before=datetime(2026, 8, 15, 12, 0, tzinfo=timezone.utc),
+        not_after=datetime(2026, 11, 15, 12, 0, tzinfo=timezone.utc),
         days_remaining=67,
-        is_expired=False,
-        san_list=["api-gateway.duckdns.org", "palworld.duckdns.org"],
+        fullchain_path=cert_path,
+        privkey_path=key_path,
+        is_self_signed=False,
     )
 
-    with (
-        patch("app.routers.system.resolve_ssl_paths", return_value=(cert_path, key_path)),
-        patch("app.routers.system.inspect_certificate", return_value=mock_cert_info),
-    ):
+    with patch("app.routers.system.get_tls_certificate_status", return_value=mock_status):
         resp = client.get("/api/system/tls/status")
         assert resp.status_code == 200
         data = resp.json()
@@ -85,36 +99,48 @@ def test_get_tls_status_https_active(client: TestClient, tmp_path: Path) -> None
         assert data["canonical_url"] == "https://thestygianarchitect.duckdns.org:8080"
 
 
-def test_post_tls_renew_skipped_when_script_absent(client: TestClient) -> None:
-    """Tests POST /api/system/tls/renew handles absent palworld-cert-manager.sh gracefully."""
-    with patch("pathlib.Path.is_file", return_value=False):
+def test_post_tls_renew_failure_handling(client: TestClient) -> None:
+    """Tests POST /api/system/tls/renew handles provisioning failure gracefully."""
+    mock_result = TLSProvisionResult(
+        success=False,
+        mode=TLSProvisionMode.ACME_LETSENCRYPT,
+        domain="localhost",
+        fullchain_path=Path(),
+        privkey_path=Path(),
+        days_remaining=0,
+        message="Provisioning failed",
+        error="DuckDNS token invalid",
+    )
+    with patch("app.routers.system.provision_tls_certificates", return_value=mock_result):
         resp = client.post("/api/system/tls/renew", json={"force": False})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "skipped"
-        assert "not installed" in data["message"]
+        assert data["status"] == "error"
+        assert data["message"] == "Provisioning failed"
+        assert data["error_detail"] == "DuckDNS token invalid"
 
 
-def test_post_tls_renew_success(client: TestClient) -> None:
+def test_post_tls_renew_success(client: TestClient, tmp_path: Path) -> None:
     """Tests POST /api/system/tls/renew executes renewal script successfully."""
-    mock_proc = MagicMock()
-    mock_proc.returncode = 0
-    mock_proc.stdout = "Certificate renewed successfully"
-    mock_proc.stderr = ""
-
-    with (
-        patch("pathlib.Path.is_file", return_value=True),
-        patch("subprocess.run", return_value=mock_proc) as mock_run,
-    ):
+    mock_result = TLSProvisionResult(
+        success=True,
+        mode=TLSProvisionMode.ACME_LETSENCRYPT,
+        domain="localhost",
+        fullchain_path=tmp_path / "fullchain.pem",
+        privkey_path=tmp_path / "privkey.pem",
+        days_remaining=89,
+        message="Certificate renewed successfully",
+        error=None,
+    )
+    with patch("app.routers.system.provision_tls_certificates", return_value=mock_result) as mock_prov:
         resp = client.post("/api/system/tls/renew", json={"force": True})
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "success"
         assert "Certificate renewed successfully" in data["message"]
 
-        # Verify --force argument was included
-        call_args = mock_run.call_args[0][0]
-        assert "--force" in call_args
+        mock_prov.assert_called_once()
+        assert mock_prov.call_args[1].get("force") is True
 
 
 def test_tls_endpoints_forbidden_for_viewer(client: TestClient) -> None:
@@ -175,28 +201,12 @@ def test_tls_endpoints_forbidden_for_operator(client: TestClient) -> None:
         app.dependency_overrides.clear()
 
 
-def test_post_tls_renew_sudo_password_remediation_error(client: TestClient) -> None:
-    """Test POST /api/system/tls/renew surfaces actionable remediation when sudo requires password.
-
-    Regression test for Issue #28: Sudo password prompt remediation on cert renewal and admin-only certificate RBAC.
-    """
-    mock_proc = MagicMock()
-    mock_proc.returncode = 1
-    mock_proc.stdout = ""
-    mock_proc.stderr = (
-        "sudo: a terminal is required to read the password; either use the -S option to read from standard input\n"
-        "sudo: a password is required"
-    )
-
-    with (
-        patch("pathlib.Path.is_file", return_value=True),
-        patch("subprocess.run", return_value=mock_proc),
-    ):
-        resp = client.post("/api/system/tls/renew", json={"force": False})
-        assert resp.status_code == 500
-        detail = resp.json()["detail"]
-        assert "passwordless sudo is not configured" in detail
-        assert "palmanager-certs" in detail
+def test_post_tls_renew_unhandled_exception(client: TestClient) -> None:
+    """Test POST /api/system/tls/renew surfaces 500 when provision_tls_certificates raises an error."""
+    with patch("app.routers.system.provision_tls_certificates", side_effect=RuntimeError("Unhandled error")):
+        with pytest.raises(RuntimeError) as exc_info:
+            client.post("/api/system/tls/renew", json={"force": False})
+        assert "Unhandled error" in str(exc_info.value)
 
 
 def test_canonical_redirect_endpoint_redirects_http_to_https(client: TestClient) -> None:
@@ -242,7 +252,19 @@ def test_canonical_url_exposed_in_system_version(client: TestClient) -> None:
 def test_canonical_url_exposed_in_tls_status(client: TestClient) -> None:
     """Regression test for Issue #40: GET /api/system/tls/status includes canonical_url in both HTTP and HTTPS modes."""
     # HTTP fallback mode
-    with patch("app.routers.system.resolve_ssl_paths", return_value=None):
+    mock_status_http = TLSCertificateStatus(
+        is_valid=False,
+        domain="localhost",
+        issuer="",
+        subject_alt_names=[],
+        not_before=None,
+        not_after=None,
+        days_remaining=0,
+        fullchain_path=None,
+        privkey_path=None,
+        is_self_signed=False,
+    )
+    with patch("app.routers.system.get_tls_certificate_status", return_value=mock_status_http):
         resp_http = client.get("/api/system/tls/status")
         assert resp_http.status_code == 200
         data_http = resp_http.json()
@@ -252,10 +274,19 @@ def test_canonical_url_exposed_in_tls_status(client: TestClient) -> None:
     # HTTPS active mode
     mock_cert = Path("/mock/cert.pem")
     mock_key = Path("/mock/key.pem")
-    with (
-        patch("app.routers.system.resolve_ssl_paths", return_value=(mock_cert, mock_key)),
-        patch("app.routers.system.inspect_certificate", return_value=None),
-    ):
+    mock_status_https = TLSCertificateStatus(
+        is_valid=True,
+        domain="localhost",
+        issuer="",
+        subject_alt_names=[],
+        not_before=None,
+        not_after=None,
+        days_remaining=10,
+        fullchain_path=mock_cert,
+        privkey_path=mock_key,
+        is_self_signed=False,
+    )
+    with patch("app.routers.system.get_tls_certificate_status", return_value=mock_status_https):
         resp_https = client.get("/api/system/tls/status")
         assert resp_https.status_code == 200
         data_https = resp_https.json()
@@ -293,17 +324,15 @@ def test_canonical_navigation_end_to_end_authenticated_flow(client: TestClient) 
 async def test_tls_auto_provision_startup_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     """Regression test for Issue #40: Startup hook dispatches cert manager renew when certs absent."""
     monkeypatch.setattr("app.main.settings.duckdns_domain", "thestygianarchitect.duckdns.org")
-    mock_proc = MagicMock()
-    mock_proc.returncode = 0
-    mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+    monkeypatch.setattr("app.main.settings.duckdns_token", "test-token")
 
     with (
-        patch("app.routers.system.resolve_ssl_paths", return_value=None),
-        patch("pathlib.Path.exists", return_value=True),
-        patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec,
+        patch("app.main.resolve_ssl_paths", return_value=None),
+        patch("app.main.provision_tls_certificates", new_callable=AsyncMock) as mock_prov,
     ):
         await trigger_tls_provisioning_check()
-        assert mock_exec.called
-        call_args = mock_exec.call_args[0]
-        assert "renew" in call_args
-        assert any("palworld-cert-manager.sh" in str(arg) for arg in call_args)
+        mock_prov.assert_called_once_with(
+            domain="thestygianarchitect.duckdns.org",
+            token="test-token",  # nosec B106 - mock test token
+            force=False,
+        )

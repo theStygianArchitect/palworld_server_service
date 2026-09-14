@@ -27,6 +27,7 @@ from app.core.config import inspect_certificate, reload_settings, resolve_ssl_pa
 from app.core.logger import log
 from app.database import MetricSnapshotRecord, bootstrap_admin_user
 from app.engine.service import LOCK_FILE
+from app.engine.tls_manager import provision_tls_certificates, sync_duckdns_ip
 from app.routers import (
     auth_router,
     feedback_router,
@@ -51,8 +52,6 @@ from app.routers.deps import (
     updater,
 )
 from app.routers.settings import stage_settings_for_reboot
-
-_DEFAULT_CERT_MANAGER_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "palworld-cert-manager.sh"
 
 
 async def telemetry_streamer() -> None:
@@ -135,27 +134,17 @@ async def telemetry_streamer() -> None:
 
 async def trigger_duckdns_sync() -> None:
     """Invokes DuckDNS dynamic DNS updater on startup if available on the host."""
-    candidate_scripts = [
-        Path("/home/steam/duckdns/duck.sh"),
-        Path("/opt/palworld-web-manager/scripts/duck.sh"),
-    ]
-    for script in candidate_scripts:
-        if script.exists():
-            try:
-                log.info("Triggering DuckDNS dynamic DNS synchronization via %s", script)
-                proc = await asyncio.create_subprocess_exec(
-                    "/bin/bash",
-                    str(script),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                await asyncio.wait_for(proc.communicate(), timeout=10.0)
-                log.info("DuckDNS synchronization complete (exit code: %s)", proc.returncode)
-                return
-            except asyncio.TimeoutError as err:
-                log.warning("DuckDNS sync script timed out: %s", err)
-            except OSError as err:
-                log.debug("DuckDNS sync script OS error: %s", err)
+    if not settings.duckdns_domain or not settings.duckdns_token:
+        return
+    log.info("Triggering DuckDNS dynamic DNS synchronization directly via Python httpx")
+    success = await sync_duckdns_ip(
+        domain=settings.duckdns_domain,
+        token=settings.duckdns_token,
+    )
+    if success:
+        log.info("DuckDNS synchronization complete")
+    else:
+        log.warning("DuckDNS sync failed")
 
 
 async def trigger_tls_provisioning_check() -> None:
@@ -167,34 +156,16 @@ async def trigger_tls_provisioning_check() -> None:
     if not raw_domain or raw_domain in ("localhost", "yourdomain.duckdns.org"):
         return
 
-    candidate_scripts = [
-        Path("/opt/palworld-web-manager/scripts/palworld-cert-manager.sh"),
-        _DEFAULT_CERT_MANAGER_SCRIPT,
-    ]
-    for script in candidate_scripts:
-        if script.exists():
-            try:
-                log.info("TLS certificate missing on startup. Dispatching cert provisioning via %s", script)
-                cmd = (
-                    ["sudo", "-n", str(script), "renew"] if os.name == "posix" else ["/bin/bash", str(script), "renew"]
-                )
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=45.0)
-                log.info(
-                    "TLS certificate provisioning dispatch completed (exit code: %s)",
-                    proc.returncode,
-                )
-                if proc.returncode != 0:
-                    log.warning("TLS cert manager output: %s", stderr.decode(errors="replace").strip())
-                return
-            except asyncio.TimeoutError as err:
-                log.warning("TLS certificate provisioning dispatch timed out: %s", err)
-            except OSError as err:
-                log.debug("TLS certificate provisioning dispatch OS error: %s", err)
+    log.info("TLS certificate missing on startup. Dispatching cert provisioning via native Python engine")
+    result = await provision_tls_certificates(
+        domain=settings.duckdns_domain,
+        token=settings.duckdns_token,
+        force=False,
+    )
+    if result.success:
+        log.info("TLS certificate provisioning completed: %s", result.message)
+    else:
+        log.warning("TLS certificate provisioning failed: %s (Error: %s)", result.message, result.error)
 
 
 async def metrics_collector_loop() -> None:

@@ -48,7 +48,13 @@ An enterprise-grade, non-disruptive operations plane, real-time dashboard, and P
 
 ### 8. 🌐 Network & Matchmaking Matrix
 - BattleMetrics directory tracking with exponential backoff for 429 rate limits.
-- DuckDNS dynamic DNS synchronization (every 5 minutes) with DNS A-record verification.
+- In-process DuckDNS dynamic DNS synchronization (`sync_duckdns_ip`) with DNS A-record verification.
+
+### 9. 🔒 Native Python TLS Engine & ACME DNS-01 Resilience
+- **Pure Python TLS Engine (`app/engine/tls_manager.py`)**: Built with `cryptography` and `httpx`, handling Let's Encrypt TLS certificate provisioning and automated renewal directly via ACME DNS-01 validation. Decommissions external Certbot dependencies and 5 legacy shell scripts (`scripts/palworld-cert-manager.sh`, `scripts/certbot-duckdns-auth.sh`, `scripts/certbot-duckdns-cleanup.sh`, `scripts/palworld-cert-deploy-hook.sh`, and `scripts/duck.sh`).
+- **Dual-Tier Resilience & Fallback**: Automatic self-signed certificate generation ensures port 8080 is guaranteed to bind securely with HTTPS even during initial provisioning or DNS propagation delays.
+- **Native Dynamic DNS Updater**: Asynchronous in-process DuckDNS synchronization (`sync_duckdns_ip`) eliminates standalone crontab shell hooks.
+- **Sudo-Free Management & CLI Utilities**: Portal "Renew Certificate Now" executes within application process space without elevated `sudo` privileges. Dedicated CLI management commands available via `python -m app.engine.tls_manager {renew,sync-dns,status}`.
 
 ---
 
@@ -59,6 +65,8 @@ The application is decomposed into modular domain-specific APIRouters under `app
 ```text
 app/
 ├── main.py              # Application entrypoint & FastAPI initialization (442 lines)
+├── engine/              # Engine operations, reboot orchestration & TLS manager
+│   └── tls_manager.py   # Native Python TLS Certificate & ACME DNS-01 Engine
 └── routers/             # Modular Domain APIRouters
     ├── auth.py          # Session token authentication & RBAC
     ├── settings.py      # World settings INI management
@@ -269,10 +277,11 @@ The installer automatically adapts to the host operating system:
 3. **Security & Privilege Isolation**:
    - Provisions the dedicated unprivileged service account `palmanager`.
    - Applies strict POSIX Access Control Lists (ACLs) across `/home/steam` and DuckDNS.
-   - Configures granular `/etc/sudoers.d/palmanager` scoped only to `systemctl` actions on `palworld.service`, `ufw status`, `deploy.sh`, and `palworld-cert-manager.sh`.
+   - Configures granular `/etc/sudoers.d/palmanager` scoped only to `systemctl` actions on `palworld.service`, `ufw status`, and `deploy.sh` (legacy `palworld-cert-manager.sh` sudoers elevation removed).
 4. **Daemon Deployment & Crontab Registration**:
-   - Installs dual-mode `palworld-manager.service` (port 8080).
-   - Configures DuckDNS dynamic DNS synchronization (every 5 minutes).
+   - Installs dual-mode `palworld-manager.service` (port 8080) with native TLS resilience.
+   - Systemd timer `palworld-cert-renew.service` automatically renews Let's Encrypt certificates via `.venv/bin/python -m app.engine.tls_manager renew`.
+   - Native in-process DuckDNS dynamic DNS synchronization (every 5 minutes) without legacy shell scripts.
    - Configures automated 4-hour reboot cycles with graceful HUD countdown notifications.
 
 ### 3. Zero-Drift Server Updates

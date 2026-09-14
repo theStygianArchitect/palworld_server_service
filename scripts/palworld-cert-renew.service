@@ -6,6 +6,6 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/palworld-web-manager/scripts/palworld-cert-manager.sh renew
+ExecStart=/opt/palworld-web-manager/.venv/bin/python -m app.engine.tls_manager renew
 StandardOutput=journal
 StandardError=journal

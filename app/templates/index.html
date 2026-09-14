@@ -4982,10 +4982,11 @@
         } else {
           if (s4) s4.className = 'p-1.5 rounded-lg bg-rose-950/60 border border-rose-600 text-rose-300 font-bold';
           if (out) {
-            out.innerText = `[-] ${data.detail || data.message || 'Renewal failed.'}`;
+            const errDetail = data.error_detail ? `${data.message} (${data.error_detail})` : (data.detail || data.message || 'Renewal failed.');
+            out.innerText = `[-] ${errDetail}`;
             out.className = "text-[11px] font-mono p-2 rounded-lg bg-red-950/40 border border-red-800 text-red-300 max-h-24 overflow-y-auto";
           }
-          showAlert(data.detail || 'Certificate renewal failed.', true);
+          showAlert(data.error_detail || data.detail || 'Certificate renewal failed.', true);
         }
       } catch (err) {
         if (out) {
