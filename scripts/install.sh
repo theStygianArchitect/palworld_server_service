@@ -19,7 +19,6 @@ PAL_SETTINGS_FILE="${PAL_CONFIG_DIR}/PalWorldSettings.ini"
 PAL_SERVICE_FILE="/etc/systemd/system/palworld.service"
 MAINTENANCE_SCRIPT="${STEAM_HOME}/palworld-maintenance.sh"
 DUCKDNS_DIR="${STEAM_HOME}/duckdns"
-DUCKDNS_SCRIPT="${DUCKDNS_DIR}/duck.sh"
 MANAGER_SERVICE_FILE="/etc/systemd/system/palworld-manager.service"
 SUDOERS_FILE="/etc/sudoers.d/palmanager"
 STANDALONE_BIN="/usr/local/bin/palworld-manager"
@@ -72,12 +71,7 @@ echo -n "[3/8] Setting up directories, DuckDNS, and POSIX ACLs... "
 mkdir -p "${APP_DIR}"
 mkdir -p "${STEAM_HOME}/Palworld_backups"
 mkdir -p "${DUCKDNS_DIR}"
-
-if [ -f "${SCRIPT_DIR}/duck.sh" ]; then
-    cp "${SCRIPT_DIR}/duck.sh" "${DUCKDNS_SCRIPT}"
-fi
 chown -R "${STEAM_USER}:${STEAM_USER}" "${DUCKDNS_DIR}" 2>/dev/null || true
-chmod 0755 "${DUCKDNS_SCRIPT}" 2>/dev/null || true
 
 # Sync repository source to /opt/palworld-web-manager
 if [ -d "${REPO_ROOT}/app" ]; then
@@ -142,8 +136,6 @@ ${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh *
 ${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh.tmp *
 ${APP_USER} ALL=(ALL) NOPASSWD: /tmp/palmanager_deploy*.sh *
 ${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/deploy.sh *
-${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/palworld-cert-manager.sh *
-${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/palworld-cert-manager.sh *
 SUDO_EOF
 chmod 0440 "${SUDOERS_FILE}"
 if command -v visudo >/dev/null 2>&1; then
@@ -216,27 +208,18 @@ fi
 # 7. Crontabs & DNS Initialization
 echo -n "[7/8] Registering cron jobs and verifying DuckDNS... "
 if command -v crontab >/dev/null 2>&1; then
-    STEAM_CRON="*/5 * * * * /home/steam/duckdns/duck.sh >/dev/null 2>&1"
-    EXISTING_STEAM_CRON=$(crontab -u steam -l 2>/dev/null || true)
-    FILTERED_STEAM_CRON=$(echo "${EXISTING_STEAM_CRON}" | grep -v "/home/steam/duckdns/duck.sh" || true)
-    printf "%s\n%s\n" "${FILTERED_STEAM_CRON}" "${STEAM_CRON}" | sed '/^$/d' | crontab -u steam - 2>/dev/null || true
-
     CRON_JOB="0 */4 * * * curl -s -X POST http://127.0.0.1:${APP_PORT}/api/service/reboot -H 'Content-Type: application/json' -d '{\"settings\":{}, \"countdown_seconds\":600, \"trigger_steam_update\":false}' > /dev/null 2>&1"
-    CERT_CRON="0 3 * * * /opt/palworld-web-manager/scripts/palworld-cert-manager.sh renew >/dev/null 2>&1"
+    CERT_CRON="0 3 * * * cd /opt/palworld-web-manager && .venv/bin/python -m app.engine.tls_manager renew >/dev/null 2>&1"
     EXISTING_CRON=$(crontab -l 2>/dev/null || true)
-    FILTERED_CRON=$(echo "${EXISTING_CRON}" | grep -v "/api/service/reboot" | grep -v "palworld-cert-manager.sh" || true)
+    FILTERED_CRON=$(echo "${EXISTING_CRON}" | grep -v "/api/service/reboot" | grep -v "palworld-cert" | grep -v "app.engine.tls_manager" || true)
     printf "%s\n%s\n%s\n" "${FILTERED_CRON}" "${CRON_JOB}" "${CERT_CRON}" | sed '/^$/d' | crontab - 2>/dev/null || true
-fi
-
-if [ -f "/home/steam/duckdns/duck.sh" ]; then
-    su - steam -c "/home/steam/duckdns/duck.sh" 2>/dev/null || true
 fi
 echo "[ OK ]"
 
 # Provision initial TLS certificate if missing
-if [ ! -f "/var/lib/palmanager/certs/fullchain.pem" ] && [ -x "/opt/palworld-web-manager/scripts/palworld-cert-manager.sh" ]; then
+if [ ! -f "/var/lib/palmanager/certs/fullchain.pem" ]; then
     echo -n "[*] Certificates missing. Triggering Let's Encrypt TLS issuance... "
-    /opt/palworld-web-manager/scripts/palworld-cert-manager.sh renew >/dev/null 2>&1 || true
+    su -s /bin/bash "${APP_USER}" -c "cd /opt/palworld-web-manager && .venv/bin/python -m app.engine.tls_manager renew" || true
     echo "[ OK ]"
 fi
 

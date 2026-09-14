@@ -987,6 +987,7 @@ class TLSCertificateInfo(BaseModel):
     expires_at: str = Field(..., description="ISO 8601 UTC expiration timestamp")
     days_remaining: int = Field(..., description="Days remaining before certificate expires")
     is_expired: bool = Field(..., description="Whether certificate is currently expired")
+    is_self_signed: bool = Field(default=False, description="Whether certificate is self-signed")
     san_list: list[str] = Field(default_factory=list, description="Subject Alternative Names")
 
 
@@ -1041,11 +1042,13 @@ class TLSRenewResponse(BaseModel):
         triggered_at (str): ISO 8601 UTC timestamp when renewal was triggered.
     """
 
-    status: Literal["queued", "success", "failed", "skipped"] = Field(
+    status: Literal["queued", "success", "failed", "skipped", "error"] = Field(
         ..., description="Execution status of the renewal trigger"
     )
     message: str = Field(..., description="Informational outcome message")
-    triggered_at: str = Field(..., description="ISO 8601 timestamp of execution")
+    error_detail: str | None = Field(default=None, description="Detailed error information")
+    canonical_url: str | None = Field(default=None, description="Canonical URL")
+    triggered_at: str | None = Field(default=None, description="ISO 8601 timestamp of execution")
 
 
 # =========================================================================

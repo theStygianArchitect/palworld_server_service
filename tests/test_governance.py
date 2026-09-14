@@ -249,12 +249,58 @@ def test_issue_40_automated_tls_provisioning_contract() -> None:
     assert install_script.exists(), f"install.sh not found at {install_script}"
 
     deploy_content = deploy_script.read_text(encoding="utf-8")
-    assert "palworld-cert-manager.sh" in deploy_content
+    assert "app.engine.tls_manager renew" in deploy_content
+    assert "palworld-cert-manager.sh" not in deploy_content
     assert "fullchain.pem" in deploy_content
 
     install_content = install_script.read_text(encoding="utf-8")
-    assert "palworld-cert-manager.sh" in install_content
+    assert "app.engine.tls_manager renew" in install_content
+    assert "palworld-cert-manager.sh" not in install_content
     assert "fullchain.pem" in install_content
+
+
+def test_native_python_tls_engine_contract() -> None:
+    """Validates Wave 3 of Issue #21: Native Python TLS Engine contract."""
+    repo_root = Path(__file__).resolve().parent.parent
+
+    # Assert legacy shell scripts DO NOT exist
+    legacy_scripts = [
+        "palworld-cert-manager.sh",
+        "certbot-duckdns-auth.sh",
+        "certbot-duckdns-cleanup.sh",
+        "palworld-cert-deploy-hook.sh",
+        "duck.sh",
+    ]
+    for script in legacy_scripts:
+        script_path = repo_root / "scripts" / script
+        assert not script_path.exists(), f"Legacy script {script} must not exist"
+
+    # Assert new TLS engine exists
+    tls_manager_path = repo_root / "app" / "engine" / "tls_manager.py"
+    assert tls_manager_path.exists(), f"TLS engine not found at {tls_manager_path}"
+
+    # Verify functions can be imported
+    from app.engine.tls_manager import (  # pylint: disable=import-outside-toplevel
+        generate_csr,
+        generate_private_key,
+        generate_self_signed_certificate,
+        get_tls_certificate_status,
+        provision_tls_certificates,
+        sync_duckdns_ip,
+    )
+
+    assert callable(provision_tls_certificates)
+    assert callable(get_tls_certificate_status)
+    assert callable(sync_duckdns_ip)
+    assert callable(generate_private_key)
+    assert callable(generate_csr)
+    assert callable(generate_self_signed_certificate)
+
+    # Verify cryptography dependency
+    pyproject_path = repo_root / "pyproject.toml"
+    assert pyproject_path.exists(), f"pyproject.toml not found at {pyproject_path}"
+    pyproject_content = pyproject_path.read_text(encoding="utf-8")
+    assert "cryptography" in pyproject_content, "cryptography dependency must be in pyproject.toml"
 
 
 def test_issue_21_modular_api_routers_contract() -> None:

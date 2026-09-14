@@ -186,11 +186,6 @@ if ! command -v certbot >/dev/null 2>&1; then
     fi
 fi
 
-if [ -f "${REPO_ROOT}/scripts/duck.sh" ] && [ -d "/home/steam/duckdns" ]; then
-    cp "${REPO_ROOT}/scripts/duck.sh" /home/steam/duckdns/duck.sh
-    chmod 0755 /home/steam/duckdns/duck.sh
-    chown steam:steam /home/steam/duckdns/duck.sh 2>/dev/null || true
-fi
 if [ -f "${APP_DIR}/.env" ] && [ -d "/home/steam/duckdns" ]; then
     cp "${APP_DIR}/.env" /home/steam/duckdns/.env
     chmod 0600 /home/steam/duckdns/.env
@@ -241,8 +236,6 @@ ${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh *
 ${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh.tmp *
 ${APP_USER} ALL=(ALL) NOPASSWD: /tmp/palmanager_deploy*.sh *
 ${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/deploy.sh *
-${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/palworld-cert-manager.sh *
-${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/palworld-cert-manager.sh *
 SUDO_EOF
 chmod 0440 "${SUDOERS_FILE}"
 if command -v visudo >/dev/null 2>&1; then
@@ -252,10 +245,10 @@ rm -f /etc/sudoers.d/palmanager-certs /etc/sudoers.d/palworld_manager_palmanager
 
 # Register fallback daily root crontab for certificate renewal
 if command -v crontab >/dev/null 2>&1; then
-    ROOT_CRON="0 3 * * * ${APP_DIR}/scripts/palworld-cert-manager.sh renew >/dev/null 2>&1"
+    ROOT_CRON="0 3 * * * cd ${APP_DIR} && .venv/bin/python -m app.engine.tls_manager renew >/dev/null 2>&1"
     EXISTING_ROOT_CRON=$(crontab -l 2>/dev/null || true)
-    if ! echo "${EXISTING_ROOT_CRON}" | grep -q "palworld-cert-manager.sh"; then
-        printf "%s\n%s\n" "${EXISTING_ROOT_CRON}" "${ROOT_CRON}" | sed '/^$/d' | crontab - 2>/dev/null || true
+    if ! echo "${EXISTING_ROOT_CRON}" | grep -q "app.engine.tls_manager"; then
+        printf "%s\n%s\n" "${EXISTING_ROOT_CRON}" "${ROOT_CRON}" | sed '/palworld-cert/d' | sed '/^$/d' | crontab - 2>/dev/null || true
     fi
 fi
 
@@ -263,13 +256,13 @@ echo "[ OK ]"
 
 echo -n "[STEP 4/5] Updating Python dependencies via uv... "
 cd "${APP_DIR}"
-su -s /bin/bash "${APP_USER}" -c "uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil > /dev/null"
+su -s /bin/bash "${APP_USER}" -c "uv pip install --python .venv/bin/python fastapi 'uvicorn[standard]' pydantic pydantic-settings httpx websockets psutil cryptography > /dev/null"
 echo "[ OK ]"
 
 # Ensure TLS certificates are provisioned before service starts
-if [ ! -f "/var/lib/palmanager/certs/fullchain.pem" ] && [ -x "${APP_DIR}/scripts/palworld-cert-manager.sh" ]; then
+if [ ! -f "/var/lib/palmanager/certs/fullchain.pem" ]; then
     echo -n "[*] Certificates missing. Triggering Let's Encrypt TLS issuance... "
-    "${APP_DIR}/scripts/palworld-cert-manager.sh" renew >/dev/null 2>&1 || true
+    su -s /bin/bash "${APP_USER}" -c ".venv/bin/python -m app.engine.tls_manager renew" || true
     echo "[ OK ]"
 fi
 

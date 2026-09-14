@@ -8,10 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import datetime
-import os
-import shutil
-import subprocess  # nosec B404 - required for non-interactive sudo execution of palworld-cert-manager.sh
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -28,6 +24,7 @@ from app.api.schemas import (
     ShutdownRequest,
     ShutdownResponse,
     SystemVersionResponse,
+    TLSCertificateInfo,
     TLSRenewRequest,
     TLSRenewResponse,
     TLSStatusResponse,
@@ -35,11 +32,12 @@ from app.api.schemas import (
     UpdateApplyResponse,
     UpdateStatusResponse,
 )
-from app.core.config import inspect_certificate, reload_settings, resolve_ssl_paths
+from app.core.config import reload_settings, resolve_ssl_paths
 from app.core.logger import log
 from app.database import UserRecord
 from app.engine.changelog import get_changelog
 from app.engine.service import LOCK_FILE
+from app.engine.tls_manager import get_tls_certificate_status, provision_tls_certificates
 from app.routers.deps import (
     engine,
     get_client_ip,
@@ -56,8 +54,6 @@ from app.routers.settings import _write_ini_file_with_fallback, stage_settings_f
 
 router = APIRouter(tags=["System Lifecycle & Maintenance"])
 
-_DEFAULT_CERT_MANAGER_SCRIPT = Path(__file__).resolve().parent.parent.parent / "scripts" / "palworld-cert-manager.sh"
-
 
 def _resolve_canonical_url() -> str:
     """Resolves the canonical public HTTPS URL based on configuration.
@@ -70,29 +66,6 @@ def _resolve_canonical_url() -> str:
     if not domain or domain in ("localhost", "yourdomain.duckdns.org"):
         domain = "thestygianarchitect.duckdns.org"
     return f"https://{domain}:{settings.web_port}"
-
-
-def _check_auto_renew_active() -> bool:
-    """Checks if palworld-cert-renew.timer is present or active on the host."""
-    timer_path = Path("/etc/systemd/system/palworld-cert-renew.timer")
-    if timer_path.is_file():
-        return True
-    if os.name != "nt":
-        try:
-            res = subprocess.run(  # nosec B603, B607
-                ["systemctl", "is-active", "--quiet", "palworld-cert-renew.timer"],
-                capture_output=True,
-                check=False,
-                timeout=2,
-            )
-            return res.returncode == 0
-        except subprocess.SubprocessError as err:
-            log.debug("Subprocess error checking palworld-cert-renew.timer: %s", err)
-            return False
-        except OSError as err:
-            log.debug("OS error checking palworld-cert-renew.timer: %s", err)
-            return False
-    return False
 
 
 @router.get("/health")
@@ -408,36 +381,45 @@ async def get_tls_status(
         TLSStatusResponse: Operational status of SSL/TLS and certificate metadata.
     """
     domain = settings.duckdns_domain or "localhost"
-    resolved_paths = resolve_ssl_paths(settings)
-    auto_renew_active = await asyncio.to_thread(_check_auto_renew_active)
+    status = get_tls_certificate_status(domain=domain)
 
-    if resolved_paths is None:
+    if not status.is_valid:
         return TLSStatusResponse(
             enabled=False,
             scheme="http",
             domain=domain,
             port=settings.web_port,
             certificate=None,
-            cert_path=None,
-            auto_renew_active=auto_renew_active,
-            warning="Running unencrypted plaintext HTTP. No valid certificate pair detected.",
+            cert_path=str(status.fullchain_path) if status.fullchain_path else None,
+            auto_renew_active=False,
+            warning=status.error_message or "Running unencrypted plaintext HTTP. No valid certificate detected.",
             canonical_url=_resolve_canonical_url(),
         )
 
-    cert_path, _key_path = resolved_paths
-    cert_info = inspect_certificate(cert_path)
+    # Note: Using TLSCertificateInfo (app/api/schemas.py)
+    cert_info = TLSCertificateInfo(
+        subject=status.domain,
+        issuer=status.issuer,
+        valid_from=status.not_before.isoformat() + "Z" if status.not_before else "",
+        expires_at=status.not_after.isoformat() + "Z" if status.not_after else "",
+        days_remaining=status.days_remaining,
+        is_expired=not status.is_valid,
+        is_self_signed=status.is_self_signed,
+        san_list=status.subject_alt_names,
+    )
+
     warning = None
-    if cert_info is not None and cert_info.days_remaining <= 15:
-        warning = f"Certificate expires in {cert_info.days_remaining} days. Renewal recommended."
+    if status.days_remaining <= 15:
+        warning = f"Certificate expires in {status.days_remaining} days. Renewal recommended."
 
     return TLSStatusResponse(
         enabled=True,
         scheme="https",
         domain=domain,
-        port=settings.ssl_port if settings.ssl_enabled else settings.web_port,
+        port=settings.ssl_port if getattr(settings, "ssl_enabled", True) else settings.web_port,
         certificate=cert_info,
-        cert_path=str(cert_path),
-        auto_renew_active=auto_renew_active,
+        cert_path=str(status.fullchain_path),
+        auto_renew_active=False,
         warning=warning,
         canonical_url=_resolve_canonical_url(),
     )
@@ -448,7 +430,7 @@ async def trigger_tls_renewal(
     payload: TLSRenewRequest,
     user: UserRecord = Depends(perm_admin),
 ) -> TLSRenewResponse:
-    """Triggers an on-demand TLS certificate renewal via palworld-cert-manager.sh.
+    """Triggers an on-demand TLS certificate renewal.
 
     Restricted strictly to administrators.
     Supports early renewal via payload.force=True.
@@ -459,9 +441,6 @@ async def trigger_tls_renewal(
 
     Returns:
         TLSRenewResponse: Outcome status and informational message.
-
-    Raises:
-        HTTPException: 500 if the certificate renewal script encounters an error.
     """
     timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
     log.info(
@@ -471,71 +450,23 @@ async def trigger_tls_renewal(
         timestamp,
     )
 
-    candidate_scripts = [
-        Path("/opt/palworld-web-manager/scripts/palworld-cert-manager.sh"),
-        Path(__file__).parent.parent.parent / "scripts" / "palworld-cert-manager.sh",
-    ]
-    cert_script: Path | None = None
-    for s in candidate_scripts:
-        if s.is_file():
-            cert_script = s
-            break
-
-    if cert_script is None:
-        log.warning("palworld-cert-manager.sh script not found on host filesystem")
-        return TLSRenewResponse(
-            status="skipped",
-            message="Certificate manager script not installed. Please deploy scripts/palworld-cert-manager.sh.",
-            triggered_at=timestamp,
-        )
-
-    cmd = [str(cert_script), "renew"]
-    if payload.force:
-        cmd.append("--force")
-
-    if os.name != "nt":
-        sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
-        cmd[0:0] = [sudo_bin, "-n"]
-
-    try:
-        proc = await asyncio.to_thread(
-            subprocess.run,  # nosec B603
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
-        if proc.returncode != 0:
-            err_msg = proc.stderr.strip() or "Unknown error"
-            log.error("Certificate renewal script returned error code %d: %s", proc.returncode, err_msg)
-            if "password is required" in err_msg or "terminal is required" in err_msg:
-                detail_msg = (
-                    "Certificate renewal failed: passwordless sudo is not configured for palworld-cert-manager.sh. "
-                    "Please run 'sudo ./scripts/deploy.sh' on the host or provision '/etc/sudoers.d/palmanager-certs'."
-                )
-            else:
-                detail_msg = f"Certificate renewal failed: {err_msg}"
-            raise HTTPException(
-                status_code=500,
-                detail=detail_msg,
-            )
-
-        log.info("Certificate renewal completed successfully: %s", proc.stdout.strip())
+    result = await provision_tls_certificates(
+        domain=settings.duckdns_domain,
+        token=settings.duckdns_token,
+        force=True,
+    )
+    if result.success:
         return TLSRenewResponse(
             status="success",
-            message=f"Certificate renewal completed successfully: {proc.stdout.strip()[:200]}",
+            message=result.message,
+            error_detail=None,
+            canonical_url=_resolve_canonical_url(),
             triggered_at=timestamp,
         )
-    except subprocess.TimeoutExpired as err:
-        log.error("Certificate renewal script timed out after 120s: %s", err)
-        raise HTTPException(
-            status_code=504,
-            detail="Certificate renewal script timed out after 120 seconds. Check DNS propagation.",
-        ) from err
-    except OSError as err:
-        log.error("OS error invoking certificate renewal: %s", err)
-        raise HTTPException(
-            status_code=500,
-            detail=f"OS execution error: {err}",
-        ) from err
+    return TLSRenewResponse(
+        status="error",
+        message=result.message,
+        error_detail=result.error,
+        canonical_url=_resolve_canonical_url(),
+        triggered_at=timestamp,
+    )
