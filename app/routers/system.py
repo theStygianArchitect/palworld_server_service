@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import os
+import shutil
+import subprocess  # nosec B404 - required for systemctl service management
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -425,9 +428,34 @@ async def get_tls_status(
     )
 
 
+def dispatch_manager_service_restart() -> None:
+    """Dispatches a non-blocking systemctl restart of palworld-manager.service on POSIX."""
+    if os.name == "posix":
+        sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"  # nosec B607
+        systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"  # nosec B607
+        try:
+            # pylint: disable-next=consider-using-with
+            subprocess.Popen(  # nosec B603 - static arguments, trusted systemctl binary
+                [sudo_bin, "-n", systemctl_bin, "restart", "palworld-manager.service"],
+                start_new_session=True,
+            )
+            log.info("Dispatched systemctl restart for palworld-manager.service")
+        except OSError as err:
+            log.error("Failed to execute manager service restart: %s", err)
+    else:
+        log.info("Non-posix environment detected; skipping manager service restart.")
+
+
+async def _delayed_manager_restart() -> None:
+    """Allows HTTP response to flush cleanly before triggering service restart."""
+    await asyncio.sleep(1.0)
+    dispatch_manager_service_restart()
+
+
 @router.post("/api/system/tls/renew", response_model=TLSRenewResponse)
 async def trigger_tls_renewal(
     payload: TLSRenewRequest,
+    background_tasks: BackgroundTasks,
     user: UserRecord = Depends(perm_admin),
 ) -> TLSRenewResponse:
     """Triggers an on-demand TLS certificate renewal.
@@ -437,6 +465,7 @@ async def trigger_tls_renewal(
 
     Args:
         payload (TLSRenewRequest): Renewal trigger parameters.
+        background_tasks (BackgroundTasks): FastAPI background task manager.
         user (UserRecord): Authenticated administrator triggering the action.
 
     Returns:
@@ -456,9 +485,11 @@ async def trigger_tls_renewal(
         force=payload.force,
     )
     if result.success:
+        background_tasks.add_task(_delayed_manager_restart)
+        msg = f"{result.message} Web management service is restarting to activate HTTPS."
         return TLSRenewResponse(
             status="success",
-            message=result.message,
+            message=msg,
             error_detail=None,
             canonical_url=_resolve_canonical_url(),
             triggered_at=timestamp,

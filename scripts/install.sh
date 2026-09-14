@@ -130,6 +130,9 @@ cat << SUDO_EOF > "${SUDOERS_FILE}"
 ${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart palworld.service, /usr/bin/systemctl restart palworld.service
 ${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status palworld.service, /usr/bin/systemctl status palworld.service
 ${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld.service, /usr/bin/systemctl is-active palworld.service
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart palworld-manager.service, /usr/bin/systemctl restart palworld-manager.service
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status palworld-manager.service, /usr/bin/systemctl status palworld-manager.service
+${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld-manager.service, /usr/bin/systemctl is-active palworld-manager.service
 ${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *, /usr/bin/journalctl -u palworld.service *
 ${APP_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status
 ${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh *

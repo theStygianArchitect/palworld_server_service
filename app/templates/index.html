@@ -4978,7 +4978,11 @@
             out.className = "text-[11px] font-mono p-2 rounded-lg bg-emerald-950/40 border border-emerald-800 text-emerald-300 max-h-24 overflow-y-auto";
           }
           fetchTlsStatus();
-          showAlert('Certificate successfully renewed!');
+          showAlert('Certificate successfully renewed! Service is restarting to activate HTTPS. Redirecting in 3 seconds...');
+          const targetUrl = data.canonical_url || (window.location.hostname ? `https://${window.location.hostname}:8080` : 'https://thestygianarchitect.duckdns.org:8080');
+          setTimeout(() => {
+            window.location.href = targetUrl;
+          }, 3000);
         } else {
           if (s4) s4.className = 'p-1.5 rounded-lg bg-rose-950/60 border border-rose-600 text-rose-300 font-bold';
           if (out) {

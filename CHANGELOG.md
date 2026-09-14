@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `POST /api/system/tls/renew` respects `payload.force` instead of hardcoding `force=True`.
 - `GET /api/system/tls/status` reports `auto_renew_active=True` reflecting the active `palworld-cert-renew.timer`.
 - `palworld-cert-renew.service` now runs as `User=palmanager` / `Group=palmanager` instead of root.
+- Sudoers expanded for `palworld-manager.service` restart; TLS renewal handler dispatches delayed restart and auto-redirects web client to canonical HTTPS URL. Closes #58.
 - `scripts/install.sh` includes `cryptography` in venv pip install (previously omitted).
 
 ### Removed
