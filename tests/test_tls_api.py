@@ -148,7 +148,7 @@ def test_post_tls_renew_success(client: TestClient, tmp_path: Path) -> None:
         mock_restart.assert_called_once()
 
 
-def test_dispatch_manager_service_restart_posix(monkeypatch) -> None:
+def test_dispatch_manager_service_restart_posix() -> None:
     """Tests dispatch_manager_service_restart delegates to SupervisorClient on POSIX."""
     mock_client_instance = AsyncMock()
     mock_client_class = MagicMock(return_value=mock_client_instance)
