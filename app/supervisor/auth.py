@@ -37,6 +37,7 @@ def get_peer_credentials(sock: socket.socket) -> tuple[int, int, int]:
     try:
         cred_bytes = sock.getsockopt(socket.SOL_SOCKET, _SO_PEERCRED, _PEERCRED_STRUCT_SIZE)
     except OSError as e:
+        log.debug("Failed to get peer credentials: %s", e)
         raise OSError(f"Failed to get peer credentials: {e}") from e
 
     pid, uid, gid = struct.unpack(_PEERCRED_STRUCT_FORMAT, cred_bytes)

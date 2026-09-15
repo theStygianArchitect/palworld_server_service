@@ -38,6 +38,12 @@ class SupervisorServer:
     """Async Unix Domain Socket JSON-RPC 2.0 server for privileged host operations."""
 
     def __init__(self, socket_path: str, allowed_uid: int) -> None:
+        """Initialize the supervisor server.
+
+        Args:
+            socket_path: Path to the Unix Domain Socket.
+            allowed_uid: The UID allowed to connect.
+        """
         self.socket_path = socket_path
         self.allowed_uid = allowed_uid
         self.server: asyncio.AbstractServer | None = None
@@ -50,16 +56,22 @@ class SupervisorServer:
         with contextlib.suppress(FileNotFoundError):
             os.remove(self.socket_path)
 
-        self.server = await asyncio.start_unix_server(self._handle_client, path=self.socket_path)
-        os.chmod(self.socket_path, 0o660)
+        self.server = await asyncio.start_unix_server(  # type: ignore[attr-defined]
+            self._handle_client, path=self.socket_path,
+        )
+        os.chmod(self.socket_path, 0o660)  # nosec B103 - UDS socket needs group r/w for palmanager client
 
-        if os.geteuid() == 0:  # pylint: disable=no-member  # POSIX-only; guarded by os.name check above
+        if os.geteuid() == 0:  # type: ignore[attr-defined]  # pylint: disable=no-member
             try:
                 import pwd  # pylint: disable=import-outside-toplevel  # POSIX-only; unavailable on Windows
-                pw = pwd.getpwuid(self.allowed_uid)
-                os.chown(self.socket_path, 0, pw.pw_gid)  # pylint: disable=no-member  # POSIX-only
-            except (KeyError, ImportError):
-                os.chown(self.socket_path, 0, self.allowed_uid)  # pylint: disable=no-member  # POSIX-only
+                pw = pwd.getpwuid(self.allowed_uid)  # type: ignore[attr-defined]
+                os.chown(self.socket_path, 0, pw.pw_gid)  # type: ignore[attr-defined]  # pylint: disable=no-member
+            except KeyError:
+                log.debug("UID %d not found in password database, using UID as GID", self.allowed_uid)
+                os.chown(self.socket_path, 0, self.allowed_uid)  # type: ignore[attr-defined]  # pylint: disable=no-member
+            except ImportError:
+                log.debug("pwd module unavailable, using UID as GID")
+                os.chown(self.socket_path, 0, self.allowed_uid)  # type: ignore[attr-defined]  # pylint: disable=no-member
 
         log.info("SupervisorServer started on %s", self.socket_path)
 
@@ -81,6 +93,7 @@ class SupervisorServer:
         try:
             validate_peer_credentials(sock, self.allowed_uid)
         except PermissionError:
+            log.warning("Permission denied for client connection")
             err = JSONRPCErrorResponse(
                 id=None,
                 error=JSONRPCErrorDetail(code=-32000, message="Permission denied")
@@ -90,7 +103,7 @@ class SupervisorServer:
             writer.close()
             return
         except OSError:
-            pass  # Non-POSIX or fallback for dev/test environments
+            log.debug("Skipping SO_PEERCRED auth on non-POSIX platform")
 
         try:
             while True:
@@ -110,6 +123,7 @@ class SupervisorServer:
                 try:
                     request = JSONRPCRequest.model_validate_json(line)
                 except ValidationError:
+                    log.debug("Invalid JSON-RPC request: %s", line.decode(errors='replace').strip()[:200])
                     err = JSONRPCErrorResponse(
                         id=None,
                         error=JSONRPCErrorDetail(code=-32600, message="Invalid Request")

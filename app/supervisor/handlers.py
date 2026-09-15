@@ -46,6 +46,7 @@ async def handle_service_restart(params: ServiceRestartParams) -> dict[str, Any]
     try:
         _, stderr = await asyncio.wait_for(process.communicate(), timeout=params.timeout_seconds)
     except asyncio.TimeoutError:
+        logger.warning("Timeout waiting for service %s restart", service_name)
         with contextlib.suppress(OSError):
             process.kill()
         return {"status": "error", "service": service_name, "reason": "timeout"}

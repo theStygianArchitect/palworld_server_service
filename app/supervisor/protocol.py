@@ -120,6 +120,13 @@ class SupervisorClientError(Exception):
 class SupervisorRPCError(Exception):
     """Raised when supervisor responds with an application-level JSON-RPC error."""
     def __init__(self, code: int, message: str, data: dict[str, Any] | None = None) -> None:
+        """Initialize a supervisor RPC error.
+
+        Args:
+            code: The JSON-RPC error code.
+            message: The error message.
+            data: Optional additional error data.
+        """
         super().__init__(f"Supervisor error {code}: {message}")
         self.code = code
         self.data = data

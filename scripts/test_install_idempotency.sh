@@ -77,7 +77,8 @@ echo "[+] Crontab entries remained strictly identical across passes (${CRON_PASS
 echo ">>> Verifying file permissions and system paths..."
 test -d /opt/palworld-web-manager
 test -f /opt/palworld-web-manager/pyproject.toml
-test -f /etc/sudoers.d/palmanager
+test -f /etc/systemd/system/palworld-supervisor.service
+test ! -f /etc/sudoers.d/palmanager  # Superseded by supervisor daemon
 
 echo "========================================================================="
 echo " [SUCCESS] Clean Install & Idempotency Verification Passed 100%!"

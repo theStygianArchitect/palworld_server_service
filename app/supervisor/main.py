@@ -11,6 +11,8 @@ import sys
 
 from app.supervisor.server import SupervisorServer
 
+log = logging.getLogger(__name__)
+
 DEFAULT_SOCKET_PATH: str = "/run/palmanager/supervisor.sock"
 DEFAULT_LOG_LEVEL: str = "INFO"
 
@@ -46,12 +48,12 @@ def main() -> None:
     allowed_uid = args.allowed_uid
     if allowed_uid == 0 and os.name == "posix":
         try:
-            import pwd  # pylint: disable=import-outside-toplevel  # POSIX-only; unavailable on Windows
-            allowed_uid = pwd.getpwnam("palmanager").pw_uid
-        except (KeyError, ImportError):
-            logging.getLogger(__name__).warning(
-                "User 'palmanager' not found. Allowing only root (UID 0) connections."
-            )
+            import pwd  # pylint: disable=import-outside-toplevel  # type: ignore[import-not-found]
+            allowed_uid = pwd.getpwnam("palmanager").pw_uid  # type: ignore[attr-defined]
+        except KeyError:
+            log.warning("User 'palmanager' not found. Allowing only root (UID 0) connections.")
+        except ImportError:
+            log.warning("pwd module not available. Allowing only root (UID 0) connections.")
 
     server = SupervisorServer(socket_path=args.socket_path, allowed_uid=allowed_uid)
 
@@ -60,15 +62,15 @@ def main() -> None:
 
     if os.name == "posix":
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda s=sig: asyncio.ensure_future(server.stop()))
+            loop.add_signal_handler(sig, lambda s=sig: asyncio.ensure_future(server.stop()))  # type: ignore[misc]
 
     try:
         loop.run_until_complete(server.start())
         loop.run_forever()
     except KeyboardInterrupt:
-        pass
+        log.info("Received keyboard interrupt, shutting down")
     except NotImplementedError as e:
-        logging.getLogger(__name__).error("Initialization failed: %s", e)
+        log.error("Initialization failed: %s", e)
     finally:
         loop.run_until_complete(server.stop())
         loop.close()

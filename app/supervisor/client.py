@@ -61,22 +61,26 @@ class SupervisorClient:
 
         try:
             reader, writer = await asyncio.wait_for(
-                asyncio.open_unix_connection(self.socket_path),
+                asyncio.open_unix_connection(self.socket_path),  # type: ignore[attr-defined]
                 timeout=self.timeout,
             )
         except FileNotFoundError as exc:
+            log.warning("Supervisor socket not found at %s", self.socket_path)
             raise SupervisorClientError(
                 f"Supervisor socket not found at {self.socket_path}. Is palworld-supervisor running?"
             ) from exc
         except ConnectionRefusedError as exc:
+            log.warning("Connection refused at %s", self.socket_path)
             raise SupervisorClientError(
                 f"Connection refused at {self.socket_path}. Is palworld-supervisor running?"
             ) from exc
         except asyncio.TimeoutError as exc:
+            log.warning("Timeout connecting to supervisor at %s", self.socket_path)
             raise SupervisorClientError(
                 f"Timeout connecting to supervisor at {self.socket_path} after {self.timeout}s"
             ) from exc
         except OSError as exc:
+            log.warning("OS error connecting to supervisor: %s", exc)
             raise SupervisorClientError(f"OS error connecting to supervisor: {exc}") from exc
 
         try:
@@ -101,6 +105,7 @@ class SupervisorClient:
             return result_resp.result
 
         except asyncio.TimeoutError as exc:
+            log.warning("Timeout waiting for supervisor response")
             raise SupervisorClientError(
                 f"Timeout waiting for supervisor response after {self.timeout}s"
             ) from exc
