@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
 from app.core.logger import log
@@ -20,9 +21,6 @@ from app.database.metric_models import (
 )
 
 METRICS_SCHEMA_DDL = """
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-
 CREATE TABLE IF NOT EXISTS metrics_timeseries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL,
@@ -204,23 +202,45 @@ class MetricsDatabaseManager:
                     timeout=30.0,
                 )
                 conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA busy_timeout = 10000;")
+                if self.db_path != ":memory:":
+                    try:
+                        conn.execute("PRAGMA journal_mode = WAL;")
+                    except sqlite3.OperationalError as err:
+                        log.debug("WAL mode activation ignored in metrics DB: %s", err)
+                try:
+                    conn.execute("PRAGMA synchronous = NORMAL;")
+                except sqlite3.OperationalError as err:
+                    log.debug("Synchronous normal mode ignored in metrics DB: %s", err)
                 self._connection = conn
             return self._connection
 
     def initialize(self) -> None:
         """Executes schema DDL and indexes idempotently."""
         with self._lock:
-            conn = self.get_connection()
-            try:
-                conn.executescript(METRICS_SCHEMA_DDL)
-                conn.commit()
-                log.info("Initialized metrics time-series SQLite database at %s", self.db_path)
-            except sqlite3.OperationalError as err:
-                log.error("Operational error initializing metrics schema at %s: %s", self.db_path, err)
-                raise
-            except sqlite3.DatabaseError as err:
-                log.error("Database error initializing metrics schema at %s: %s", self.db_path, err)
-                raise
+            max_attempts = 5
+            for attempt in range(1, max_attempts + 1):
+                conn = self.get_connection()
+                try:
+                    conn.executescript(METRICS_SCHEMA_DDL)
+                    conn.commit()
+                    log.info("Initialized metrics time-series SQLite database at %s", self.db_path)
+                    break
+                except sqlite3.OperationalError as err:
+                    if "locked" in str(err).lower() and attempt < max_attempts:
+                        log.warning(
+                            "Metrics DB locked during initialization attempt %d/%d at %s. Retrying...",
+                            attempt,
+                            max_attempts,
+                            self.db_path,
+                        )
+                        time.sleep(0.2 * attempt)
+                        continue
+                    log.error("Operational error initializing metrics schema at %s: %s", self.db_path, err)
+                    raise
+                except sqlite3.DatabaseError as err:
+                    log.error("Database error initializing metrics schema at %s: %s", self.db_path, err)
+                    raise
 
     def record_snapshot(self, snapshot: MetricSnapshotRecord) -> int:
         """Inserts a single metric telemetry snapshot into the time-series store.

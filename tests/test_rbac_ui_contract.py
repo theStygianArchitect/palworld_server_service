@@ -4,7 +4,9 @@
 # pylint: disable=redefined-outer-name
 # Rationale: Pytest dependency injection requires test parameters to match fixture names.
 
+import contextlib
 import re
+import sqlite3
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -39,10 +41,12 @@ def rbac_client(tmp_path: Path) -> Generator[TestClient, None, None]:
         settings.updater_enabled = orig_updater
         db.close()
         db.db_path = orig_db
-        db.initialize()
+        with contextlib.suppress(sqlite3.OperationalError):
+            db.initialize()
         metrics_db.close()
         metrics_db.db_path = orig_metrics
-        metrics_db.initialize()
+        with contextlib.suppress(sqlite3.OperationalError):
+            metrics_db.initialize()
 
 
 def _create_user_and_token(client: TestClient, username: str, password: str, role: str) -> str:
