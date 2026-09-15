@@ -2,6 +2,8 @@
 Description=Palworld Web Management & Telemetry Plane
 After=network-online.target
 Wants=network-online.target
+Wants=palworld-supervisor.service
+After=palworld-supervisor.service
 
 [Service]
 User=palmanager
@@ -17,7 +19,7 @@ RestartSec=5
 ProtectSystem=true
 ProtectHome=false
 PrivateTmp=true
-ReadWritePaths=/var/lib/palmanager /home/steam /opt/palworld-web-manager /tmp /etc/sudoers.d /etc/systemd/system
+ReadWritePaths=/var/lib/palmanager /home/steam /opt/palworld-web-manager /tmp /etc/systemd/system
 
 [Install]
 WantedBy=multi-user.target

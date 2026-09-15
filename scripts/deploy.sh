@@ -212,27 +212,20 @@ chown -R "${APP_USER}:${APP_USER}" /var/lib/palmanager
 chmod -R 0775 /var/lib/palmanager
 chmod 0750 /var/lib/palmanager/certs
 
-# Ensure scoped sudoers rules for management operations via dedicated drop-in
-SUDOERS_FILE="/etc/sudoers.d/palmanager"
-cat << SUDO_EOF > "${SUDOERS_FILE}"
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart palworld.service, /usr/bin/systemctl restart palworld.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status palworld.service, /usr/bin/systemctl status palworld.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld.service, /usr/bin/systemctl is-active palworld.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart palworld-manager.service, /usr/bin/systemctl restart palworld-manager.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status palworld-manager.service, /usr/bin/systemctl status palworld-manager.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld-manager.service, /usr/bin/systemctl is-active palworld-manager.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *, /usr/bin/journalctl -u palworld.service *
-${APP_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status
-${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh *
-${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh.tmp *
-${APP_USER} ALL=(ALL) NOPASSWD: /tmp/palmanager_deploy*.sh *
-${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/deploy.sh *
-SUDO_EOF
-chmod 0440 "${SUDOERS_FILE}"
-if command -v visudo >/dev/null 2>&1; then
-    visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1 || true
-fi
+# Remove legacy sudoers drop-in (superseded by palworld-supervisor daemon)
+rm -f /etc/sudoers.d/palmanager
 rm -f /etc/sudoers.d/palmanager-certs /etc/sudoers.d/palworld_manager_palmanager 2>/dev/null || true
+
+# Grant journal read access for unprivileged journalctl queries
+usermod -aG systemd-journal palmanager 2>/dev/null || true
+
+# Install and enable supervisor daemon
+if [ -f "${REPO_ROOT}/scripts/palworld-supervisor.service" ]; then
+    cp "${REPO_ROOT}/scripts/palworld-supervisor.service" /etc/systemd/system/palworld-supervisor.service
+    systemctl daemon-reload
+    systemctl enable palworld-supervisor.service
+    systemctl restart palworld-supervisor.service
+fi
 
 # Register fallback daily root crontab for certificate renewal
 if command -v crontab >/dev/null 2>&1; then

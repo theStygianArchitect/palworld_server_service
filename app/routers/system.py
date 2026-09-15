@@ -9,8 +9,6 @@ from __future__ import annotations
 import asyncio
 import datetime
 import os
-import shutil
-import subprocess  # nosec B404 - required for systemctl service management
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -429,19 +427,15 @@ async def get_tls_status(
 
 
 def dispatch_manager_service_restart() -> None:
-    """Dispatches a non-blocking systemctl restart of palworld-manager.service on POSIX."""
+    """Dispatches a non-blocking systemctl restart of palworld-manager.service via supervisor."""
     if os.name == "posix":
-        sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"  # nosec B607
-        systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"  # nosec B607
         try:
-            # pylint: disable-next=consider-using-with
-            subprocess.Popen(  # nosec B603 - static arguments, trusted systemctl binary
-                [sudo_bin, "-n", systemctl_bin, "restart", "palworld-manager.service"],
-                start_new_session=True,
-            )
-            log.info("Dispatched systemctl restart for palworld-manager.service")
-        except OSError as err:
-            log.error("Failed to execute manager service restart: %s", err)
+            from app.supervisor.client import SupervisorClient  # pylint: disable=import-outside-toplevel
+            client = SupervisorClient()
+            asyncio.get_event_loop().create_task(client.restart_service("palworld-manager.service"))
+            log.info("Dispatched supervisor IPC restart for palworld-manager.service")
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            log.error("Failed to dispatch manager service restart via supervisor: %s", err)
     else:
         log.info("Non-posix environment detected; skipping manager service restart.")
 

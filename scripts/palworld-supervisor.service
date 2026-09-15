@@ -1,0 +1,27 @@
+[Unit]
+Description=Palworld Supervisor Daemon — Root Privileged IPC Sidecar
+After=network-online.target
+Wants=network-online.target
+Before=palworld-manager.service
+
+[Service]
+User=root
+Group=root
+Type=simple
+WorkingDirectory=/opt/palworld-web-manager
+Environment="PATH=/opt/palworld-web-manager/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+RuntimeDirectory=palmanager
+RuntimeDirectoryMode=0755
+ExecStart=/opt/palworld-web-manager/.venv/bin/python -m app.supervisor.main
+
+Restart=always
+RestartSec=3
+
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=false
+ReadWritePaths=/run/palmanager /var/lib/palmanager /opt/palworld-web-manager /var/log/palmanager
+
+[Install]
+WantedBy=multi-user.target

@@ -184,9 +184,8 @@ class PalLogScraper:
         if self.registered or not checker():
             return
         try:
-            sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
             journalctl_bin = shutil.which("journalctl") or "/bin/journalctl"
-            cmd = [sudo_bin, journalctl_bin, "-u", "palworld.service", "-b", "-n", "5000", "--no-pager"]
+            cmd = [journalctl_bin, "-u", "palworld.service", "-b", "-n", "5000", "--no-pager"]
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False)  # nosec B603
             if proc.returncode != 0:
                 return
@@ -298,9 +297,8 @@ class PalLogScraper:
     def _read_journal_tail(tail: int) -> list[str]:
         """Reads recent log lines from journalctl if log files are inaccessible."""
         try:
-            sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
             journalctl_bin = shutil.which("journalctl") or "/bin/journalctl"
-            cmd = [sudo_bin, journalctl_bin, "-u", "palworld.service", "-n", str(tail * 3), "--no-pager"]
+            cmd = [journalctl_bin, "-u", "palworld.service", "-n", str(tail * 3), "--no-pager"]
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=4, check=False)  # nosec B603
             if proc.returncode == 0:
                 return proc.stdout.splitlines()

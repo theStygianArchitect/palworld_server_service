@@ -37,6 +37,9 @@ DEFAULT_DEPLOY_RUNNER: Path = Path(tempfile.gettempdir()) / "palmanager_deploy_r
 DEFAULT_POST_UPDATE_FILE: Path = Path("/var/lib/palmanager/last_update.json")
 STALE_LOCK_TIMEOUT_SECONDS: float = 1800.0  # 30 minutes
 
+# Strong references preventing premature garbage collection of fire-and-forget deploy tasks (RUF006)
+_background_deploy_tasks: set[asyncio.Task[Any]] = set()
+
 
 def _resolve_default_deploy_log_path() -> Path:
     """Returns a writable destination path for deploy script execution logs."""
@@ -88,29 +91,19 @@ def _spawn_detached_deployer(deploy_script: Path, target_branch: str) -> None:
 
         # Detached deployment runner must outlive parent web service process lifecycle
         if os.name == "posix":
-            runner_path = DEFAULT_DEPLOY_RUNNER
-            script_to_exec = deploy_script
+            # Delegate deployment to the supervisor daemon via IPC
             try:
-                shutil.copy2(deploy_script, runner_path)
-                os.chmod(runner_path, 0o755)  # nosec B103 - runner requires execution permissions for sudo
-                script_to_exec = runner_path
-            except OSError as err:
-                log.warning(
-                    "Could not stage deploy script to %s: %s. Falling back to %s",
-                    runner_path,
-                    err,
-                    deploy_script,
-                )
-
-            # start_new_session=True ensures the child process outlives the parent web process restart.
-            sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"  # nosec B607 - absolute path resolved
-            # pylint: disable-next=consider-using-with
-            subprocess.Popen(  # nosec B603 - argument list is validated; no shell=True; setuid binary required
-                [sudo_bin, "-n", str(script_to_exec), target_branch],
-                stdout=log_fd,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
+                from app.supervisor.client import SupervisorClient  # pylint: disable=import-outside-toplevel
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    task = asyncio.ensure_future(SupervisorClient().trigger_deploy(target_branch))
+                    _background_deploy_tasks.add(task)
+                    task.add_done_callback(_background_deploy_tasks.discard)
+                else:
+                    loop.run_until_complete(SupervisorClient().trigger_deploy(target_branch))
+                log.info("Dispatched deployment for branch '%s' via supervisor IPC", target_branch)
+            except Exception as err:  # pylint: disable=broad-exception-caught
+                log.error("Failed to dispatch deployment via supervisor: %s", err)
         else:
             bash_bin = shutil.which("bash") or "bash"  # nosec B607 - absolute path resolved via shutil.which
             # pylint: disable-next=consider-using-with
