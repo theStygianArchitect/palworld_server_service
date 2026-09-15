@@ -20,7 +20,6 @@ PAL_SERVICE_FILE="/etc/systemd/system/palworld.service"
 MAINTENANCE_SCRIPT="${STEAM_HOME}/palworld-maintenance.sh"
 DUCKDNS_DIR="${STEAM_HOME}/duckdns"
 MANAGER_SERVICE_FILE="/etc/systemd/system/palworld-manager.service"
-SUDOERS_FILE="/etc/sudoers.d/palmanager"
 STANDALONE_BIN="/usr/local/bin/palworld-manager"
 APP_PORT=8080
 
@@ -124,27 +123,22 @@ setfacl -m u:steam:rw /var/lib/palmanager/update_requested 2>/dev/null || true
 setfacl -m u:steam:rwx /var/lib/palmanager 2>/dev/null || true
 echo "[ OK ]"
 
-# 4. Scoped Sudoers Privileges
-echo -n "[4/8] Configuring scoped sudoers rules for '${APP_USER}'... "
-cat << SUDO_EOF > "${SUDOERS_FILE}"
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart palworld.service, /usr/bin/systemctl restart palworld.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status palworld.service, /usr/bin/systemctl status palworld.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld.service, /usr/bin/systemctl is-active palworld.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart palworld-manager.service, /usr/bin/systemctl restart palworld-manager.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status palworld-manager.service, /usr/bin/systemctl status palworld-manager.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/systemctl is-active palworld-manager.service, /usr/bin/systemctl is-active palworld-manager.service
-${APP_USER} ALL=(ALL) NOPASSWD: /bin/journalctl -u palworld.service *, /usr/bin/journalctl -u palworld.service *
-${APP_USER} ALL=(ALL) NOPASSWD: /usr/sbin/ufw status
-${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh *
-${APP_USER} ALL=(ALL) NOPASSWD: ${APP_DIR}/scripts/deploy.sh.tmp *
-${APP_USER} ALL=(ALL) NOPASSWD: /tmp/palmanager_deploy*.sh *
-${APP_USER} ALL=(ALL) NOPASSWD: ${REPO_ROOT}/scripts/deploy.sh *
-SUDO_EOF
-chmod 0440 "${SUDOERS_FILE}"
-if command -v visudo >/dev/null 2>&1; then
-    visudo -cf "${SUDOERS_FILE}" >/dev/null 2>&1 || true
-fi
+# 4. Supervisor Daemon & Privilege Provisioning
+echo -n "[4/8] Provisioning supervisor daemon and cleaning legacy sudoers... "
+# Remove legacy sudoers drop-in (superseded by palworld-supervisor daemon)
+rm -f /etc/sudoers.d/palmanager
 rm -f /etc/sudoers.d/palmanager-certs /etc/sudoers.d/palworld_manager_palmanager 2>/dev/null || true
+
+# Grant journal read access for unprivileged journalctl queries
+usermod -aG systemd-journal palmanager 2>/dev/null || true
+
+# Install and enable supervisor daemon
+if [ -f "${SCRIPT_DIR}/palworld-supervisor.service" ]; then
+    cp "${SCRIPT_DIR}/palworld-supervisor.service" /etc/systemd/system/palworld-supervisor.service
+    systemctl daemon-reload
+    systemctl enable palworld-supervisor.service
+    systemctl restart palworld-supervisor.service
+fi
 echo "[ OK ]"
 
 # 5. Service Files & Maintenance Scripts

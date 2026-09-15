@@ -4,8 +4,6 @@
 
 import asyncio
 import os
-import shutil
-import subprocess  # nosec B404 - required for mocking Popen in test harness
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -15,7 +13,6 @@ import pytest
 from fastapi import HTTPException
 
 from app.engine.updater import (
-    DEFAULT_DEPLOY_RUNNER,
     STALE_LOCK_TIMEOUT_SECONDS,
     UpdateWatcher,
     _resolve_default_deploy_log_path,
@@ -284,80 +281,29 @@ def test_get_status_includes_target_branch(temp_watcher: UpdateWatcher) -> None:
     assert status.target_branch == "feature-xyz"
 
 
-def test_spawn_detached_deployer_uses_non_interactive_sudo(tmp_path: Path, monkeypatch) -> None:
-    """Verifies that on posix systems, _spawn_detached_deployer invokes sudo with -n."""
-    captured_cmds = []
-
-    def mock_popen(cmd, *args, **kwargs):
-        captured_cmds.append(cmd)
-        return MagicMock(pid=99999)
-
-    monkeypatch.setattr(subprocess, "Popen", mock_popen)
+def test_spawn_detached_deployer_uses_supervisor_client(tmp_path: Path, monkeypatch) -> None:
+    """Verifies that on posix systems, _spawn_detached_deployer delegates to SupervisorClient."""
     monkeypatch.setattr("app.engine.updater._resolve_default_deploy_log_path", lambda: tmp_path / "deploy.log")
     monkeypatch.setattr("os.name", "posix")
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/sudo" if x == "sudo" else None)
-    monkeypatch.setattr(shutil, "copy2", lambda src, dst: dst)
-    monkeypatch.setattr(os, "chmod", lambda path, mode: None)
+
+    mock_client_instance = AsyncMock()
+    mock_client_class = MagicMock(return_value=mock_client_instance)
+    monkeypatch.setattr("app.supervisor.client.SupervisorClient", mock_client_class)
 
     script_path = tmp_path / "deploy.sh"
     script_path.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
 
-    _spawn_detached_deployer(script_path, "main")
-    assert len(captured_cmds) == 1
-    assert captured_cmds[0] == ["/usr/bin/sudo", "-n", str(DEFAULT_DEPLOY_RUNNER), "main"]
+    # Call it inside a dummy event loop to ensure proper async execution context
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        _spawn_detached_deployer(script_path, "main")
+        # Run pending tasks to let the background deploy task execute
+        loop.run_until_complete(asyncio.sleep(0.01))
+    finally:
+        loop.close()
 
-
-def test_spawn_detached_deployer_stages_out_of_tree_runner(monkeypatch, tmp_path: Path) -> None:
-    """Verifies staging of deploy script to isolated runner and fallback on OSError."""
-    captured_cmds: list[list[str]] = []
-    copied_files: list[tuple[str, str]] = []
-    chmod_calls: list[tuple[str, int]] = []
-
-    def mock_popen(cmd, *args, **kwargs):
-        captured_cmds.append(cmd)
-        return MagicMock(pid=12345)
-
-    def mock_copy2(src, dst):
-        copied_files.append((str(src), str(dst)))
-        return dst
-
-    def mock_chmod(path, mode):
-        chmod_calls.append((str(path), mode))
-
-    monkeypatch.setattr(subprocess, "Popen", mock_popen)
-    monkeypatch.setattr("app.engine.updater._resolve_default_deploy_log_path", lambda: tmp_path / "deploy.log")
-    monkeypatch.setattr("os.name", "posix")
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/sudo" if x == "sudo" else None)
-    monkeypatch.setattr(shutil, "copy2", mock_copy2)
-    monkeypatch.setattr(os, "chmod", mock_chmod)
-
-    mock_deploy = tmp_path / "deploy.sh"
-    mock_deploy.write_text("#!/bin/bash\necho deploy\n", encoding="utf-8")
-
-    # 1. Success case: deploy.sh is staged out-of-tree and executed
-    _spawn_detached_deployer(mock_deploy, "main")
-
-    assert len(copied_files) == 1
-    assert copied_files[0] == (str(mock_deploy), str(DEFAULT_DEPLOY_RUNNER))
-    assert len(chmod_calls) == 1
-    assert chmod_calls[0] == (str(DEFAULT_DEPLOY_RUNNER), 0o755)
-    assert len(captured_cmds) == 1
-    assert captured_cmds[0] == ["/usr/bin/sudo", "-n", str(DEFAULT_DEPLOY_RUNNER), "main"]
-
-    # 2. Defensive fallback case: shutil.copy2 raises OSError
-    copied_files.clear()
-    chmod_calls.clear()
-    captured_cmds.clear()
-
-    def mock_copy2_error(src, dst):
-        raise OSError("Read-only filesystem or disk full")
-
-    monkeypatch.setattr(shutil, "copy2", mock_copy2_error)
-
-    _spawn_detached_deployer(mock_deploy, "feature-branch")
-
-    assert len(captured_cmds) == 1
-    assert captured_cmds[0] == ["/usr/bin/sudo", "-n", str(mock_deploy), "feature-branch"]
+    mock_client_instance.trigger_deploy.assert_called_once_with("main")
 
 
 def test_get_deployment_progress_aborted_in_log(temp_watcher: UpdateWatcher, tmp_path: Path):

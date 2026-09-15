@@ -4,10 +4,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Generator
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -148,34 +149,44 @@ def test_post_tls_renew_success(client: TestClient, tmp_path: Path) -> None:
 
 
 def test_dispatch_manager_service_restart_posix() -> None:
-    """Tests dispatch_manager_service_restart executes sudo systemctl restart on POSIX."""
+    """Tests dispatch_manager_service_restart delegates to SupervisorClient on POSIX."""
+    mock_client_instance = AsyncMock()
+    mock_client_class = MagicMock(return_value=mock_client_instance)
+
     with patch("app.routers.system.os.name", "posix"), \
-         patch("app.routers.system.shutil.which", side_effect=lambda bin_name: f"/usr/bin/{bin_name}"), \
-         patch("app.routers.system.subprocess.Popen") as mock_popen:
-        dispatch_manager_service_restart()
-        mock_popen.assert_called_once_with(
-            ["/usr/bin/sudo", "-n", "/usr/bin/systemctl", "restart", "palworld-manager.service"],
-            start_new_session=True,
-        )
+         patch("app.supervisor.client.SupervisorClient", mock_client_class):
+
+        # We need an event loop to create the task
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            dispatch_manager_service_restart()
+            # Run the event loop to execute the create_task callback
+            loop.run_until_complete(asyncio.sleep(0.01))
+        finally:
+            loop.close()
+
+        mock_client_instance.restart_service.assert_called_once_with("palworld-manager.service")
 
 
 def test_dispatch_manager_service_restart_non_posix() -> None:
     """Tests dispatch_manager_service_restart is a no-op on non-POSIX systems."""
     with patch("app.routers.system.os.name", "nt"), \
-         patch("app.routers.system.subprocess.Popen") as mock_popen:
+         patch("app.routers.system.log.info") as mock_log:
         dispatch_manager_service_restart()
-        mock_popen.assert_not_called()
+        mock_log.assert_called_with("Non-posix environment detected; skipping manager service restart.")
 
 
-def test_dispatch_manager_service_restart_handles_oserror() -> None:
-    """Tests dispatch_manager_service_restart catches and logs OSError gracefully."""
+def test_dispatch_manager_service_restart_handles_exception() -> None:
+    """Tests dispatch_manager_service_restart catches and logs exceptions gracefully."""
+    mock_client_class = MagicMock(side_effect=RuntimeError("IPC failed"))
+
     with patch("app.routers.system.os.name", "posix"), \
-         patch("app.routers.system.shutil.which", return_value="/bin/systemctl"), \
-         patch("app.routers.system.subprocess.Popen", side_effect=OSError("Process failed")), \
+         patch("app.supervisor.client.SupervisorClient", mock_client_class), \
          patch("app.routers.system.log.error") as mock_log:
         dispatch_manager_service_restart()
         mock_log.assert_called_once()
-        assert "Failed to execute manager service restart" in mock_log.call_args[0][0]
+        assert "Failed to dispatch manager service restart via supervisor" in mock_log.call_args[0][0]
 
 
 def test_tls_endpoints_forbidden_for_viewer(client: TestClient) -> None:

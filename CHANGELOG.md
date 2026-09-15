@@ -10,6 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - React 19 + Vite SPA (#22, #23)
 
+## [0.5.0] - 2026-09-15
+
+### Added
+- Root Privileged IPC Sidecar Daemon (`palworld-supervisor`) — Unix Domain Socket JSON-RPC 2.0 server for isolated host operations. Closes #62.
+- `app/supervisor/` package: `protocol.py` (Pydantic v2 schemas), `auth.py` (SO_PEERCRED kernel credential validation), `handlers.py` (whitelisted RPC methods), `server.py` (async UDS server), `client.py` (async IPC client), `main.py` (CLI daemon entrypoint).
+- `scripts/palworld-supervisor.service` — systemd unit running as `root` with `ProtectSystem=strict` hardening and `RuntimeDirectory=palmanager`.
+- `palmanager` user granted `systemd-journal` group membership for unprivileged journalctl access.
+- 36 new tests across `test_supervisor_auth.py`, `test_supervisor_protocol.py`, and `test_supervisor_server.py`.
+
+### Changed
+- **BREAKING**: All privileged operations (service restart, deploy, reboot) now route through supervisor IPC instead of direct `sudo` subprocess invocation.
+- `app/engine/service.py`: Systemctl restart replaced with `SupervisorClient.restart_service()`.
+- `app/routers/system.py`: Manager service restart replaced with supervisor IPC dispatch.
+- `app/engine/updater.py`: Deploy execution replaced with `SupervisorClient.trigger_deploy()`.
+- `app/monitoring/log_scraper.py`: Journalctl commands no longer use `sudo` prefix (authorized via `systemd-journal` group).
+- `scripts/palworld-manager.service`: Added `Wants=palworld-supervisor.service` dependency; removed `/etc/sudoers.d` from `ReadWritePaths`.
+- `scripts/deploy.sh` and `scripts/install.sh`: Removed sudoers provisioning, added supervisor daemon installation and legacy sudoers cleanup.
+
+### Removed
+- `/etc/sudoers.d/palmanager` drop-in — superseded by supervisor daemon architecture.
+- All `sudo -n` subprocess calls from application code (zero sudo static audit verified).
+
 ## [0.4.5] - 2026-09-14
 
 ### Added
