@@ -21,8 +21,6 @@ from app.database.models import (
 )
 
 SCHEMA_DDL = """
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
@@ -147,7 +145,7 @@ class DatabaseManager:  # pylint: disable=too-many-public-methods
                     conn.execute("PRAGMA journal_mode = WAL;")
                 except sqlite3.OperationalError as err:
                     log.debug("WAL mode activation ignored (e.g. read-only or in-memory): %s", err)
-            conn.execute("PRAGMA busy_timeout = 5000;")
+            conn.execute("PRAGMA busy_timeout = 10000;")
             self._conn = conn
             return self._conn
 
