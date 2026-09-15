@@ -10,6 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - React 19 + Vite SPA (#22, #23)
 
+## [0.4.5] - 2026-09-14
+
+### Added
+- Closed-loop game server reboot lifecycle states in `app/templates/index.html`: added `#rebootSuccessToast` for confirmed online readiness and $>90$s stall watchdog `#rebootStallWarning` with direct diagnostic log navigation. Closes #60.
+- Real-time WebSocket connection health status pill (`#wsConnectionBadge`) in `app/templates/index.html` header featuring closed-loop bounded exponential backoff (1s, 2s, 4s, 8s, 16s) and 1-click manual reconnection escape hatch.
+- Insecure plaintext HTTP detection and 1-click HTTPS upgrade banners (`#insecureHttpBanner`) across auxiliary portals `app/templates/feedback.html` and `app/templates/metrics.html`.
+- Regression UI contract test coverage in `tests/test_rbac_ui_contract.py` asserting DOM structure, handlers, and state machines across all templates.
+- Strict pull request merge stopgap rules (`git-merge-stopgap.md`, `GEMINI.md`, `implementation-architect` v1.8.0) forbidding autonomous merges to `main` without human authorization.
+
 ## [0.4.4] - 2026-09-14
 
 ### Added

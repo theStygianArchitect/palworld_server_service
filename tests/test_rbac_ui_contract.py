@@ -465,3 +465,45 @@ def test_insecure_login_upgrade_banner_contract() -> None:
     assert 'href="/canonical"' in html
     assert "Switch to Secure HTTPS" in html
     assert "window.location.protocol === 'http:'" in html
+
+
+def test_auxiliary_pages_insecure_http_upgrade_banner_contracts() -> None:
+    """Verifies that insecure HTTP warning banner and 1-click HTTPS upgrade button exist in auxiliary templates."""
+    template_dir = Path(__file__).resolve().parent.parent / "app" / "templates"
+    for filename in ("feedback.html", "metrics.html"):
+        template_path = template_dir / filename
+        assert template_path.exists(), f"Missing expected template: {filename}"
+        html = template_path.read_text(encoding="utf-8")
+
+        assert 'id="insecureHttpBanner"' in html, f"Missing #insecureHttpBanner in {filename}"
+        assert 'id="btnUpgradeToHttps"' in html, f"Missing #btnUpgradeToHttps in {filename}"
+        assert 'href="/canonical"' in html, f"Missing href='/canonical' in {filename}"
+        assert "triggerUpgradeToHttps()" in html, f"Missing triggerUpgradeToHttps() in {filename}"
+        assert "dismissInsecureBanner()" in html, f"Missing dismissInsecureBanner() in {filename}"
+        assert "Switch to Secure HTTPS" in html, f"Missing CTA text in {filename}"
+        assert "window.location.protocol === 'http:'" in html, f"Missing protocol check in {filename}"
+
+
+def test_reboot_lifecycle_closed_loop_and_ws_health_contracts() -> None:
+    """Regression test for Issue #60: reboot closed-loop HUD elements and WebSocket health state machine."""
+    html_path = Path(__file__).resolve().parent.parent / "app" / "templates" / "index.html"
+    assert html_path.exists()
+    html = html_path.read_text(encoding="utf-8")
+
+    # Reboot closed-loop HUD elements
+    assert 'id="rebootSuccessToast"' in html
+    assert 'id="rebootStallWarning"' in html
+    assert "dismissRebootSuccessToast()" in html
+    assert "dismissRebootStallWarning()" in html
+    assert "showRebootSuccessToast()" in html
+    assert "showRebootStallWarning()" in html
+    assert "window.probingWatchdogTimer" in html
+    assert "Server Online" in html
+    assert "Startup Delayed" in html
+
+    # WebSocket connection health indicator
+    assert 'id="wsConnectionBadge"' in html
+    assert "reconnectWebSocket()" in html
+    assert "updateWsBadge" in html
+    assert "MAX_WS_RECONNECT_ATTEMPTS" in html
+    assert "wsReconnectAttempts" in html

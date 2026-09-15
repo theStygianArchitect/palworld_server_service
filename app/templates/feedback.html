@@ -45,6 +45,25 @@
 </head>
 <body class="bg-dark-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-brand-500 selection:text-white">
 
+  <!-- Insecure Plaintext HTTP Session Warning Banner -->
+  <div id="insecureHttpBanner" class="hidden bg-amber-950/70 border-b border-amber-500/40 px-4 py-2 text-xs font-sans text-amber-200">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="text-base">⚠️</span>
+        <span>
+          <strong class="font-semibold text-amber-300">Insecure Connection:</strong>
+          You are viewing this portal over unencrypted HTTP.
+        </span>
+      </div>
+      <div class="flex items-center gap-2">
+        <a id="btnUpgradeToHttps" href="/canonical" onclick="triggerUpgradeToHttps()" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs shadow transition">
+          <span>🔒</span> Switch to Secure HTTPS
+        </a>
+        <button onclick="dismissInsecureBanner()" class="p-1 text-amber-400/70 hover:text-amber-200 text-sm transition" title="Dismiss banner">✕</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Header -->
   <header class="bg-dark-900/90 border-b border-slate-800 sticky top-0 z-40 px-4 sm:px-6 py-3 shadow-xl backdrop-blur-md">
     <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -581,6 +600,25 @@
     function closeModal() {
       document.getElementById('detailModal').classList.add('hidden');
     }
+
+    function triggerUpgradeToHttps() {
+      window.location.href = '/canonical';
+    }
+
+    function dismissInsecureBanner() {
+      const banner = document.getElementById('insecureHttpBanner');
+      if (banner) banner.classList.add('hidden');
+      sessionStorage.setItem('dismissInsecureBanner', 'true');
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.location.protocol === 'http:') {
+        if (!sessionStorage.getItem('dismissInsecureBanner')) {
+          const banner = document.getElementById('insecureHttpBanner');
+          if (banner) banner.classList.remove('hidden');
+        }
+      }
+    });
   </script>
 </body>
 </html>

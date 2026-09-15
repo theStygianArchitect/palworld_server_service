@@ -17,7 +17,7 @@ from app.monitoring.log_scraper import PalLogScraper
 from app.monitoring.net_diagnostics import NetworkThroughputTracker
 from app.monitoring.tracker import CommunityTracker
 
-__version__ = "0.4.4"
+__version__ = "0.4.5"
 
 __all__ = [
     "AppSettings",
