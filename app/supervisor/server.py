@@ -68,10 +68,12 @@ class SupervisorServer:
                 os.chown(self.socket_path, 0, pw.pw_gid)  # type: ignore[attr-defined]  # pylint: disable=no-member
             except KeyError:
                 log.debug("UID %d not found in password database, using UID as GID", self.allowed_uid)
-                os.chown(self.socket_path, 0, self.allowed_uid)  # type: ignore[attr-defined]  # pylint: disable=no-member
+                # pylint: disable-next=no-member
+                os.chown(self.socket_path, 0, self.allowed_uid)  # type: ignore[attr-defined]
             except ImportError:
                 log.debug("pwd module unavailable, using UID as GID")
-                os.chown(self.socket_path, 0, self.allowed_uid)  # type: ignore[attr-defined]  # pylint: disable=no-member
+                # pylint: disable-next=no-member
+                os.chown(self.socket_path, 0, self.allowed_uid)  # type: ignore[attr-defined]
 
         log.info("SupervisorServer started on %s", self.socket_path)
 
