@@ -11,7 +11,7 @@ Group=palmanager
 WorkingDirectory=/opt/palworld-web-manager
 Environment="PATH=/opt/palworld-web-manager/.venv/bin:/usr/local/bin:/usr/bin:/bin"
 Environment="PALWORLD_SERVICE_NAME=palworld.service"
-ExecStart=/bin/bash -c 'ETH0_IP=$(ip -4 -o addr show dev eth0 2>/dev/null | awk -F "[ /]+" "{print \$4}" || true); SSL_ARGS=""; if [ -f /var/lib/palmanager/certs/fullchain.pem ] && [ -f /var/lib/palmanager/certs/privkey.pem ]; then SSL_ARGS="--ssl-keyfile /var/lib/palmanager/certs/privkey.pem --ssl-certfile /var/lib/palmanager/certs/fullchain.pem"; fi; if [ -x /usr/local/bin/palworld-manager ]; then exec /usr/local/bin/palworld-manager --host "${ETH0_IP:-0.0.0.0}" --port 8080 ${SSL_ARGS}; else exec /opt/palworld-web-manager/.venv/bin/uvicorn app.main:app --host "${ETH0_IP:-0.0.0.0}" --port 8080 ${SSL_ARGS}; fi'
+ExecStart=/opt/palworld-web-manager/.venv/bin/python -m app.main
 
 Restart=always
 RestartSec=5

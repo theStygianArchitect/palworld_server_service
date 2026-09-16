@@ -11,7 +11,7 @@ import os
 import socket
 import ssl
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import psutil
 from pydantic import AliasChoices, Field, field_validator
@@ -513,6 +513,18 @@ class AppSettings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("PALWORLD_SSL_KEY_PATH", "SSL_KEY_PATH", "ssl_key_path"),
     )
+    ssl_cert_dir: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PALWORLD_SSL_CERT_DIR", "SSL_CERT_DIR", "ssl_cert_dir"),
+    )
+    ssl_auto_renew: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("PALWORLD_SSL_AUTO_RENEW", "SSL_AUTO_RENEW", "ssl_auto_renew"),
+    )
+    ssl_cert_mode: Literal["letsencrypt", "self_signed", "custom"] = Field(
+        default="letsencrypt",
+        validation_alias=AliasChoices("PALWORLD_SSL_CERT_MODE", "SSL_CERT_MODE", "ssl_cert_mode"),
+    )
     ssl_port: int = Field(
         default=8443,
         validation_alias=AliasChoices("PALWORLD_SSL_PORT", "SSL_PORT", "ssl_port"),
@@ -747,8 +759,20 @@ def resolve_ssl_paths(settings_obj: AppSettings | None = None) -> tuple[Path, Pa
     if cfg.ssl_cert_path and cfg.ssl_key_path:
         candidates.append((Path(cfg.ssl_cert_path), Path(cfg.ssl_key_path)))
 
-    # 2. Standard auto-detection paths
-    if cfg.ssl_auto_detect or cfg.ssl_enabled:
+    # 2. Custom certificate directory auto-discovery
+    if cfg.ssl_cert_dir:
+        cert_dir = Path(cfg.ssl_cert_dir).expanduser()
+        candidates.extend(
+            [
+                (cert_dir / "tls.crt", cert_dir / "tls.key"),
+                (cert_dir / "fullchain.pem", cert_dir / "privkey.pem"),
+                (cert_dir / "cert.pem", cert_dir / "key.pem"),
+                (cert_dir / "server.crt", cert_dir / "server.key"),
+            ]
+        )
+
+    # 3. Standard auto-detection paths (only if auto-detect is active)
+    if cfg.ssl_auto_detect:
         candidates.append(
             (
                 Path("/var/lib/palmanager/certs/fullchain.pem"),

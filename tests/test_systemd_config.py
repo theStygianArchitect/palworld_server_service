@@ -32,6 +32,7 @@ def test_palworld_manager_service_sandbox_configuration() -> None:
 
     assert "/etc/sudoers.d" not in rwp_line, "ReadWritePaths must NOT include /etc/sudoers.d (superseded by supervisor)"
     assert "palworld-supervisor.service" in content, "Manager must declare dependency on supervisor"
+    assert "ExecStart=/opt/palworld-web-manager/.venv/bin/python -m app.main" in content
 
 
 def test_deploy_script_supervisor_configuration() -> None:

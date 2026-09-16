@@ -10,6 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Planned
 - React 19 + Vite SPA (#22, #23)
 
+## [0.5.1] - 2026-09-16
+
+### Added
+- Native Python server entrypoint with bootstrap self-signed TLS (`app/server.py:run_server()`) to permanently eliminate first-boot plaintext socket trap on port 8080.
+- Corporate & custom TLS certificate discovery via `PALWORLD_SSL_CERT_DIR` / `ssl_cert_dir` supporting standard certificate naming schemes (`tls.crt`/`tls.key`, `fullchain.pem`/`privkey.pem`, `cert.pem`/`key.pem`, `server.crt`/`server.key`) with cryptographic keypair matching.
+- In-process certificate renewal background scheduler (`app/engine/tls_scheduler.py:certificate_renewal_scheduler()`) with operator auto-renew toggle (`PALWORLD_SSL_AUTO_RENEW`, default `False`) and certificate mode selector (`PALWORLD_SSL_CERT_MODE`: `letsencrypt`, `self_signed`, `custom`).
+- `PUT /api/system/tls/settings` endpoint for dynamic runtime reconfiguration of auto-renewal and certificate provisioning mode with immediate service reload.
+- Continuous expiry countdown and next renewal timestamp exposed across TLS status APIs and dashboard UI regardless of auto-renew toggle state.
+
+### Fixed
+- `/canonical` HTTP 307 redirect made scheme-aware via `resolve_ssl_paths()`, redirecting to `https://` only when valid certificates are active on the host and staying on `http://` otherwise (closes #64).
+- Eliminated infinite loop and tight spin in certificate renewal scheduler by enforcing an explicit 86,400s sleep post-successful renewal, 21,600s failure backoff, and a 3,600s minimum sleep floor.
+- Decoupled server runner and background scheduler logic from `app/main.py`, reducing line count to 396 lines to strictly satisfy the Issue #21 Anti-Junk-Drawer modular router governance contract (< 500 lines).
+- Eliminated blind client-side redirects in `pollTlsReconnection()` (removing 6-attempt blind fallback redirect in favor of closed-loop probing up to 30 attempts with actionable retry card).
+- Enforced a 120-attempt termination ceiling and idle clearing in `pollDeployProgress()` to eliminate unbounded polling loops.
+- Hardened 4 critical disk write sites to use atomic persistence primitives (`atomic_write_file`): ACME account key (0o600), post-update summary JSON, deployment concurrency lock file, and admin credential export (0o600).
+- Hardened `stage_tls_bundle()` with atomic staging context to prevent partial certificate/key pair mismatches on abrupt system termination.
+- Fixed `resolve_ssl_paths()` to properly respect `ssl_auto_detect=False`.
+
+### Changed
+- `scripts/palworld-manager.service`: Simplified `ExecStart` from fragile 300-character inline bash to clean `/opt/palworld-web-manager/.venv/bin/python -m app.main`.
+
 ## [0.5.0] - 2026-09-15
 
 ### Added

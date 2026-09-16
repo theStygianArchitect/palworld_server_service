@@ -28,6 +28,8 @@ from app.api.schemas import (
     TLSCertificateInfo,
     TLSRenewRequest,
     TLSRenewResponse,
+    TLSSettingsUpdateRequest,
+    TLSSettingsUpdateResponse,
     TLSStatusResponse,
     UpdateApplyRequest,
     UpdateApplyResponse,
@@ -384,6 +386,21 @@ async def get_tls_status(
     domain = settings.duckdns_domain or "localhost"
     status = get_tls_certificate_status(domain=domain)
 
+    # Compute countdown fields
+    next_renewal_at: str | None = None
+    renewal_countdown_seconds: int | None = None
+    if status.is_valid and status.not_after:
+        not_after = status.not_after
+        if not_after.tzinfo is None:
+            not_after = not_after.replace(tzinfo=datetime.timezone.utc)
+        renewal_dt = not_after - datetime.timedelta(days=30)
+        next_renewal_at = renewal_dt.isoformat()
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        diff = (renewal_dt - now_dt).total_seconds()
+        renewal_countdown_seconds = max(0, int(diff))
+
+    auto_renew_active = bool(settings.ssl_auto_renew and settings.ssl_cert_mode != "custom")
+
     if not status.is_valid:
         return TLSStatusResponse(
             enabled=False,
@@ -392,9 +409,12 @@ async def get_tls_status(
             port=settings.web_port,
             certificate=None,
             cert_path=str(status.fullchain_path) if status.fullchain_path else None,
-            auto_renew_active=True,
+            auto_renew_active=auto_renew_active,
             warning=status.error_message or "Running unencrypted plaintext HTTP. No valid certificate detected.",
             canonical_url=_resolve_canonical_url(),
+            cert_mode=settings.ssl_cert_mode,
+            next_renewal_at=next_renewal_at,
+            renewal_countdown_seconds=renewal_countdown_seconds,
         )
 
     # Note: Using TLSCertificateInfo (app/api/schemas.py)
@@ -417,11 +437,74 @@ async def get_tls_status(
         enabled=True,
         scheme="https",
         domain=domain,
-        port=settings.ssl_port if getattr(settings, "ssl_enabled", True) else settings.web_port,
+        port=settings.web_port,
         certificate=cert_info,
         cert_path=str(status.fullchain_path),
-        auto_renew_active=True,
+        auto_renew_active=auto_renew_active,
         warning=warning,
+        canonical_url=_resolve_canonical_url(),
+        cert_mode=settings.ssl_cert_mode,
+        next_renewal_at=next_renewal_at,
+        renewal_countdown_seconds=renewal_countdown_seconds,
+    )
+
+
+@router.put("/api/system/tls/settings", response_model=TLSSettingsUpdateResponse)
+async def update_tls_settings(
+    payload: TLSSettingsUpdateRequest,
+    background_tasks: BackgroundTasks,
+    _: UserRecord = Depends(perm_admin),
+) -> TLSSettingsUpdateResponse:
+    """Updates TLS auto-renewal toggle and certificate provisioning mode.
+
+    When cert_mode changes, triggers immediate re-provisioning of the selected type.
+    """
+    changed = False
+    mode_changed = False
+    if payload.auto_renew is not None and payload.auto_renew != settings.ssl_auto_renew:
+        settings.ssl_auto_renew = payload.auto_renew
+        changed = True
+
+    if payload.cert_mode is not None and payload.cert_mode != settings.ssl_cert_mode:
+        settings.ssl_cert_mode = payload.cert_mode
+        changed = True
+        mode_changed = True
+
+    if changed:
+        reload_settings()
+
+    if mode_changed and payload.cert_mode is not None and payload.cert_mode != "custom":
+        token = settings.duckdns_token or "" if payload.cert_mode == "letsencrypt" else ""
+        result = await provision_tls_certificates(
+            domain=settings.duckdns_domain or "localhost",
+            token=token,
+            force=True,
+        )
+        if result.success:
+            background_tasks.add_task(_delayed_manager_restart)
+            return TLSSettingsUpdateResponse(
+                status="success",
+                message=(
+                    f"Certificate mode changed to '{payload.cert_mode}'. "
+                    f"New {result.mode.value} certificate provisioned. Service restarting."
+                ),
+                auto_renew=settings.ssl_auto_renew,
+                cert_mode=settings.ssl_cert_mode,
+                canonical_url=_resolve_canonical_url(),
+            )
+        return TLSSettingsUpdateResponse(
+            status="error",
+            message=f"Failed to provision certificate for mode '{payload.cert_mode}': {result.error}",
+            auto_renew=settings.ssl_auto_renew,
+            cert_mode=settings.ssl_cert_mode,
+            canonical_url=_resolve_canonical_url(),
+        )
+
+    return TLSSettingsUpdateResponse(
+        status="success",
+        message="TLS settings updated successfully.",
+        auto_renew=settings.ssl_auto_renew,
+        cert_mode=settings.ssl_cert_mode,
         canonical_url=_resolve_canonical_url(),
     )
 

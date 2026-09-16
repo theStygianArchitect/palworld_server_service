@@ -1018,6 +1018,49 @@ class TLSStatusResponse(BaseModel):
         default="https://thestygianarchitect.duckdns.org:8080",
         description="Canonical public HTTPS access URL",
     )
+    cert_mode: Literal["letsencrypt", "self_signed", "custom"] = Field(
+        default="letsencrypt", description="Active certificate provisioning mode"
+    )
+    next_renewal_at: str | None = Field(
+        default=None, description="ISO 8601 UTC timestamp of next scheduled renewal"
+    )
+    renewal_countdown_seconds: int | None = Field(
+        default=None, description="Seconds until next scheduled renewal"
+    )
+
+
+class TLSSettingsUpdateRequest(BaseModel):
+    """Request payload for updating TLS auto-renewal and certificate mode.
+
+    Attributes:
+        auto_renew (bool | None): Enable/disable automatic certificate renewal.
+        cert_mode (Literal['letsencrypt', 'self_signed', 'custom'] | None): Certificate mode.
+    """
+
+    auto_renew: bool | None = Field(
+        default=None, description="Enable/disable automatic certificate renewal"
+    )
+    cert_mode: Literal["letsencrypt", "self_signed", "custom"] | None = Field(
+        default=None, description="Certificate provisioning mode to switch to"
+    )
+
+
+class TLSSettingsUpdateResponse(BaseModel):
+    """Response from updating TLS settings.
+
+    Attributes:
+        status (Literal['success', 'error']): Operation status.
+        message (str): Informational outcome message.
+        auto_renew: bool: Current auto-renew toggle state.
+        cert_mode: str: Current certificate mode.
+        canonical_url: str: Active canonical URL.
+    """
+
+    status: Literal["success", "error"] = Field(..., description="Operation status")
+    message: str = Field(..., description="Informational outcome message")
+    auto_renew: bool = Field(..., description="Current auto-renew toggle state")
+    cert_mode: str = Field(..., description="Current certificate mode")
+    canonical_url: str = Field(..., description="Active canonical URL")
 
 
 class TLSRenewRequest(BaseModel):

@@ -1630,9 +1630,36 @@
             <span class="text-slate-400">Days Remaining:</span>
             <span id="modalTlsDaysBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">--</span>
           </div>
-          <div class="flex justify-between">
+          <div class="flex justify-between items-center">
             <span class="text-slate-400">Background Auto-Renewal:</span>
-            <strong id="modalTlsAutoRenew" class="text-slate-400">Inactive</strong>
+            <div class="flex items-center gap-2">
+              <span id="modalTlsAutoRenew" class="text-[11px] text-slate-400">Inactive</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="tlsAutoRenewToggle" onchange="handleAutoRenewToggle(this.checked)" class="rounded bg-dark-900 border-slate-700 text-brand-600 focus:ring-0">
+                <span class="ml-1 text-[10px] text-slate-400">Auto-Renew</span>
+              </label>
+            </div>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">Renewal Countdown:</span>
+            <strong id="modalTlsCountdown" class="text-slate-200">--</strong>
+          </div>
+          <div class="pt-2 border-t border-slate-800/80 space-y-1.5">
+            <span class="text-slate-400 block mb-1">Provisioning Mode:</span>
+            <div class="grid grid-cols-3 gap-2 text-[10px]">
+              <label class="flex items-center gap-1.5 p-2 rounded-lg bg-dark-900 border border-slate-800 cursor-pointer hover:border-slate-700">
+                <input type="radio" name="tlsCertMode" value="letsencrypt" onchange="handleCertModeChange(this.value)" class="text-brand-600 focus:ring-0">
+                <span>Let's Encrypt</span>
+              </label>
+              <label class="flex items-center gap-1.5 p-2 rounded-lg bg-dark-900 border border-slate-800 cursor-pointer hover:border-slate-700">
+                <input type="radio" name="tlsCertMode" value="self_signed" onchange="handleCertModeChange(this.value)" class="text-brand-600 focus:ring-0">
+                <span>Self-Signed</span>
+              </label>
+              <label class="flex items-center gap-1.5 p-2 rounded-lg bg-dark-900 border border-slate-800 cursor-pointer hover:border-slate-700">
+                <input type="radio" name="tlsCertMode" value="custom" onchange="handleCertModeChange(this.value)" class="text-brand-600 focus:ring-0">
+                <span>Custom</span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -4714,12 +4741,27 @@
 
     async function pollDeployProgress() {
       deployPollAttempts++;
+      if (deployPollAttempts >= 120) {
+        if (deployPollInterval) {
+          clearInterval(deployPollInterval);
+          deployPollInterval = null;
+        }
+        const titleEl = document.getElementById('deployProgressTitle');
+        if (titleEl) {
+          titleEl.innerText = 'Deployment polling timed out. Check systemctl status for details.';
+          titleEl.className = 'text-sm font-bold text-amber-400 tracking-tight';
+        }
+        return;
+      }
       try {
         const res = await fetch('/api/system/deploy/progress', { cache: 'no-store' });
         if (!res.ok) {
           // If server returned 502/refused, only transition to reconnection overlay if we were actively at restart step (step 5) or reached high pct!
           if (deployPollAttempts > 5 && deployLastProg && (deployLastProg.current_step >= 5 || deployLastProg.percentage >= 90)) {
-            if (deployPollInterval) clearInterval(deployPollInterval);
+            if (deployPollInterval) {
+              clearInterval(deployPollInterval);
+              deployPollInterval = null;
+            }
             closeUpdateModal();
             showUpdateOverlay();
             pollReconnection();
@@ -4736,7 +4778,10 @@
                           (prog.step_name && prog.step_name.toLowerCase().includes('aborted'));
 
         if (hasFailed) {
-          if (deployPollInterval) clearInterval(deployPollInterval);
+          if (deployPollInterval) {
+            clearInterval(deployPollInterval);
+            deployPollInterval = null;
+          }
           const titleEl = document.getElementById('deployProgressTitle');
           if (titleEl) {
             const errReason = (prog.last_update && (prog.last_update.error_message || prog.last_update.summary)) || prog.step_name || 'Deployment aborted with error';
@@ -4757,19 +4802,31 @@
         if (!prog.active) {
           if (prog.last_update && prog.last_update.status === 'success') {
             // Update finished successfully, hand off to reconnection
-            if (deployPollInterval) clearInterval(deployPollInterval);
+            if (deployPollInterval) {
+              clearInterval(deployPollInterval);
+              deployPollInterval = null;
+            }
             setTimeout(() => {
               closeUpdateModal();
               showUpdateOverlay();
               pollReconnection();
             }, 1500);
+          } else if (deployPollAttempts > 5) {
+            // Idle or non-active without failure: stop polling to avoid infinite loops
+            if (deployPollInterval) {
+              clearInterval(deployPollInterval);
+              deployPollInterval = null;
+            }
           }
         }
       } catch (e) {
         // Network dropped because systemd service is restarting!
         // Only trigger overlay if we were actively in step 5 / restarting
         if (deployPollAttempts > 3 && deployLastProg && (deployLastProg.current_step >= 5 || deployLastProg.percentage >= 90)) {
-          if (deployPollInterval) clearInterval(deployPollInterval);
+          if (deployPollInterval) {
+            clearInterval(deployPollInterval);
+            deployPollInterval = null;
+          }
           closeUpdateModal();
           showUpdateOverlay();
           pollReconnection();
@@ -4975,13 +5032,24 @@
             // Service still rebooting or SSL handshake initializing
           }
 
-          if (attempts >= 6) {
-            // Fallback after 6 attempts (~10 seconds): navigate directly so browser completes native HTTPS handshake
+          if (attempts >= maxAttempts) {
             clearInterval(pollInterval);
             if (statusText) {
-              statusText.innerText = 'Redirecting to secure HTTPS portal...';
+              statusText.innerText = 'Unable to establish secure HTTPS connection. The web service may still be starting.';
+              statusText.className = 'text-xs font-semibold text-rose-400';
             }
-            window.location.href = targetUrl;
+            if (actionEl) {
+              actionEl.innerHTML = `
+                <div class="flex items-center gap-3">
+                  <button type="button" onclick="pollTlsReconnection('${targetUrl}')" class="px-3.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white transition text-xs font-bold shadow-lg">
+                    Retry Connection
+                  </button>
+                  <a href="${targetUrl}" class="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-xs font-semibold">
+                    Open Directly &rarr;
+                  </a>
+                </div>
+              `;
+            }
           }
         }, 1500);
       }, 1500);
@@ -5109,8 +5177,37 @@
           }
         }
         if (document.getElementById('modalTlsAutoRenew')) {
-          document.getElementById('modalTlsAutoRenew').innerText = data.auto_renew_active ? "Enabled (Runs Twice Daily)" : "Disabled / Missing Timer";
-          document.getElementById('modalTlsAutoRenew').className = data.auto_renew_active ? "text-emerald-400" : "text-slate-400";
+          document.getElementById('modalTlsAutoRenew').innerText = data.auto_renew_active ? "Enabled" : "Disabled";
+          document.getElementById('modalTlsAutoRenew').className = data.auto_renew_active ? "text-emerald-400 font-bold" : "text-slate-400";
+        }
+        const autoRenewToggle = document.getElementById('tlsAutoRenewToggle');
+        if (autoRenewToggle) {
+          autoRenewToggle.checked = Boolean(data.auto_renew_active);
+          autoRenewToggle.disabled = (data.cert_mode === 'custom');
+        }
+        if (data.cert_mode) {
+          const modeRadio = document.querySelector(`input[name="tlsCertMode"][value="${data.cert_mode}"]`);
+          if (modeRadio) modeRadio.checked = true;
+        }
+        const countdownEl = document.getElementById('modalTlsCountdown');
+        if (countdownEl) {
+          if (data.cert_mode === 'custom') {
+            countdownEl.innerText = "Custom (Manual)";
+            countdownEl.className = "text-slate-400 text-xs";
+          } else if (data.renewal_countdown_seconds !== null && data.renewal_countdown_seconds !== undefined) {
+            const cdSec = data.renewal_countdown_seconds;
+            if (cdSec <= 0) {
+              countdownEl.innerText = data.auto_renew_active ? "Due Now (Pending)" : "Imminent";
+              countdownEl.className = "text-rose-400 font-bold text-xs";
+            } else {
+              const cdD = Math.floor(cdSec / 86400);
+              const cdH = Math.floor((cdSec % 86400) / 3600);
+              countdownEl.innerText = `${cdD}d ${cdH}h`;
+              countdownEl.className = data.auto_renew_active ? "text-emerald-400 font-bold text-xs" : "text-indigo-400 text-xs";
+            }
+          } else {
+            countdownEl.innerText = "--";
+          }
         }
         const warnEl = document.getElementById('modalTlsWarning');
         if (warnEl) {
@@ -5142,6 +5239,51 @@
       if (tlsRenewalTimerInterval) {
         clearInterval(tlsRenewalTimerInterval);
         tlsRenewalTimerInterval = null;
+      }
+    }
+
+    async function handleAutoRenewToggle(enabled) {
+      try {
+        const res = await fetch('/api/system/tls/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ auto_renew: enabled })
+        });
+        if (res.ok) {
+          fetchTlsStatus();
+        } else {
+          const err = await res.json();
+          showAlert(err.detail || 'Failed to update auto-renewal setting.', true);
+          fetchTlsStatus();
+        }
+      } catch (e) {
+        showAlert('Network error updating auto-renewal: ' + e, true);
+        fetchTlsStatus();
+      }
+    }
+
+    async function handleCertModeChange(mode) {
+      try {
+        const res = await fetch('/api/system/tls/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cert_mode: mode })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+          fetchTlsStatus();
+          if (mode !== 'custom') {
+            closeTlsModal();
+            const targetUrl = data.canonical_url || (window.location.hostname ? `https://${window.location.hostname}:8080` : 'https://thestygianarchitect.duckdns.org:8080');
+            pollTlsReconnection(targetUrl);
+          }
+        } else {
+          showAlert(data.detail || data.message || 'Failed to update certificate mode.', true);
+          fetchTlsStatus();
+        }
+      } catch (e) {
+        showAlert('Network error updating certificate mode: ' + e, true);
+        fetchTlsStatus();
       }
     }
 

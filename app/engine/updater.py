@@ -30,6 +30,7 @@ from app.api.schemas import (
     UpdateApplyResponse,
     UpdateStatusResponse,
 )
+from app.core.atomic_io import atomic_write_file
 from app.core.logger import log
 
 DEFAULT_UPDATE_LOCK_FILE: Path = Path(tempfile.gettempdir()) / "palmanager_update.lock"
@@ -452,7 +453,7 @@ class UpdateWatcher:
             raw_text = target.read_text(encoding="utf-8").strip()
             data = json.loads(raw_text)
             data["acknowledged"] = True
-            target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            atomic_write_file(target, json.dumps(data, indent=2))
             return True
         except OSError as err:
             log.warning("Filesystem error acknowledging post-update summary at %s: %s", target, err)
@@ -681,7 +682,7 @@ class UpdateWatcher:
                     f"branch={target_branch}\n"
                     f"operation=portal_update\n"
                 )
-                self.lock_file.write_text(lock_payload, encoding="utf-8")
+                atomic_write_file(self.lock_file, lock_payload, make_backup=False)
             except OSError as err:
                 log.error("Failed creating update lock file %s: %s", self.lock_file, err)
                 raise HTTPException(
