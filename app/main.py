@@ -23,10 +23,16 @@ from fastapi import FastAPI, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
-from app.core.config import inspect_certificate, reload_settings, resolve_ssl_paths
+from app.core.config import inspect_certificate, reload_settings
 from app.core.logger import log
 from app.database import MetricSnapshotRecord, bootstrap_admin_user
 from app.engine.service import LOCK_FILE
+from app.engine.tls_scheduler import (
+    _TLS_ENGINE_AVAILABLE,
+    certificate_renewal_scheduler,
+    trigger_duckdns_sync,
+    trigger_tls_provisioning_check,
+)
 from app.routers import (
     auth_router,
     feedback_router,
@@ -51,19 +57,7 @@ from app.routers.deps import (
     updater,
 )
 from app.routers.settings import stage_settings_for_reboot
-
-# Resilient import: prevents unbootable service if cryptography is temporarily missing during upgrade
-_tls_import_err: BaseException | None = None
-try:
-    from app.engine.duckdns import sync_duckdns_ip
-    from app.engine.tls_manager import provision_tls_certificates
-    _TLS_ENGINE_AVAILABLE = True
-except ImportError as _exc:  # ImportError catches ModuleNotFoundError (subclass)
-    _TLS_ENGINE_AVAILABLE = False
-    _tls_import_err = _exc
-    provision_tls_certificates = None  # type: ignore[assignment]  # pylint: disable=invalid-name
-    sync_duckdns_ip = None  # type: ignore[assignment]  # pylint: disable=invalid-name
-    log.warning("TLS Engine dependencies unavailable (%s). Running in degraded mode.", _exc)
+from app.server import run_server
 
 
 async def telemetry_streamer() -> None:
@@ -141,49 +135,12 @@ async def telemetry_streamer() -> None:
             log.warning("Value error in telemetry stream: %s", err)
         except KeyError as err:
             log.warning("Key error in telemetry stream: %s", err)
+        except asyncio.CancelledError:
+            log.debug("Telemetry streamer received cancellation request.")
+            break
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            log.warning("Unexpected error in telemetry stream: %s", err)
         await asyncio.sleep(2)
-
-
-async def trigger_duckdns_sync() -> None:
-    """Invokes DuckDNS dynamic DNS updater on startup if available on the host."""
-    if not _TLS_ENGINE_AVAILABLE:
-        log.warning("DuckDNS sync skipped: TLS engine dependencies unavailable")
-        return
-    if not settings.duckdns_domain or not settings.duckdns_token:
-        return
-    log.info("Triggering DuckDNS dynamic DNS synchronization directly via Python httpx")
-    success = await sync_duckdns_ip(
-        domain=settings.duckdns_domain,
-        token=settings.duckdns_token,
-    )
-    if success:
-        log.info("DuckDNS synchronization complete")
-    else:
-        log.warning("DuckDNS sync failed")
-
-
-async def trigger_tls_provisioning_check() -> None:
-    """Checks TLS certificate availability on startup and initiates provisioning if absent."""
-    if resolve_ssl_paths(settings) is not None:
-        return
-    if not _TLS_ENGINE_AVAILABLE:
-        log.warning("TLS provisioning check skipped: TLS engine dependencies unavailable")
-        return
-
-    raw_domain = str(settings.duckdns_domain or "").strip().lower()
-    if not raw_domain or raw_domain in ("localhost", "yourdomain.duckdns.org"):
-        return
-
-    log.info("TLS certificate missing on startup. Dispatching cert provisioning via native Python engine")
-    result = await provision_tls_certificates(
-        domain=settings.duckdns_domain,
-        token=settings.duckdns_token,
-        force=False,
-    )
-    if result.success:
-        log.info("TLS certificate provisioning completed: %s", result.message)
-    else:
-        log.warning("TLS certificate provisioning failed: %s (Error: %s)", result.message, result.error)
 
 
 async def metrics_collector_loop() -> None:
@@ -311,6 +268,7 @@ async def lifespan(_: FastAPI):
 
     duckdns_task = asyncio.create_task(trigger_duckdns_sync())
     tls_provision_task = asyncio.create_task(trigger_tls_provisioning_check())
+    renewal_task = asyncio.create_task(certificate_renewal_scheduler())
     stream_task = asyncio.create_task(telemetry_streamer())
     metrics_task = asyncio.create_task(metrics_collector_loop())
     updater_task: asyncio.Task[None] | None = None
@@ -334,11 +292,16 @@ async def lifespan(_: FastAPI):
     # Shutdown sequence
     duckdns_task.cancel()
     tls_provision_task.cancel()
+    renewal_task.cancel()
     startup_task.cancel()
     stream_task.cancel()
     metrics_task.cancel()
     if updater_task is not None:
         updater_task.cancel()
+    try:
+        await renewal_task
+    except asyncio.CancelledError as err:
+        log.debug("Certificate renewal background task cancelled during shutdown: %s", err)
     try:
         await stream_task
     except asyncio.CancelledError as err:
@@ -408,10 +371,14 @@ app.include_router(telemetry_router)
 app.include_router(system_router)
 app.include_router(feedback_router)
 
+if __name__ == "__main__":
+    run_server()
+
 __all__ = [
     "LOCK_FILE",
     "_TLS_ENGINE_AVAILABLE",
     "app",
+    "certificate_renewal_scheduler",
     "db",
     "engine",
     "get_current_user",
@@ -420,6 +387,7 @@ __all__ = [
     "notifier",
     "pipeline",
     "reload_settings",
+    "run_server",
     "settings",
     "stage_settings_for_reboot",
     "trigger_tls_provisioning_check",

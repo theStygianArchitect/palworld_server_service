@@ -23,6 +23,8 @@ from app.core.atomic_io import atomic_write_file
 from app.core.config import get_settings
 from app.engine.acme_client import perform_dns01_flow
 from app.engine.duckdns import sync_duckdns_ip
+from app.supervisor.client import SupervisorClient
+from app.supervisor.protocol import SupervisorClientError
 
 logger = logging.getLogger(__name__)
 
@@ -434,14 +436,24 @@ async def provision_tls_certificates(
 
 def _handle_renew(args: argparse.Namespace) -> int:
     """Handle CLI renewal command."""
-    if not args.domain or not args.token:
-        print("Error: Domain and token must be configured or provided via CLI.")
-        return 1
-    result = asyncio.run(provision_tls_certificates(domain=args.domain, token=args.token, force=args.force))
+    domain = args.domain or "localhost"
+    token = args.token or ""
+    result = asyncio.run(provision_tls_certificates(domain=domain, token=token, force=args.force))
     print(f"Provision result: {result.success} ({result.mode.value}) - {result.message}")
     if result.error:
         print(f"Error: {result.error}")
         return 1
+    if result.success:
+        try:
+            client = SupervisorClient()
+            asyncio.run(client.restart_service("palworld-manager.service"))
+            print("Dispatched service restart to activate new certificate.")
+        except SupervisorClientError as err:
+            logger.debug("Could not dispatch supervisor service restart in CLI: %s", err)
+            print("Note: Run 'systemctl restart palworld-manager.service' to reload certificates.")
+        except OSError as err:
+            logger.debug("Filesystem error dispatching supervisor service restart in CLI: %s", err)
+            print("Note: Run 'systemctl restart palworld-manager.service' to reload certificates.")
     return 0
 
 

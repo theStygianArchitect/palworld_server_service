@@ -12,12 +12,12 @@ import datetime
 import hashlib
 import hmac
 import json
-import os
 import secrets
 import time
 from pathlib import Path
 from typing import Any
 
+from app.core.atomic_io import atomic_write_file
 from app.core.config import resolve_admin_credential_export_path
 from app.core.logger import log
 from app.database.db import DatabaseManager
@@ -285,15 +285,7 @@ def _export_credentials_to_file(export_path: Path, password: str) -> None:
             " Note:      Store this securely or rotate via Web Portal.\n"
             "=========================================================================\n"
         )
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-        mode = 0o600
-        fd = os.open(str(export_path), flags, mode)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(banner)
-
-        if os.name != "nt":
-            os.chmod(export_path, 0o600)
-
+        atomic_write_file(export_path, banner, mode=0o600, make_backup=False)
         log.info("Initial admin credentials exported out-of-band to %s", export_path)
     except OSError as err:
         log.warning("Could not export initial admin credentials to %s: %s", export_path, err)

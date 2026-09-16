@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.x509.oid import NameOID
 
+from app.core.atomic_io import atomic_write_file
 from app.engine.duckdns import clear_duckdns_txt_record, set_duckdns_txt_record
 
 logger = logging.getLogger(__name__)
@@ -200,8 +201,7 @@ def create_or_load_account_key(key_path: Path = DEFAULT_ACCOUNT_KEY_PATH) -> rsa
         format=serialization.PrivateFormat.TraditionalOpenSSL,
         encryption_algorithm=serialization.NoEncryption(),
     )
-    key_path.write_bytes(key_pem)
-    key_path.chmod(0o600)
+    atomic_write_file(key_path, key_pem, mode=0o600, make_backup=False)
     return private_key
 
 

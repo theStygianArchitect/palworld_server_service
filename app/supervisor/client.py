@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import os
+import sys
 import uuid
 from typing import Any
 
@@ -58,6 +59,12 @@ class SupervisorClient:
         request_id = uuid.uuid4().hex[:12]
         request = JSONRPCRequest(id=request_id, method=method, params=params or {})
         payload = request.model_dump_json().encode() + b"\n"
+
+        if not hasattr(asyncio, "open_unix_connection"):
+            log.warning("Unix domain sockets not supported on platform %s", sys.platform)
+            raise SupervisorClientError(
+                f"Unix domain sockets not supported on platform {sys.platform}"
+            )
 
         try:
             reader, writer = await asyncio.wait_for(

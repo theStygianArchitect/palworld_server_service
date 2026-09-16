@@ -373,8 +373,8 @@ async def test_tls_auto_provision_startup_dispatch(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("app.main.settings.duckdns_token", "test-token")
 
     with (
-        patch("app.main.resolve_ssl_paths", return_value=None),
-        patch("app.main.provision_tls_certificates", new_callable=AsyncMock) as mock_prov,
+        patch("app.engine.tls_scheduler.resolve_ssl_paths", return_value=None),
+        patch("app.engine.tls_scheduler.provision_tls_certificates", new_callable=AsyncMock) as mock_prov,
     ):
         await trigger_tls_provisioning_check()
         mock_prov.assert_called_once_with(
