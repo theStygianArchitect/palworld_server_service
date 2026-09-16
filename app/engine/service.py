@@ -10,8 +10,6 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import shutil
-import subprocess  # nosec B404 - required for systemctl daemon control; no Python-native alternative for systemd
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -664,37 +662,19 @@ class PalEngine:  # pylint: disable=too-many-instance-attributes
             self._apply_staged_configuration()
 
         if os.name != "nt":
-            log.info("Triggering systemctl restart for %s", self.service_name)
+            log.info("Triggering supervisor IPC restart for %s", self.service_name)
             try:
-                sudo_bin = shutil.which("sudo") or "/usr/bin/sudo"
-                systemctl_bin = shutil.which("systemctl") or "/bin/systemctl"
-                cmd = [sudo_bin, "-n", systemctl_bin, "restart", self.service_name]
-                restart_proc = await asyncio.to_thread(
-                    subprocess.run,
-                    cmd,
-                    check=False,
-                    text=True,
-                    capture_output=True,  # nosec B603
-                )
-                if restart_proc.returncode != 0:
+                from app.supervisor.client import SupervisorClient  # pylint: disable=import-outside-toplevel
+                client = SupervisorClient()
+                result = await client.restart_service(self.service_name)
+                if result.get("status") != "success":
                     log.error(
-                        "systemctl restart failed with returncode %d: %s; attempting fallback binary path.",
-                        restart_proc.returncode,
-                        restart_proc.stderr.strip(),
+                        "Supervisor restart returned non-success for %s: %s",
+                        self.service_name,
+                        result,
                     )
-                    fallback_systemctl = "/bin/systemctl" if systemctl_bin != "/bin/systemctl" else "/usr/bin/systemctl"
-                    fallback_cmd = [sudo_bin, "-n", fallback_systemctl, "restart", self.service_name]
-                    fallback_proc = await asyncio.to_thread(
-                        subprocess.run, fallback_cmd, capture_output=True, text=True, check=False
-                    )  # nosec B603
-                    if fallback_proc.returncode != 0:
-                        log.error(
-                            "Fallback systemctl restart failed with returncode %d: %s",
-                            fallback_proc.returncode,
-                            fallback_proc.stderr.strip(),
-                        )
-            except OSError as err:
-                log.error("Failed to execute systemctl restart: %s", err)
+            except Exception as err:  # pylint: disable=broad-exception-caught
+                log.error("Supervisor IPC restart failed for %s: %s", self.service_name, err)
 
         # Allow systemd a moment to transition service down before probing
         await asyncio.sleep(3)
