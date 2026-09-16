@@ -35,7 +35,7 @@ async def test_scheduler_sleeps_when_cert_is_valid() -> None:
         ssl_auto_renew=True,
         ssl_cert_mode="letsencrypt",
         duckdns_domain="test.duckdns.org",
-        duckdns_token="dummy_token",
+        duckdns_token="dummy_token",  # nosec B106 - mock test token
     )
 
     with patch("app.engine.tls_scheduler.get_settings", return_value=settings), \
@@ -78,7 +78,7 @@ async def test_scheduler_triggers_renewal_when_nearing_expiration() -> None:
         ssl_auto_renew=True,
         ssl_cert_mode="letsencrypt",
         duckdns_domain="test.duckdns.org",
-        duckdns_token="dummy_token",
+        duckdns_token="dummy_token",  # nosec B106 - mock test token
     )
 
     provision_res = TLSProvisionResult(

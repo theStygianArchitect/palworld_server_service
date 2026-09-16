@@ -59,19 +59,16 @@ router = APIRouter(tags=["System Lifecycle & Maintenance"])
 
 
 def _resolve_canonical_url() -> str:
-    """Resolves the canonical public URL based on TLS availability and configuration.
+    """Resolves the canonical public HTTPS URL based on configuration.
 
     Returns:
-        str: Absolute canonical URL (HTTPS if valid certs exist, HTTP otherwise) with port.
+        str: Absolute canonical HTTPS URL with port.
     """
     raw_domain = str(settings.duckdns_domain or "")
     domain = raw_domain.strip().lower()
     if not domain or domain in ("localhost", "yourdomain.duckdns.org"):
         domain = "thestygianarchitect.duckdns.org"
-
-    ssl_pair = resolve_ssl_paths(settings)
-    scheme = "https" if ssl_pair is not None else "http"
-    return f"{scheme}://{domain}:{settings.web_port}"
+    return f"https://{domain}:{settings.web_port}"
 
 
 @router.get("/health")

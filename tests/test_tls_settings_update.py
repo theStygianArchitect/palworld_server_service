@@ -21,7 +21,7 @@ def admin_client() -> Generator[TestClient, None, None]:
     admin_user = UserRecord(
         id=1,
         username="admin",
-        password_hash="mock_hash",
+        password_hash="mock_hash",  # nosec B106 - mock test hash
         salt="mock_salt",
         email="admin@test.local",
         role="admin",
@@ -42,7 +42,7 @@ def viewer_client() -> Generator[TestClient, None, None]:
     viewer_user = UserRecord(
         id=2,
         username="viewer",
-        password_hash="mock_hash",
+        password_hash="mock_hash",  # nosec B106 - mock test hash
         salt="mock_salt",
         email="viewer@test.local",
         role="viewer",
