@@ -125,8 +125,8 @@ def validate_probe_target(target: str) -> str:
     try:
         ipaddress.ip_address(clean)
         return clean
-    except ValueError:
-        pass
+    except ValueError as err:
+        log.debug("Target %r is not an IP address (%s), checking hostname format", clean, err)
 
     # 2. Validate as RFC 1123 hostname / FQDN
     if len(clean) <= 253 and _HOSTNAME_REGEX.match(clean):
