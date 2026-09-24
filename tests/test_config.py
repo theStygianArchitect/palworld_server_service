@@ -12,7 +12,9 @@ from pydantic import ValidationError
 from app.core.config import (
     AppSettings,
     PalWorldIniSettingsSource,
+    SettingsContainer,
     get_settings,
+    reload_settings,
     resolve_admin_credential_export_path,
 )
 
@@ -56,6 +58,29 @@ def test_app_settings_custom_ini_source():
 def test_get_settings_helper():
     s = get_settings()
     assert isinstance(s, AppSettings)
+
+
+def test_reload_settings_helper():
+    reloaded = reload_settings()
+    assert isinstance(reloaded, AppSettings)
+    assert get_settings() is reloaded
+
+
+def test_settings_container_isolated_lifecycle():
+    container = SettingsContainer()
+    first = container.get()
+    assert isinstance(first, AppSettings)
+    assert container.get() is first
+
+    reloaded = container.reload()
+    assert isinstance(reloaded, AppSettings)
+    assert reloaded is not first
+    assert container.get() is reloaded
+
+    container.reset()
+    fresh = container.get()
+    assert isinstance(fresh, AppSettings)
+    assert fresh is not reloaded
 
 
 def test_github_repo_url_default():

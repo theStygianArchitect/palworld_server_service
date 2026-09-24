@@ -577,9 +577,42 @@ class AppSettings(BaseSettings):
         )
 
 
-# pylint: disable=invalid-name
-# Rationale: Standard lowercase leading-underscore naming for module-level singleton instance.
-_settings_instance: AppSettings | None = None
+class SettingsContainer:
+    """Thread-safe lifecycle manager and container for application configuration.
+
+    Encapsulates the cached singleton instance of AppSettings, eliminating module-level
+    global-statement mutability while enabling deterministic reloading and test isolation.
+    """
+
+    def __init__(self) -> None:
+        """Initializes an empty settings container."""
+        self._instance: AppSettings | None = None
+
+    def get(self) -> AppSettings:
+        """Returns the active AppSettings instance, instantiating lazily if not yet loaded.
+
+        Returns:
+            AppSettings: Active application configuration settings object.
+        """
+        if self._instance is None:
+            self._instance = AppSettings()
+        return self._instance
+
+    def reload(self) -> AppSettings:
+        """Forces re-parsing of configuration sources and returns refreshed AppSettings.
+
+        Returns:
+            AppSettings: Freshly reloaded application configuration settings object.
+        """
+        self._instance = AppSettings()
+        return self._instance
+
+    def reset(self) -> None:
+        """Clears the cached configuration instance for clean testing boundaries."""
+        self._instance = None
+
+
+_SETTINGS_CONTAINER: SettingsContainer = SettingsContainer()
 
 
 def get_settings() -> AppSettings:
@@ -588,12 +621,7 @@ def get_settings() -> AppSettings:
     Returns:
         AppSettings: Active application configuration settings object.
     """
-    # pylint: disable=global-statement
-    # Rationale: Module singleton pattern requires updating module-level reference.
-    global _settings_instance
-    if _settings_instance is None:
-        _settings_instance = AppSettings()
-    return _settings_instance
+    return _SETTINGS_CONTAINER.get()
 
 
 def reload_settings() -> AppSettings:
@@ -602,11 +630,7 @@ def reload_settings() -> AppSettings:
     Returns:
         AppSettings: Freshly reloaded application configuration settings object.
     """
-    # pylint: disable=global-statement
-    # Rationale: Module singleton pattern requires updating module-level reference.
-    global _settings_instance
-    _settings_instance = AppSettings()
-    return _settings_instance
+    return _SETTINGS_CONTAINER.reload()
 
 
 def resolve_admin_credential_export_path(custom_path: str | Path | None = None) -> Path:
