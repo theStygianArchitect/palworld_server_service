@@ -1,0 +1,62 @@
+name: 🛡️ Security Vulnerability Tracking
+description: Public tracking record for a sanitized, non-weaponized security report
+title: "[Security]: "
+labels: ["type:security", "priority:p1", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > [!CAUTION]
+        > **DO NOT POST WEAPONIZED EXPLOITS OR CREDENTIALS IN PUBLIC ISSUES.**
+        > For zero-day vulnerabilities or private disclosure, please use [GitHub Security Advisories](https://github.com/theStygianArchitect/palworld_server_service/security/advisories/new).
+        > This template is strictly for sanitized tracking issues, boundary hardening, and defensive architectural reviews.
+  - type: textarea
+    id: summary
+    attributes:
+      label: High-Level Vulnerability Summary
+      description: Describe the vulnerability category (e.g. Input Validation, Argument Injection, RBAC Bypass, Insecure Cryptographic Default).
+      placeholder: e.g. Ingress parameter lacks regex validation before being passed to diagnostic subprocess.
+    validations:
+      required: true
+  - type: input
+    id: affected_files
+    attributes:
+      label: Affected Component / File Path(s)
+      description: Specify the file(s) and function(s) containing the boundary weakness.
+      placeholder: e.g. app/monitoring/net_diagnostics.py:_ping_target
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity Assessment
+      description: Estimated CVSS severity level.
+      options:
+        - Low (Minimal impact, local access required)
+        - Medium (Requires specific preconditions or partial privilege)
+        - High (Significant impact, unauthenticated or elevated privilege risk)
+        - Critical (Remote code execution, complete auth bypass, data loss)
+    validations:
+      required: true
+  - type: textarea
+    id: theoretical_path
+    attributes:
+      label: Preconditions & Attack Vector (Sanitized)
+      description: Describe the structural mechanism of the vulnerability WITHOUT providing weaponized exploit strings or payload bytes.
+    validations:
+      required: true
+  - type: textarea
+    id: remediation
+    attributes:
+      label: Recommended Defensive Mitigation & Patch Strategy
+      description: Concrete remediation recommendations (e.g. strict regex whitelist, atomic file replacement, privilege isolation).
+    validations:
+      required: true
+  - type: checkboxes
+    id: disclosure_check
+    attributes:
+      label: Responsible Disclosure Compliance
+      description: Confirm disclosure hygiene.
+      options:
+        - label: I confirm this issue contains NO active secret keys, passwords, or weaponized exploit code.
+          required: true

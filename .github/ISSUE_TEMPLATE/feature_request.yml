@@ -1,0 +1,62 @@
+name: 🚀 Feature Request
+description: Propose a new feature, dashboard widget, or architectural enhancement
+title: "[Feat]: "
+labels: ["type:feature", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for proposing an enhancement! All features must adhere to atomic scope, 12-factor principles, and explicit RBAC boundaries.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement / User Story
+      description: What problem does this solve? Use the user story format where applicable.
+      placeholder: As a server administrator / community manager, I want [...] so that [...].
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution & Technical Architecture
+      description: Describe how you envision this working, including any API endpoints, WebSocket models, or CLI commands.
+    validations:
+      required: true
+  - type: dropdown
+    id: rbac_tier
+    attributes:
+      label: Role-Based Access Control (RBAC) Tier
+      description: "MANDATORY: What is the minimum permission level required to access this feature? (Defaults to Admin-Only)."
+      options:
+        - Admin-Only (Full administrative control, configuration, restarts)
+        - Operator (Operational actions, broadcast, kicks, backups)
+        - Viewer (Read-only dashboard, telemetry, player list)
+        - Public (Unauthenticated status / landing page)
+    validations:
+      required: true
+  - type: textarea
+    id: twelve_factor
+    attributes:
+      label: 12-Factor & Resilience Considerations
+      description: Describe configuration (env vars), state persistence, process boundaries, or crash-safety implications.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative designs, candidate trade-offs, or workarounds you have evaluated.
+    validations:
+      required: false
+  - type: textarea
+    id: dod
+    attributes:
+      label: Acceptance Criteria & Definition of Done
+      description: List deterministic, testable criteria required for completion.
+      value: |
+        - [ ] All functional requirements implemented with atomic scope.
+        - [ ] Automated pytest / UI unit tests added with >= 85% coverage.
+        - [ ] API endpoints documented in schemas and Swagger/OpenAPI.
+        - [ ] Zero linting or strict type errors (`ruff`, `mypy`).
+    validations:
+      required: true
