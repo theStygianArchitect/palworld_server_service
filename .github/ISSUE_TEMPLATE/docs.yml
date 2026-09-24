@@ -1,0 +1,39 @@
+name: 📝 Documentation Update
+description: Propose improvements, additions, or corrections to documentation, docstrings, or architectural specs
+title: "[Docs]: "
+labels: ["type:docs", "priority:p3", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve the project's documentation!
+  - type: input
+    id: doc_path
+    attributes:
+      label: Documentation Area / File Path
+      description: Which file or documentation section needs updating?
+      placeholder: e.g. README.md, docs/DEPLOYMENT.md, inline docstrings in app/server.py
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation & Missing Context
+      description: What information is currently missing, ambiguous, outdated, or inaccurate?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_diff
+    attributes:
+      label: Proposed Content / Markdown Diff
+      description: Provide the suggested wording, revised instructions, or git diff.
+      render: markdown
+    validations:
+      required: true
+  - type: checkboxes
+    id: sync_check
+    attributes:
+      label: Documentation Standards
+      options:
+        - label: I have verified that this change aligns with the current codebase implementation.
+          required: true

@@ -1,0 +1,109 @@
+name: 🐛 Bug Report
+description: Report a defect, unexpected behavior, or crash in Palworld Operations Suite
+title: "[Fix]: "
+labels: ["type:bug", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a defect! Please provide clear reproduction steps and diagnostic logs so we can diagnose and resolve it swiftly.
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: e.g. Clicking 'Restart' broadcasts a 10s countdown to connected players, saves the world via RCON, and gracefully restarts PalServer.
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current / Observed Behavior
+      description: What actually happened? Include any error codes, crash alerts, or unexpected state changes.
+      placeholder: e.g. PalServer terminates immediately without broadcasting countdown or flushing save.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the behavior deterministically.
+      value: |
+        1. Start service: `palworld-manager.service` or `uv run uvicorn app.main:app`
+        2. Navigate to: `...`
+        3. Trigger action: `...`
+        4. Observe failure: `...`
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System / Environment
+      description: Select the host operating system where the service is running.
+      options:
+        - Ubuntu 24.04 LTS
+        - Ubuntu 22.04 LTS
+        - Debian 12 (Bookworm)
+        - Debian 11 (Bullseye)
+        - Arch Linux
+        - Windows 11 / Windows Server
+        - Other (specify in logs)
+    validations:
+      required: true
+  - type: dropdown
+    id: python_version
+    attributes:
+      label: Python Runtime Version
+      description: Which Python version is executing the management plane?
+      options:
+        - Python 3.12 (Recommended)
+        - Python 3.13
+        - Python 3.11
+        - Python 3.10
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment_mode
+    attributes:
+      label: Deployment Mode
+      description: How is the management plane running?
+      options:
+        - Systemd Services (palworld-manager + palworld-supervisor sidecar)
+        - Direct CLI / Virtualenv (`uv run app/server.py`)
+        - Docker / Container
+    validations:
+      required: true
+  - type: input
+    id: palworld_version
+    attributes:
+      label: Palworld Dedicated Server Version
+      description: Specify the installed PalServer version (e.g. v0.3.5).
+      placeholder: e.g. v0.3.5
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Diagnostic Logs & Tracebacks
+      description: Paste relevant journalctl or palworld_manager.log entries. Sensitive tokens and passwords are automatically redacted.
+      render: shell
+      placeholder: journalctl -u palworld-manager.service -n 50 --no-pager
+    validations:
+      required: false
+  - type: textarea
+    id: root_cause
+    attributes:
+      label: Possible Root Cause / Proposed Patch
+      description: "Optional: Suggest an architectural fix or code modification if known."
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Pre-Submission Verification
+      description: Please verify before submitting.
+      options:
+        - label: I have verified this is not a duplicate of an existing open issue.
+          required: true
+        - label: I have scrubbed any sensitive personal credentials or private keys from logs.
+          required: true
