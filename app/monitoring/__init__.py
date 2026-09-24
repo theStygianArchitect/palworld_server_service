@@ -11,6 +11,7 @@ from .net_diagnostics import (
     NetworkThroughputTracker,
     execute_ping_probes,
     run_network_diagnostics_sweep,
+    validate_probe_target,
 )
 from .tracker import (
     A2S_INFO_REQUEST,
@@ -28,4 +29,5 @@ __all__ = [
     "PalLogScraper",
     "execute_ping_probes",
     "run_network_diagnostics_sweep",
+    "validate_probe_target",
 ]

@@ -7,6 +7,7 @@ and performs 5-probe heuristic root-cause analysis for player rubberbanding.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import re
 import shutil
 import socket
@@ -91,6 +92,49 @@ class NetworkThroughputTracker:
         self._cached_tx_kbps = 0.0
 
 
+_HOSTNAME_REGEX = re.compile(
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$"
+)
+
+
+def validate_probe_target(target: str) -> str:
+    """Validates that a probe target is a safe, valid IPv4/IPv6 address or RFC 1123 hostname.
+
+    Guards against command flag injection (e.g. leading hyphens) and shell metacharacters.
+
+    Args:
+        target (str): Target IP address or hostname to validate.
+
+    Returns:
+        str: Sanitized, validated target string.
+
+    Raises:
+        ValueError: If the target is malformed, contains invalid characters, or fails validation.
+    """
+    if not isinstance(target, str):
+        raise ValueError(f"Probe target must be a string, got {type(target).__name__}")
+
+    clean = target.strip()
+    if not clean:
+        raise ValueError("Probe target cannot be empty or whitespace-only.")
+
+    if clean.startswith("-"):
+        raise ValueError(f"Probe target cannot start with a hyphen/flag: {target!r}")
+
+    # 1. Validate as IPv4 or IPv6 address
+    try:
+        ipaddress.ip_address(clean)
+        return clean
+    except ValueError:
+        pass
+
+    # 2. Validate as RFC 1123 hostname / FQDN
+    if len(clean) <= 253 and _HOSTNAME_REGEX.match(clean):
+        return clean
+
+    raise ValueError(f"Invalid probe target format (must be valid IP address or hostname): {target!r}")
+
+
 def execute_ping_probes(target: str, count: int = 5) -> tuple[float, float, float]:
     """Executes ICMP ping probes returning (avg_rtt_ms, jitter_ms, packet_loss_pct).
 
@@ -103,6 +147,14 @@ def execute_ping_probes(target: str, count: int = 5) -> tuple[float, float, floa
     Returns:
         tuple[float, float, float]: (avg_ms, jitter_ms, loss_pct).
     """
+    try:
+        target = validate_probe_target(target)
+    except ValueError as err:
+        log.warning("Rejected invalid network probe target %r: %s", target, err)
+        return (999.0, 99.0, 100.0)
+
+    count = max(1, min(int(count), 20))
+
     if is_posix():
         ping_bin = shutil.which("ping") or "/bin/ping"
         cmd = [ping_bin, "-c", str(count), "-W", "1", target]
